@@ -690,6 +690,9 @@ impl Native {
                         .collect()
                 })
                 .unwrap_or_default(),
+            mail_from: env_value("LOAMS_METER_MAIL_FROM"),
+            resend_api_key_file: env_value("LOAMS_METER_RESEND_API_KEY_FILE").map(PathBuf::from),
+            resend_api_base: env_value("LOAMS_METER_RESEND_API_BASE"),
         };
         config.connect_socket = self
             .connect_socket

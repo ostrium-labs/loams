@@ -7,6 +7,7 @@
 //! | storage controller | `PUT /notify-attach` | a static bearer token ([`UpcallConfig::notify_token`]) | 200 when recorded and every running compute took the new spec; 423 when recorded but not applied; 429 to slow it down |
 //! | pageserver | `POST /upcall/v1/timeline_import_status` | its `control_plane_api_token` ([`UpcallConfig::pageserver_token`]) | 200 when the import's status is recorded (NF2 Task 13) |
 //! | pageserver | `GET /upcall/v1/timeline_import_status` | likewise | the recorded `ShardImportStatus`, or `{"InProgress": null}` for an import not reported yet |
+//! | pageserver | `POST /upcall/v1/validate` | likewise | every tenant shard's generation valid (NF2 Task 13: one pageserver per shard, attached at its last known generation) |
 //!
 //! `notify-safekeepers` is not served: the storage controller manages no
 //! safekeepers (§46 §9.1). Nor is `notify-attach` when no token is
@@ -480,10 +481,12 @@ fn router(shared: Arc<Shared>) -> Router {
         r = r.route("/notify-attach", put(notify_attach));
     }
     if shared.pageserver_digest.is_some() {
-        r = r.route(
-            "/upcall/v1/timeline_import_status",
-            post(put_import_status).get(get_import_status),
-        );
+        r = r
+            .route(
+                "/upcall/v1/timeline_import_status",
+                post(put_import_status).get(get_import_status),
+            )
+            .route("/upcall/v1/validate", post(validate_generations));
     }
     r.with_state(shared)
 }
@@ -681,6 +684,19 @@ struct PutImportStatus {
     status: serde_json::Value,
 }
 
+/// A pageserver's `ValidateRequest`: the tenant shards and generations its
+/// deletion queue wants to act on.
+#[derive(Deserialize)]
+struct ValidateRequest {
+    tenants: Vec<ValidateTenant>,
+}
+
+/// One shard of a `ValidateRequest` (its generation, `gen`, is not read).
+#[derive(Deserialize)]
+struct ValidateTenant {
+    id: String,
+}
+
 /// A pageserver's `TimelineImportStatusRequest`.
 #[derive(Deserialize)]
 struct GetImportStatus {
@@ -784,6 +800,46 @@ async fn put_import_status(
         }
     }
     error(StatusCode::SERVICE_UNAVAILABLE, "the status kept changing")
+}
+
+/// `POST /upcall/v1/validate`: every generation a pageserver asks about is
+/// valid. The storage controller answers this to fence a pageserver that
+/// lost its attachment; Loams runs one pageserver per tenant shard, in
+/// emergency mode at its last known generation, so there is nothing to
+/// fence. Without an answer the pageserver's deletion queue never deletes a
+/// layer and never advances its remote consistent LSN (NF2 Task 13).
+async fn validate_generations(
+    State(s): State<Arc<Shared>>,
+    Extension(peer): Extension<Peer>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    if !token_matches(
+        &headers,
+        s.limits.max_token_bytes,
+        s.pageserver_digest.as_ref(),
+    ) {
+        tracing::info!(peer = %peer.0, "validate: token refused");
+        return s.refuse(peer, StatusCode::UNAUTHORIZED, "the token is invalid");
+    }
+    let Ok(bytes) = axum::body::to_bytes(body, s.limits.max_body_bytes).await else {
+        return error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "the body is too large or unreadable",
+        );
+    };
+    let Ok(req) = serde_json::from_slice::<ValidateRequest>(&bytes) else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "the body is not a validate request",
+        );
+    };
+    let tenants: Vec<serde_json::Value> = req
+        .tenants
+        .into_iter()
+        .map(|t| serde_json::json!({"id": t.id, "valid": true}))
+        .collect();
+    axum::Json(serde_json::json!({ "tenants": tenants })).into_response()
 }
 
 /// `GET /upcall/v1/timeline_import_status`: the last recorded report, or

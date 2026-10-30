@@ -8,7 +8,9 @@ use loams_proto::loams::meter::v1 as pb;
 use loams_proto::loams::meter::v1::{NotificationService, NotificationServiceExt};
 
 use super::{IntoConnect, caller, nonempty, page_size, timestamp};
-use crate::notify::{Channel, Delivery, DeliveryStatus, Endpoint, Notifier, Rule};
+use crate::notify::{
+    Channel, ConsoleNotification, Delivery, DeliveryStatus, Endpoint, Notifier, Rule,
+};
 
 #[derive(Debug)]
 struct Adapter(Notifier);
@@ -40,6 +42,21 @@ fn rule_out(r: &Rule) -> pb::Rule {
             .iter()
             .map(|c| EnumValue::Known(channel_out(*c)))
             .collect(),
+        emails: r.emails.clone(),
+        ..Default::default()
+    }
+}
+
+fn console_out(n: &ConsoleNotification) -> pb::ConsoleNotification {
+    pb::ConsoleNotification {
+        id: n.id.clone(),
+        customer_id: n.customer_id.clone(),
+        event_type: n.event_type.clone(),
+        feature: n.feature.clone(),
+        title: n.title.clone(),
+        body: n.body.clone(),
+        banner: n.banner,
+        create_time: timestamp(n.at).into(),
         ..Default::default()
     }
 }
@@ -102,6 +119,7 @@ impl NotificationService for Adapter {
                 rule.thresholds.clone(),
                 rule.spend_cap,
                 channels,
+                rule.emails.clone(),
             )
             .await
             .connect()?;
@@ -174,6 +192,23 @@ impl NotificationService for Adapter {
             .connect()?;
         Response::ok(pb::ListDeliveriesResponse {
             deliveries: deliveries.iter().map(delivery_out).collect(),
+            ..Default::default()
+        })
+    }
+
+    async fn list_console_notifications(
+        &self,
+        ctx: RequestContext,
+        request: ServiceRequest<'_, pb::ListConsoleNotificationsRequest>,
+    ) -> ServiceResult<pb::ListConsoleNotificationsResponse> {
+        let caller = caller(&ctx)?;
+        let notes = self
+            .0
+            .list_console(&caller, request.customer_id, page_size(request.page_size))
+            .await
+            .connect()?;
+        Response::ok(pb::ListConsoleNotificationsResponse {
+            notifications: notes.iter().map(console_out).collect(),
             ..Default::default()
         })
     }

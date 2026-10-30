@@ -525,12 +525,9 @@ pub async fn run_on(
             let mut rx = shutdown_all.subscribe();
             Some(tokio::spawn(async move {
                 router
-                    .serve_with_incoming_shutdown(
-                        incoming(ui_listener),
-                        async move {
-                            let _ = rx.recv().await;
-                        },
-                    )
+                    .serve_with_incoming_shutdown(incoming(ui_listener), async move {
+                        let _ = rx.recv().await;
+                    })
                     .await
             }))
         }
@@ -539,10 +536,7 @@ pub async fn run_on(
     let served = tonic::transport::Server::builder()
         .add_service(gateway.service())
         .add_service(gateway.operator_service())
-        .serve_with_incoming_shutdown(
-            incoming(listener),
-            shutdown,
-        )
+        .serve_with_incoming_shutdown(incoming(listener), shutdown)
         .await
         .map_err(|e| e.to_string());
     let _ = shutdown_all.send(());

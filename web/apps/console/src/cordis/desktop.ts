@@ -16,6 +16,7 @@ import dataStudioPkg from '@loams/plugin-data-studio/package.json';
 import desktopAgentdPkg from '@loams/plugin-desktop-agentd/package.json';
 import desktopServersPkg from '@loams/plugin-desktop-servers/package.json';
 import desktopSettingsPkg from '@loams/plugin-desktop-settings/package.json';
+import desktopTransfersPkg from '@loams/plugin-desktop-transfers/package.json';
 import durablePkg from '@loams/plugin-durable/package.json';
 import enginesPkg from '@loams/plugin-engines/package.json';
 import factoryPkg from '@loams/plugin-factory/package.json';
@@ -57,6 +58,7 @@ export const desktopModules: typeof modules = {
   '@loams/plugin-canvas': () => import('@loams/plugin-canvas'),
   '@loams/plugin-metrics': () => import('@loams/plugin-metrics'),
   '@loams/plugin-engines': () => import('@loams/plugin-engines'),
+  '@loams/plugin-desktop-transfers': () => import('@loams/plugin-desktop-transfers'),
 };
 /** Their package.json manifests. */
 export const desktopManifests: unknown[] = [
@@ -81,6 +83,7 @@ export const desktopManifests: unknown[] = [
   canvasPkg,
   metricsPkg,
   enginesPkg,
+  desktopTransfersPkg,
 ];
 
 export async function startDesktop(

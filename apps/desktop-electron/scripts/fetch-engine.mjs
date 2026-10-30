@@ -6,6 +6,10 @@
 // serves loams.graph.v1 to the Graph page, GR1 Task 8).
 // Never sets CARGO_TARGET_DIR: the shared target dir comes from the cargo config.
 //
+// It also bundles loams-transfer, the sidecar behind Transfers (design §85): LOAMS_TRANSFER_BIN, else
+// <target>/release/loams-transfer[.exe]. Without it the app still packages (the Transfers page then
+// says it is not bundled), unless LOAMS_REQUIRE_TRANSFER=1.
+//
 // It also bundles loams-agentd, the daemon behind Studio (0.1.0 release fix B9): LOAMS_AGENTD_BIN, else
 // <target>/release/loams-agentd[.exe]. With it come SHA256SUMS and VERSION, which `loams-agentd
 // install-runtime` checks when the user turns background agents on. Without the daemon the app still
@@ -123,4 +127,31 @@ if (!agentdSrc || !existsSync(agentdSrc)) {
 	writeFileSync(join(outDir, "VERSION"), `${version}\n`);
 	const amb = (statSync(agentdDest).size / 1048576).toFixed(1);
 	console.log(`agentd: ${agentdSrc} -> ${agentdDest} (${amb} MB), SHA256SUMS and VERSION ${version}`);
+}
+
+const transferExe = process.platform === "win32" ? "loams-transfer.exe" : "loams-transfer";
+let transferSrc = process.env.LOAMS_TRANSFER_BIN;
+if (!transferSrc) {
+	try {
+		transferSrc = join(releaseDir(), transferExe);
+	} catch {
+		transferSrc = undefined;
+	}
+}
+if (!transferSrc || !existsSync(transferSrc)) {
+	const msg =
+		`loams-transfer not found at ${transferSrc ?? "<cargo target>/release"}\n` +
+		"Build it: cargo build --release -p loams-transfer (or set LOAMS_TRANSFER_BIN).";
+	if (process.env.LOAMS_REQUIRE_TRANSFER === "1") {
+		console.error(msg);
+		process.exit(1);
+	}
+	console.warn(`warning: ${msg}\nPackaging without the transfer sidecar: Transfers will say it is not bundled.`);
+} else {
+	const transferDest = join(outDir, transferExe);
+	copyFileSync(transferSrc, transferDest);
+	chmodSync(transferDest, 0o755);
+	strip(transferDest, "loams-transfer");
+	const tmb = (statSync(transferDest).size / 1048576).toFixed(1);
+	console.log(`transfer: ${transferSrc} -> ${transferDest} (${tmb} MB)`);
 }

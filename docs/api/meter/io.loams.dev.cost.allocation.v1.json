@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:loams:json:io.loams.dev.cost.allocation.v1",
+  "title": "io.loams.dev.cost.allocation.v1",
+  "description": "The `data` of a `io.loams.dev.cost.allocation.v1` event. One cost allocation line for one UTC day: part of a pool-day's cost assigned to an engine, tenant (the event's subject; `_operator` for idle, unattributed and shared), project and query class. Design §84 §13.1. Excluded from every usage meter.",
+  "type": "object",
+  "properties": {
+    "cost_micros": {
+      "type": "integer",
+      "description": "The line's cost in micro-units of `currency` (10⁻⁶), split per pool-day by largest remainder so a pool-day's events sum to its cost rounded to micros. Negative for credits and adjustments"
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$",
+      "description": "ISO 4217 reporting currency"
+    },
+    "day": {
+      "type": "string",
+      "format": "date",
+      "description": "The UTC day the cost belongs to"
+    },
+    "pool": {
+      "type": "string",
+      "description": "The cost pool (design §84 §5.1)"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "cpu",
+        "memory",
+        "storage",
+        "network_egress",
+        "network_ingress",
+        "network_internal",
+        "io",
+        "gpu",
+        "fixed"
+      ]
+    },
+    "engine": {
+      "type": "string",
+      "description": "The engine, or idle, unattributed or shared"
+    },
+    "project": {
+      "type": "string",
+      "description": "The namespace, `_` when it does not apply"
+    },
+    "query_class": {
+      "type": "string",
+      "description": "The query class, `_` when it does not apply"
+    },
+    "basis": {
+      "type": "string",
+      "enum": [
+        "measured",
+        "billed",
+        "declared",
+        "estimated"
+      ],
+      "description": "The line's overall basis (§84 §10.1)"
+    },
+    "amount_basis": {
+      "type": "string",
+      "enum": [
+        "measured",
+        "billed",
+        "declared",
+        "estimated"
+      ]
+    },
+    "usage": {
+      "type": "string",
+      "description": "The driver quantity, a decimal with up to nine fractional digits"
+    },
+    "usage_unit": {
+      "type": "string",
+      "description": "core_second, byte_second, byte, operation, device_second or none"
+    },
+    "trace": {
+      "type": "string",
+      "description": "The line's trace id (ExplainCost)"
+    },
+    "report_digest": {
+      "type": "string",
+      "description": "The digest of the inputs the line was computed from"
+    },
+    "cost_run": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "The cost job run (part of the event id)"
+    }
+  },
+  "required": [
+    "cost_micros",
+    "currency",
+    "day",
+    "pool",
+    "kind",
+    "engine",
+    "basis"
+  ],
+  "additionalProperties": true
+}

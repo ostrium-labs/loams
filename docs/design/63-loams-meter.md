@@ -723,6 +723,8 @@ These types are excluded from every meter. A **notifier** in the `meter` role co
 - email through the deployment's configured mailer (none on the desktop);
 - console notifications and the shell banner (§18).
 
+Email and the console are delivered the way webhooks are (D2402): one delivery per channel and event, retried on the webhook schedule, listed by `ListDeliveries` as `channel:email` and `channel:console`. The mailer is Resend's HTTP API (`LOAMS_METER_MAIL_FROM`, `LOAMS_METER_RESEND_API_KEY_FILE`); a rule's `emails` name the recipients, else the org's owners and admins get it. The console reads its notifications with `NotificationService.ListConsoleNotifications`.
+
 OpenMeter's equivalent is the `entitlements.balance.threshold` notification with `usage_percentage` values ([openapi.yaml](https://raw.githubusercontent.com/openmeterio/openmeter/main/api/openapi.yaml)); the OpenMeter exporter maps to it where the target uses OpenMeter's notifications.
 
 ---

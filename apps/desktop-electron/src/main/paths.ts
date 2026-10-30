@@ -11,6 +11,8 @@ export interface PathsEnv {
 	loamsBin?: string;
 	/** Value of LOAMS_AGENTD_BIN, when set. Tried first for the agent daemon. */
 	agentdBin?: string;
+	/** Value of LOAMS_TRANSFER_BIN, when set. Tried first for the transfer sidecar. */
+	transferBin?: string;
 	/** Cargo target directory, injected by the caller. Defaults to `<repo>/target` in dev. */
 	cargoTargetDir?: string;
 	/** Defaults to process.platform. */
@@ -25,6 +27,8 @@ export interface ResolvedPaths {
 	engineBin: string[];
 	/** loams-agentd candidates, in order of preference. */
 	agentdBin: string[];
+	/** loams-transfer (the transfer sidecar, §85) candidates, in order of preference. */
+	transferBin: string[];
 	factoryDir: string;
 	serversFile: string;
 	/** The shipped stacks: loams-postgres-dev/, wesql/ and tikv/ (each with a compose.yaml). Read-only. */
@@ -65,12 +69,24 @@ export function resolvePaths(env: PathsEnv): ResolvedPaths {
 		);
 	}
 
+	const transferExe = win ? "loams-transfer.exe" : "loams-transfer";
+	const transferBin: string[] = [];
+	if (env.transferBin) transferBin.push(env.transferBin);
+	transferBin.push(join(env.resourcesPath, "bin", transferExe));
+	if (cargoTarget) {
+		transferBin.push(
+			join(cargoTarget, "release", transferExe),
+			join(cargoTarget, "debug", transferExe),
+		);
+	}
+
 	return {
 		engineData: join(env.userData, "engine"),
 		logs: env.logs,
 		consoleDist,
 		engineBin,
 		agentdBin,
+		transferBin,
 		factoryDir: join(env.userData, "factory"),
 		serversFile: join(env.userData, "servers.json"),
 		stacksDir: env.isPackaged

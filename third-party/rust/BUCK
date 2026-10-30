@@ -16,7 +16,7 @@ git_fetch(
 git_fetch(
     name = "grafeo-9bdcc1c5e4b720e7.git",
     repo = "https://github.com/ostrium-labs/grafeo",
-    rev = "09a495dd64ee621fe0bae5c479465f6c065cf781",
+    rev = "bc6091e35953935f8221c3f0631d5aae77858e8f",
     visibility = [],
 )
 
@@ -9996,34 +9996,34 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "ctutils-0.4.2.crate",
-    sha256 = "7d5515a3834141de9eafb9717ad39eea8247b5674e6066c404e8c4b365d2a29e",
-    strip_prefix = "ctutils-0.4.2",
-    urls = ["https://static.crates.io/crates/ctutils/0.4.2/download"],
+    name = "ctutils-0.4.4.crate",
+    sha256 = "12218662ccac37d9714f2191252553d67585b97df8c839cbe49e0bde278dc865",
+    strip_prefix = "ctutils-0.4.4",
+    urls = ["https://static.crates.io/crates/ctutils/0.4.4/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "ctutils-0.4",
-    srcs = [":ctutils-0.4.2.crate"],
+    srcs = [":ctutils-0.4.4.crate"],
     crate = "ctutils",
-    crate_root = "ctutils-0.4.2.crate/src/lib.rs",
+    crate_root = "ctutils-0.4.4.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "ctutils",
         "CARGO_CRATE_NAME": "ctutils",
-        "CARGO_MANIFEST_DIR": "ctutils-0.4.2.crate",
+        "CARGO_MANIFEST_DIR": "ctutils-0.4.4.crate",
         "CARGO_PKG_AUTHORS": "RustCrypto Developers",
         "CARGO_PKG_DESCRIPTION": "Constant-time utility library with selection and equality testing support targeting cryptographic\napplications. Supports `const fn` where appropriate. Built on the `cmov` crate which provides\narchitecture-specific predication intrinsics. Heavily inspired by the `subtle` crate.\n",
-        "CARGO_PKG_HOMEPAGE": "https://github.com/RustCrypto/utils/tree/master/ctselect",
+        "CARGO_PKG_HOMEPAGE": "",
         "CARGO_PKG_NAME": "ctutils",
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/utils",
-        "CARGO_PKG_RUST_VERSION": "1.85",
-        "CARGO_PKG_VERSION": "0.4.2",
+        "CARGO_PKG_RUST_VERSION": "1.87",
+        "CARGO_PKG_VERSION": "0.4.4",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "4",
-        "CARGO_PKG_VERSION_PATCH": "2",
+        "CARGO_PKG_VERSION_PATCH": "4",
         "CARGO_PKG_VERSION_PRE": "",
     },
     visibility = [],
@@ -19421,7 +19421,7 @@ cargo.rust_library(
     visibility = [],
     deps = [
         ":bstr-1",
-        ":hashbrown-0.17",
+        ":hashbrown-0.15",
     ],
 )
 
@@ -20126,6 +20126,18 @@ cargo.rust_library(
         ":gix-error-0.4",
         ":zlib-rs-0.6",
     ],
+)
+
+cargo_alias(
+    name = "glob",
+    actual = ":glob-0.3",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
 )
 
 http_archive(
@@ -39060,23 +39072,23 @@ cargo_alias(
 )
 
 http_archive(
-    name = "pulldown-cmark-0.13.4.crate",
-    sha256 = "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e",
-    strip_prefix = "pulldown-cmark-0.13.4",
-    urls = ["https://static.crates.io/crates/pulldown-cmark/0.13.4/download"],
+    name = "pulldown-cmark-0.13.5.crate",
+    sha256 = "278e9268c93b9e498a2da46c34d90ba93a3255eb99009646398f34bc73ab36eb",
+    strip_prefix = "pulldown-cmark-0.13.5",
+    urls = ["https://static.crates.io/crates/pulldown-cmark/0.13.5/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "pulldown-cmark-0.13",
-    srcs = [":pulldown-cmark-0.13.4.crate"],
+    srcs = [":pulldown-cmark-0.13.5.crate"],
     crate = "pulldown_cmark",
-    crate_root = "pulldown-cmark-0.13.4.crate/src/lib.rs",
+    crate_root = "pulldown-cmark-0.13.5.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "pulldown_cmark",
         "CARGO_CRATE_NAME": "pulldown_cmark",
-        "CARGO_MANIFEST_DIR": "pulldown-cmark-0.13.4.crate",
+        "CARGO_MANIFEST_DIR": "pulldown-cmark-0.13.5.crate",
         "CARGO_PKG_AUTHORS": "Raph Levien <raph.levien@gmail.com>:Marcus Klaas de Vries <mail@marcusklaas.nl>",
         "CARGO_PKG_DESCRIPTION": "A pull parser for CommonMark",
         "CARGO_PKG_HOMEPAGE": "",
@@ -39084,10 +39096,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/raphlinus/pulldown-cmark",
         "CARGO_PKG_RUST_VERSION": "1.71.1",
-        "CARGO_PKG_VERSION": "0.13.4",
+        "CARGO_PKG_VERSION": "0.13.5",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "13",
-        "CARGO_PKG_VERSION_PATCH": "4",
+        "CARGO_PKG_VERSION_PATCH": "5",
         "CARGO_PKG_VERSION_PRE": "",
         "OUT_DIR": "$(location :pulldown-cmark-0.13-build-script-run[out_dir])",
     },
@@ -39110,14 +39122,14 @@ cargo.rust_library(
 
 cargo.rust_binary(
     name = "pulldown-cmark-0.13-build-script-build",
-    srcs = [":pulldown-cmark-0.13.4.crate"],
+    srcs = [":pulldown-cmark-0.13.5.crate"],
     crate = "build_script_build",
-    crate_root = "pulldown-cmark-0.13.4.crate/build.rs",
+    crate_root = "pulldown-cmark-0.13.5.crate/build.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "build-script-build",
         "CARGO_CRATE_NAME": "build_script_build",
-        "CARGO_MANIFEST_DIR": "pulldown-cmark-0.13.4.crate",
+        "CARGO_MANIFEST_DIR": "pulldown-cmark-0.13.5.crate",
         "CARGO_PKG_AUTHORS": "Raph Levien <raph.levien@gmail.com>:Marcus Klaas de Vries <mail@marcusklaas.nl>",
         "CARGO_PKG_DESCRIPTION": "A pull parser for CommonMark",
         "CARGO_PKG_HOMEPAGE": "",
@@ -39125,10 +39137,10 @@ cargo.rust_binary(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/raphlinus/pulldown-cmark",
         "CARGO_PKG_RUST_VERSION": "1.71.1",
-        "CARGO_PKG_VERSION": "0.13.4",
+        "CARGO_PKG_VERSION": "0.13.5",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "13",
-        "CARGO_PKG_VERSION_PATCH": "4",
+        "CARGO_PKG_VERSION_PATCH": "5",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -39153,7 +39165,7 @@ buildscript_run(
         "CARGO_PKG_RUST_VERSION": "1.71.1",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "13",
-        "CARGO_PKG_VERSION_PATCH": "4",
+        "CARGO_PKG_VERSION_PATCH": "5",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -39164,7 +39176,7 @@ buildscript_run(
     ],
     rustc_link_lib = True,
     rustc_link_search = True,
-    version = "0.13.4",
+    version = "0.13.5",
 )
 
 http_archive(
@@ -50983,7 +50995,7 @@ cargo.rust_library(
     visibility = [],
     deps = [
         ":fastrand-2",
-        ":getrandom-0.4",
+        ":getrandom-0.3",
         ":once_cell-1",
         ":rustix-1",
     ],
@@ -53981,23 +53993,23 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "typed-path-0.12.3.crate",
-    sha256 = "8e28f89b80c87b8fb0cf04ab448d5dd0dd0ade2f8891bae878de66a75a28600e",
-    strip_prefix = "typed-path-0.12.3",
-    urls = ["https://static.crates.io/crates/typed-path/0.12.3/download"],
+    name = "typed-path-0.12.4.crate",
+    sha256 = "54ec2755506471f54baf5e4bb5499d8e510cc1caf271270e778a736bd2d7336c",
+    strip_prefix = "typed-path-0.12.4",
+    urls = ["https://static.crates.io/crates/typed-path/0.12.4/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "typed-path-0.12",
-    srcs = [":typed-path-0.12.3.crate"],
+    srcs = [":typed-path-0.12.4.crate"],
     crate = "typed_path",
-    crate_root = "typed-path-0.12.3.crate/src/lib.rs",
+    crate_root = "typed-path-0.12.4.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "typed_path",
         "CARGO_CRATE_NAME": "typed_path",
-        "CARGO_MANIFEST_DIR": "typed-path-0.12.3.crate",
+        "CARGO_MANIFEST_DIR": "typed-path-0.12.4.crate",
         "CARGO_PKG_AUTHORS": "Chip Senkbeil <chip@senkbeil.org>",
         "CARGO_PKG_DESCRIPTION": "Provides typed variants of Path and PathBuf for Unix and Windows",
         "CARGO_PKG_HOMEPAGE": "https://github.com/chipsenkbeil/typed-path",
@@ -54005,10 +54017,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/chipsenkbeil/typed-path",
         "CARGO_PKG_RUST_VERSION": "1.65.0",
-        "CARGO_PKG_VERSION": "0.12.3",
+        "CARGO_PKG_VERSION": "0.12.4",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "12",
-        "CARGO_PKG_VERSION_PATCH": "3",
+        "CARGO_PKG_VERSION_PATCH": "4",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -58018,7 +58030,7 @@ cargo.rust_library(
 
 cargo_alias(
     name = "zip",
-    actual = ":zip-7",
+    actual = ":zip-9",
     platforms = [
         "linux-arm64",
         "linux-x86_64",
@@ -58029,34 +58041,34 @@ cargo_alias(
 )
 
 http_archive(
-    name = "zip-7.2.0.crate",
-    sha256 = "c42e33efc22a0650c311c2ef19115ce232583abbe80850bc8b66509ebef02de0",
-    strip_prefix = "zip-7.2.0",
-    urls = ["https://static.crates.io/crates/zip/7.2.0/download"],
+    name = "zip-9.0.5.crate",
+    sha256 = "6e04976da629d3b04204ba8105b396a193af8ad2583b2c79bfb3ab8af580a11e",
+    strip_prefix = "zip-9.0.5",
+    urls = ["https://static.crates.io/crates/zip/9.0.5/download"],
     visibility = [],
 )
 
 cargo.rust_library(
-    name = "zip-7",
-    srcs = [":zip-7.2.0.crate"],
+    name = "zip-9",
+    srcs = [":zip-9.0.5.crate"],
     crate = "zip",
-    crate_root = "zip-7.2.0.crate/src/lib.rs",
-    edition = "2021",
+    crate_root = "zip-9.0.5.crate/src/lib.rs",
+    edition = "2024",
     env = {
         "CARGO_BIN_NAME": "zip",
         "CARGO_CRATE_NAME": "zip",
-        "CARGO_MANIFEST_DIR": "zip-7.2.0.crate",
+        "CARGO_MANIFEST_DIR": "zip-9.0.5.crate",
         "CARGO_PKG_AUTHORS": "Mathijs van de Nes <git@mathijs.vd-nes.nl>:Marli Frost <marli@frost.red>:Ryan Levick <ryan.levick@gmail.com>:Chris Hennick <hennickc@amazon.com>",
-        "CARGO_PKG_DESCRIPTION": "Library to support the reading and writing of zip files.\n",
+        "CARGO_PKG_DESCRIPTION": "Library to support the reading and writing of zip files.",
         "CARGO_PKG_HOMEPAGE": "",
         "CARGO_PKG_NAME": "zip",
         "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/zip-rs/zip2.git",
-        "CARGO_PKG_RUST_VERSION": "1.83.0",
-        "CARGO_PKG_VERSION": "7.2.0",
-        "CARGO_PKG_VERSION_MAJOR": "7",
-        "CARGO_PKG_VERSION_MINOR": "2",
-        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_REPOSITORY": "https://github.com/zip-rs/zip2",
+        "CARGO_PKG_RUST_VERSION": "1.88",
+        "CARGO_PKG_VERSION": "9.0.5",
+        "CARGO_PKG_VERSION_MAJOR": "9",
+        "CARGO_PKG_VERSION_MINOR": "0",
+        "CARGO_PKG_VERSION_PATCH": "5",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -58064,6 +58076,14 @@ cargo.rust_library(
         "deflate-flate2",
         "deflate-flate2-zlib-rs",
     ],
+    platform = {
+        "macos-arm64": dict(
+            deps = [":nix-0.31"],
+        ),
+        "macos-x86_64": dict(
+            deps = [":nix-0.31"],
+        ),
+    },
     visibility = [],
     deps = [
         ":crc32fast-1",
@@ -58252,23 +58272,23 @@ cargo_alias(
 )
 
 http_archive(
-    name = "zstd-0.14.2.crate",
-    sha256 = "057cfd910cfac363a0ada849592624b4c9ff2e10bef504c3433810d78ed96f93",
-    strip_prefix = "zstd-0.14.2",
-    urls = ["https://static.crates.io/crates/zstd/0.14.2/download"],
+    name = "zstd-0.14.3.crate",
+    sha256 = "db3ae9bf90af6e40197bef767eeefc46ad6397420fe873830bd85e5fbbfb3c70",
+    strip_prefix = "zstd-0.14.3",
+    urls = ["https://static.crates.io/crates/zstd/0.14.3/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "zstd-0.14",
-    srcs = [":zstd-0.14.2.crate"],
+    srcs = [":zstd-0.14.3.crate"],
     crate = "zstd",
-    crate_root = "zstd-0.14.2.crate/src/lib.rs",
+    crate_root = "zstd-0.14.3.crate/src/lib.rs",
     edition = "2018",
     env = {
         "CARGO_BIN_NAME": "zstd",
         "CARGO_CRATE_NAME": "zstd",
-        "CARGO_MANIFEST_DIR": "zstd-0.14.2.crate",
+        "CARGO_MANIFEST_DIR": "zstd-0.14.3.crate",
         "CARGO_PKG_AUTHORS": "Alexandre Bury <alexandre.bury@gmail.com>",
         "CARGO_PKG_DESCRIPTION": "Binding for the zstd compression library.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -58276,10 +58296,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "Readme.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/gyscos/zstd-rs",
         "CARGO_PKG_RUST_VERSION": "1.64",
-        "CARGO_PKG_VERSION": "0.14.2",
+        "CARGO_PKG_VERSION": "0.14.3",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "14",
-        "CARGO_PKG_VERSION_PATCH": "2",
+        "CARGO_PKG_VERSION_PATCH": "3",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [

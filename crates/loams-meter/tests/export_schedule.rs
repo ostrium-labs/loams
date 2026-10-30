@@ -411,6 +411,8 @@ mod scheduled {
                 (12, event("t-1", "io.loams.dev.meter.threshold.v1")),
             ]))),
             owned: None,
+            alerts: None,
+            stripe_refused_until: Mutex::new(None),
         };
 
         // Stripe: org_a's house_cpu for the 19th and the 20th (the hours of
@@ -474,5 +476,92 @@ mod scheduled {
         seen.lock().expect("lock").clear();
         assert_eq!(schedule.openmeter_once().await.expect("again"), 0);
         assert!(seen.lock().expect("lock").is_empty());
+    }
+
+    /// A local Stripe that refuses every key with 403, counting requests.
+    async fn refusing_stripe() -> (String, Arc<std::sync::atomic::AtomicUsize>) {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let h = hits.clone();
+        let app = axum::Router::new().fallback(move || {
+            let h = h.clone();
+            async move {
+                h.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                (
+                    axum::http::StatusCode::FORBIDDEN,
+                    "{\"error\":{\"message\":\"The provided key does not have the required permissions\"}}",
+                )
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        (format!("http://{addr}"), hits)
+    }
+
+    #[tokio::test]
+    async fn a_refused_stripe_key_backs_off_hourly_and_tells_the_console_once() {
+        use loams_meter::notify::notifier::Console;
+        use std::sync::atomic::{AtomicI64, Ordering};
+        let (base, hits) = refusing_stripe().await;
+        let store = Arc::new(MemStore::new());
+        let r = records();
+        for m in r.meters {
+            store.put_meter(m).await.expect("meter");
+        }
+        for f in r.features {
+            store.put_feature(f).await.expect("feature");
+        }
+        for c in r.customers {
+            store.create_customer(c, None).await.expect("customer");
+        }
+        for e in r.entitlements {
+            store
+                .create_entitlement(e, None)
+                .await
+                .expect("entitlement");
+        }
+        let mut stripe = StripeConfig::new("rk_test_readonly");
+        stripe.api_base = base;
+        stripe.retry = fast();
+        let console = Arc::new(loams_meter::notify::channels::MemConsole::new());
+        let now = Arc::new(AtomicI64::new(DAY0 + 86_400 + 36_000));
+        let n = now.clone();
+        let schedule = ExportSchedule {
+            house: Arc::new(FakeHouse::default()),
+            store: store.clone() as Arc<dyn MeterStore>,
+            exporters: Exporters {
+                stripe: Some(
+                    StripeExporter::new(stripe, Arc::new(MemLedger::default())).expect("stripe"),
+                ),
+                ..Exporters::default()
+            },
+            clock: Arc::new(move || UtcNanos(n.load(Ordering::SeqCst) * UtcNanos::SECOND)),
+            stream: None,
+            owned: None,
+            alerts: Some(console.clone()),
+            stripe_refused_until: Mutex::new(None),
+        };
+        // The first refusal stops the run after one request and is shown.
+        assert_eq!(schedule.stripe_once().await.expect("run"), 0);
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
+        let shown = console.list("cust_a", 10).await.expect("list");
+        assert_eq!(shown.len(), 1);
+        assert!(shown[0].banner);
+        assert_eq!(shown[0].event_type, loams_meter::export::EXPORT_REFUSED);
+        assert!(shown[0].title.contains("403"), "{}", shown[0].title);
+        // Five minutes later: no request.
+        now.fetch_add(300, Ordering::SeqCst);
+        schedule.stripe_once().await.expect("run");
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
+        // An hour after the refusal it tries again; still refused, not shown again.
+        now.fetch_add(3_400, Ordering::SeqCst);
+        schedule.stripe_once().await.expect("run");
+        assert_eq!(hits.load(Ordering::SeqCst), 2);
+        assert_eq!(console.list("cust_a", 10).await.expect("list").len(), 1);
     }
 }

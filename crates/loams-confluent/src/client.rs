@@ -97,6 +97,27 @@ pub struct Client {
     backoff: Duration,
 }
 
+/// Whether `base` may carry a credential: HTTPS, or plain HTTP to a loopback
+/// address (the in-process fakes the tests start).
+fn credential_safe(base: &str) -> bool {
+    if base.starts_with("https://") {
+        return true;
+    }
+    let Some(rest) = base.strip_prefix("http://") else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = if let Some(v6) = authority.strip_prefix('[') {
+        v6.split(']').next().unwrap_or_default()
+    } else {
+        authority.split(':').next().unwrap_or_default()
+    };
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+}
+
 impl Client {
     /// `base` is [`DEFAULT_BASE`] except in tests. The caller builds the
     /// `reqwest::Client`, so TLS is configured where the process configures it.
@@ -146,6 +167,12 @@ impl Client {
         body: Option<&Value>,
         what: &str,
     ) -> Result<Value, Error> {
+        if !credential_safe(&self.base) {
+            return Err(Error::Usage(format!(
+                "{what}: refusing to send the API key to {} over plain HTTP; use https://",
+                self.base
+            )));
+        }
         let url = if path.starts_with("http://") || path.starts_with("https://") {
             if !path.starts_with(&self.base) {
                 return Err(Error::Decode {
@@ -253,6 +280,26 @@ fn api_message(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn credentials_go_only_over_https_or_loopback() {
+        for ok in [
+            "https://api.example.com",
+            "http://127.0.0.1:9",
+            "http://localhost:8080/v1",
+            "http://[::1]:80",
+        ] {
+            assert!(credential_safe(ok), "{ok}");
+        }
+        for bad in [
+            "http://api.example.com",
+            "http://10.0.0.1:80",
+            "http://127.0.0.1.evil.example",
+            "ftp://127.0.0.1",
+        ] {
+            assert!(!credential_safe(bad), "{bad}");
+        }
+    }
 
     #[test]
     fn debug_shows_the_id_only() {

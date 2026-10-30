@@ -25,7 +25,7 @@ How the exporters behave:
 
 - **Idempotency.** Every send goes to the export ledger before it is attempted. A retry after a crash or a timeout therefore resends the same Stripe `identifier`, Lago `transaction_id` or OpenMeter event id.
 - **One sender per subject.** Stripe usage and OpenMeter run only on the stream partitions a node's counters own, so each subject is exported by exactly one node.
-- **Stripe key permissions.** The key needs write access to meter events and read access to customers.
+- **Stripe key permissions.** The key needs write access to meter events and read access to customers. If Stripe refuses the key (401 or 403), the usage export logs it once, shows it as a console notification for the affected customer, and retries hourly instead of every 5 minutes. Set `LOAMS_METER_STRIPE_EXPORT_USAGE=false` to turn the usage export off.
 - **Stripe billing periods** must start on whole UTC hours. If a period does not, that customer's usage export stops and an error is logged.
 
 ## The mapping file

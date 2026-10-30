@@ -122,6 +122,7 @@ opensrv-mysql = { workspace = true, optional = true }
 loams-qdrant = { workspace = true, optional = true }
 loams-query.workspace = true
 loams-store.workspace = true
+loams-transfer = { workspace = true, optional = true }
 loams-sqlgate = { path = "../loams-sqlgate", optional = true }
 loams-stream-grpc = { workspace = true, optional = true }
 loams-tikv = { workspace = true, optional = true }
@@ -152,7 +153,10 @@ ulid.workspace = true
 url.workspace = true
 
 [features]
-default = ["es", "flight", "hnsw", "knowledge", "live", "qdrant"]
+default = ["es", "flight", "hnsw", "knowledge", "live", "qdrant", "transfer"]
+# Resumable transfers and job runs for the desktop (design 85, DQ1 Task 5):
+# `/v1/namespaces/{ns}/transfers` and `/runs`, and HTTP/3 on the TLS main port.
+transfer = ["dep:loams-transfer"]
 # Serve the Elasticsearch REST API (plan M1.5; `--es-listen`).
 es = ["dep:loams-es"]
 # The TiKV metastore (R1 plan Task 6; `--meta tikv://…` on `dev` and

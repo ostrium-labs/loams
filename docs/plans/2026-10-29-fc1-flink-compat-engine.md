@@ -183,3 +183,4 @@ Then Task 2 after Task 1, Task 4 after Task 3, Task 6 after Task 5, and Tasks 7â
 | 6 | [fc1-rulings/t6.md](fc1-rulings/t6.md) | 345 programs, 330 cases; Beam-style Nexmark seeding; the restore flow; the self-check; executable `.q` cases deferred to Task 22 |
 | 8 | [fc1-rulings/t8.md](fc1-rulings/t8.md) | slatedb spike: zero-copy rescale and pointer checkpoints, slower naive writes; RocksDB stays FC1's backend, re-measure on S3 in FC2 |
 | 9 | [fc0-exit-report.md](fc0-exit-report.md) | FC0 gate met; the FC1 bar is at least 144 of the 180 in-scope recorded test programs, plus Nexmark |
+| 10 | [fc1-rulings/t10.md](fc1-rulings/t10.md) | No JVM fallback in the expression port; Loams engine kernels from op 900; UTC session zone; string and timestamp comparisons admitted; local executor until Task 11; the 180-case bar; legacy group windows in FC1's bar |

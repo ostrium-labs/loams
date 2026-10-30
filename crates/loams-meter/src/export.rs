@@ -67,6 +67,13 @@ pub const EXPORT_EVERY: Duration = Duration::from_secs(5 * 60);
 /// windows for up to 24 hours, §63 §8.2).
 pub const LOOKBACK: Duration = Duration::from_secs(26 * 3600);
 
+/// How long Stripe's usage export waits after Stripe refused its key (401
+/// or 403) before it tries again.
+pub const REFUSED_RETRY: Duration = Duration::from_secs(3600);
+
+/// The console notification type for an exporter the provider refuses.
+pub const EXPORT_REFUSED: &str = "io.loams.dev.meter.export.refused.v1";
+
 /// How often Stripe's payment state is polled.
 pub const POLL_EVERY: Duration = Duration::from_secs(24 * 3600);
 
@@ -748,6 +755,11 @@ pub struct ExportSchedule<H> {
     /// The partitions this node exports from (the counter partitions it
     /// owns, so each is exported by one node); `None`: every partition.
     pub owned: Option<Arc<crate::run::Counters>>,
+    /// Where a provider's refusal is shown (the console channel, D2402).
+    pub alerts: Option<Arc<dyn crate::notify::notifier::Console>>,
+    /// Until when (Unix seconds) Stripe's usage export waits after Stripe
+    /// refused the key; `None` while Stripe accepts it.
+    pub stripe_refused_until: std::sync::Mutex<Option<i64>>,
 }
 
 impl<H> fmt::Debug for ExportSchedule<H> {
@@ -816,6 +828,59 @@ impl<H: HouseSql> ExportSchedule<H> {
             ))
     }
 
+    #[cfg_attr(not(feature = "export-stripe"), allow(dead_code))]
+    fn refused_until(&self) -> Option<i64> {
+        *self
+            .stripe_refused_until
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Sets the refusal deadline; answers the previous one.
+    #[cfg_attr(not(feature = "export-stripe"), allow(dead_code))]
+    fn set_refused(&self, until: Option<i64>) -> Option<i64> {
+        std::mem::replace(
+            &mut *self
+                .stripe_refused_until
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+            until,
+        )
+    }
+
+    /// A console notification for the customer whose export Stripe
+    /// refused (once per refusal, not per retry).
+    #[cfg_attr(not(feature = "export-stripe"), allow(dead_code))]
+    async fn alert_refused(&self, records: &Records, p: &StripePeriod, status: u16, now: i64) {
+        let Some(console) = &self.alerts else {
+            return;
+        };
+        let Some(customer) = records
+            .customers
+            .iter()
+            .find(|c| c.stripe_customer_id.as_deref() == Some(p.stripe_customer_id.as_str()))
+        else {
+            return;
+        };
+        let title = format!("Stripe refused the usage export ({status})");
+        let n = crate::notify::notifier::ConsoleNotification {
+            id: format!("stripe-refused/{now}"),
+            customer_id: customer.id.clone(),
+            event_type: EXPORT_REFUSED.to_string(),
+            feature: p.feature.key.clone(),
+            title: title.clone(),
+            body: format!(
+                "{title}. The Stripe key needs write access to meter events. \
+                 The export retries every hour and sends what is due once Stripe accepts it."
+            ),
+            banner: true,
+            at: loams_meter_core::UtcNanos(now.saturating_mul(loams_meter_core::UtcNanos::SECOND)),
+        };
+        if let Err(err) = console.notify(n).await {
+            tracing::warn!(%err, "the Stripe refusal could not be shown in the console");
+        }
+    }
+
     /// One run of Stripe's period export (D2403): every period of
     /// [`stripe_periods`] whose subject's partition this node owns. A
     /// customer whose export fails is logged and the others go on; an
@@ -824,6 +889,9 @@ impl<H: HouseSql> ExportSchedule<H> {
         #[cfg(feature = "export-stripe")]
         if let Some(stripe) = &self.exporters.stripe {
             let now = self.now_secs();
+            if self.refused_until().is_some_and(|until| now < until) {
+                return Ok(0);
+            }
             let records = self.store.records().await.map_err(ledger_err)?;
             let owned = self.partitions().await;
             let mut sent = 0;
@@ -845,7 +913,30 @@ impl<H: HouseSql> ExportSchedule<H> {
                     hours: parse_period_hours(&tsv)?,
                 };
                 match stripe.export_period(&export).await {
-                    Ok(r) => sent += r.sent as usize,
+                    Ok(r) => {
+                        sent += r.sent as usize;
+                        if self.set_refused(None).is_some() {
+                            tracing::info!("Stripe accepts the usage export again");
+                        }
+                    }
+                    Err(ExportError::Rejected {
+                        status: status @ (401 | 403),
+                        message,
+                        ..
+                    }) => {
+                        // The key, not this customer: stop the run, retry
+                        // hourly, and say so once.
+                        let first = self
+                            .set_refused(Some(
+                                now + i64::try_from(REFUSED_RETRY.as_secs()).unwrap_or(3600),
+                            ))
+                            .is_none();
+                        if first {
+                            tracing::warn!(status, %message, "Stripe refused the usage export's key; retrying hourly (the key needs write access to meter events)");
+                            self.alert_refused(&records, &p, status, now).await;
+                        }
+                        return Ok(sent);
+                    }
                     Err(err @ ExportError::OffHourPeriod { .. }) => {
                         tracing::error!(subject = p.subject.as_str(), %err, "Stripe export stopped for this customer");
                     }

@@ -56,6 +56,8 @@ mod query;
 pub mod repos;
 mod sql;
 pub mod streams;
+#[cfg(feature = "transfer")]
+pub mod transfers;
 pub(crate) mod workspaces;
 
 use std::collections::HashMap;

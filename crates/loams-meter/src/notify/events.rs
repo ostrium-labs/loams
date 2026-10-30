@@ -54,6 +54,20 @@ impl MeterEvent {
             "data": Value::Object(self.data.clone()),
         })
     }
+
+    /// Back from [`MeterEvent::to_cloudevent_json`] (a delivery's body, for
+    /// a retry); `None` when a field is missing or malformed.
+    pub fn from_cloudevent_json(v: &Value) -> Option<MeterEvent> {
+        let s = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_string);
+        Some(MeterEvent {
+            id: s("id")?,
+            r#type: s("type")?,
+            source: s("source")?,
+            subject: s("subject")?,
+            time: UtcNanos::from_rfc3339(&s("time")?).ok()?,
+            data: v.get("data")?.as_object()?.clone(),
+        })
+    }
 }
 
 fn period_tag(p: UtcNanos) -> String {

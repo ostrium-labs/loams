@@ -1,0 +1,24 @@
+# Suggested OpenMeter meters for Loams cost events (design 84 §13.1).
+# Cost events are io.loams.dev.cost.allocation.v1 and ...adjustment.v1;
+# cost_micros is an integer in micro-units of the event's currency.
+meters:
+  - slug: loams_cost_micros
+    description: Loams cost attribution (design 84), micro-units of the reporting currency
+    eventType: io.loams.dev.cost.allocation.v1
+    aggregation: SUM
+    valueProperty: $.cost_micros
+    groupBy:
+      engine: $.engine
+      project: $.project
+      query_class: $.query_class
+      kind: $.kind
+      basis: $.basis
+  - slug: loams_cost_adjustment_micros
+    eventType: io.loams.dev.cost.adjustment.v1
+    aggregation: SUM
+    valueProperty: $.cost_micros
+    groupBy:
+      engine: $.engine
+      project: $.project
+      query_class: $.query_class
+      kind: $.kind
