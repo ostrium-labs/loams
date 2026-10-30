@@ -63,6 +63,7 @@ gix-pack = { package = "gix-pack", version = "=0.75.0", default-features = false
 gix-validate = { package = "gix-validate", version = "=0.12.0", default-features = false }
 gix-worktree = { package = "gix-worktree", version = "=0.57.0", default-features = false, features = ["attributes"] }
 gix-zlib = { package = "gix-zlib", version = "=0.2.0", default-features = false }
+glob = { package = "glob", version = "=0.3.4", default-features = false }
 grafeo = { package = "grafeo", version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "09a495dd64ee621fe0bae5c479465f6c065cf781", default-features = false, features = ["algos", "cdc", "gql", "grafeo-file", "metrics", "parallel", "regex", "spill", "tracing", "wal"] }
 grafeo-adapters = { package = "grafeo-adapters", version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "09a495dd64ee621fe0bae5c479465f6c065cf781", default-features = false, features = ["algos", "gql", "parallel", "rayon", "tracing"] }
 grafeo-common = { package = "grafeo-common", version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "09a495dd64ee621fe0bae5c479465f6c065cf781", default-features = true, features = ["tracing"] }

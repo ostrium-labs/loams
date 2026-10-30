@@ -29,6 +29,9 @@
 //! - [`client`]: resumable upload and download pipelines with bounded
 //!   memory, the local state, progress, and following a run's log.
 //! - [`agent`]: the desktop sidecar, JSON lines on stdio.
+//!
+//! Job runs (DQ1 Task 4): [`runner`], which claims runs of configured jobs
+//! and streams their logs and artifacts back.
 
 pub mod agent;
 pub mod api;
@@ -39,6 +42,7 @@ pub mod journal;
 pub mod keys;
 pub mod net;
 pub mod run;
+pub mod runner;
 pub mod server;
 pub mod standalone;
 pub mod transfer;

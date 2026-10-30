@@ -20104,6 +20104,18 @@ cargo.rust_library(
     ],
 )
 
+cargo_alias(
+    name = "glob",
+    actual = ":glob-0.3",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
 http_archive(
     name = "glob-0.3.4.crate",
     sha256 = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b",

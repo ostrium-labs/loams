@@ -7528,6 +7528,7 @@ dependencies = [
  "gix-validate",
  "gix-worktree",
  "gix-zlib",
+ "glob",
  "grafeo",
  "grafeo-adapters",
  "grafeo-common",
