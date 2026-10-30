@@ -9824,6 +9824,7 @@ dependencies = [
  "loams-authz",
  "loams-cloudevents",
  "loams-common",
+ "loams-cost",
  "loams-meter-core",
  "loams-meter-export",
  "loams-meter-gate",
