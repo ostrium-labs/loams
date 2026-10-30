@@ -38,6 +38,8 @@ use crate::frame::{Decoder, Proto, Value};
 #[derive(Debug)]
 pub struct Shared {
     pub store: Store,
+    /// The raw store of `raw_databases` (none when the list is empty).
+    pub raw: Option<loams_kv::RawStore>,
     pub password: Option<String>,
     pub databases: u16,
     pub config: RespConfig,
@@ -98,9 +100,15 @@ pub enum ReplyMode {
 impl Shared {
     /// The shared state for `config`, on `store`.
     pub fn new(config: RespConfig, store: Store, listen: SocketAddr) -> Result<Self, String> {
+        // A memory store's raw databases live in memory too (tests); a TiKV
+        // store's are opened by `Server::bind`.
+        let raw = (!config.raw_databases.is_empty()
+            && matches!(config.store, crate::config::StoreSection::Memory { .. }))
+        .then(|| loams_kv::RawStore::memory(store.root().to_vec()));
         Ok(Shared {
             password: config.password()?,
             databases: config.databases,
+            raw,
             store,
             started: Instant::now(),
             clients: Mutex::new(BTreeMap::new()),
@@ -110,6 +118,11 @@ impl Shared {
             config,
             listen,
         })
+    }
+
+    /// Whether `db` is a raw database.
+    pub fn is_raw(&self, db: u8) -> bool {
+        self.config.raw_databases.contains(&db)
     }
 
     /// Updates a client's entry, if it is still registered.
@@ -130,10 +143,25 @@ impl Server {
     /// Opens the store and binds the listener.
     pub async fn bind(config: RespConfig) -> Result<Self, String> {
         let store_config = config.store_config()?;
+        let raw = match (&store_config, config.raw_databases.is_empty()) {
+            #[cfg(feature = "tikv")]
+            (loams_kv::StoreConfig::Tikv(tikv), false) => Some(
+                loams_kv::RawStore::open(tikv)
+                    .await
+                    .map_err(|e| format!("opening the raw store: {e}"))?,
+            ),
+            _ => None,
+        };
         let store = Store::open(store_config)
             .await
             .map_err(|e| format!("opening the store: {e}"))?;
-        Self::bind_on(config, store).await
+        let mut server = Self::bind_on(config, store).await?;
+        if let Some(raw) = raw {
+            Arc::get_mut(&mut server.shared)
+                .ok_or("the shared state is already in use")?
+                .raw = Some(raw);
+        }
+        Ok(server)
     }
 
     /// Binds the listener over an open store (tests).
