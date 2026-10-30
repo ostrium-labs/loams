@@ -24,6 +24,7 @@ cargo_package(
         "knowledge",
         "live",
         "qdrant",
+        "transfer",
     ],
     lib = {
         "crate": "loams",
@@ -185,6 +186,11 @@ cargo_package(
             "root": "tests/stream_grpc_events.rs",
         },
         {
+            "name": "transfers",
+            "crate": "transfers",
+            "root": "tests/transfers.rs",
+        },
+        {
             "name": "upgrade_e2e",
             "crate": "upgrade_e2e",
             "root": "tests/upgrade_e2e.rs",
@@ -217,6 +223,7 @@ cargo_package(
         "//crates/loams-query:loams-query",
         "//crates/loams-risingwave:loams-risingwave",
         "//crates/loams-store:loams-store",
+        "//crates/loams-transfer:loams-transfer",
         "//crates/loams-upgrade:loams-upgrade",
         "//crates/loams-worker:loams-worker",
         "//crates/loams-zitadel:loams-zitadel",

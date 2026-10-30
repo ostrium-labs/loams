@@ -40,6 +40,9 @@ fn transport_config() -> quinn::TransportConfig {
     t
 }
 
+/// The QUIC endpoint type, for embedders that hold one.
+pub type Endpoint = quinn::Endpoint;
+
 /// Binds a QUIC endpoint for the server on `addr` (UDP).
 pub fn bind_server(addr: SocketAddr, id: &ServerIdentity) -> io::Result<quinn::Endpoint> {
     let tls = tls::server_config(id, &[tls::ALPN_H3])?;

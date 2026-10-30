@@ -2326,15 +2326,26 @@ impl Server {
         // X8); a dropped gate means the start failed.
         let (serve_now, serve_gate) = oneshot::channel::<()>();
         let app = parts.app;
+        // HTTP/3 at the main port's number on UDP, with its TLS files (design
+        // 85, D2437): the same app; the TCP listener is the HTTP/2 fallback.
+        #[cfg(feature = "transfer")]
+        let h3 = api::transfers::h3_endpoint(&config.tls, local_addr);
         let http = tokio::spawn(async move {
             if serve_gate.await.is_err() {
                 return;
             }
+            #[cfg(feature = "transfer")]
+            let h3_task =
+                h3.map(|ep| tokio::spawn(loams_transfer::net::h3::serve(ep, app.clone())));
             let serve = axum::serve(listener, app).with_graceful_shutdown(async move {
                 let _ = stopped.await;
             });
             if let Err(err) = serve.await {
                 tracing::error!(%err, "HTTP server failed");
+            }
+            #[cfg(feature = "transfer")]
+            if let Some(t) = h3_task {
+                t.abort();
             }
         });
         let mut server = Self {
@@ -3365,14 +3376,27 @@ impl Server {
             #[cfg(feature = "meter")]
             meter_gate: meter_gate.clone(),
         };
+        // Resumable transfers and job runs (design 85, DQ1 Task 5): one set of
+        // routes on this node's metastore and bucket, on every gateway router.
+        #[cfg(feature = "transfer")]
+        let transfers = api::transfers::routes(meta_store.clone(), store.clone());
         let (app, tailscale, connect_socket) = match (roles.gateway, config.cluster.is_some()) {
             (true, false) => {
                 #[cfg(feature = "live")]
                 let main_state = without_live_beyond_loopback(&state, config);
                 let router = api::router(state);
+                #[cfg(feature = "transfer")]
+                let router = router.merge(transfers.clone());
                 #[cfg(feature = "live")]
                 let main_router = match main_state {
-                    Some(main_state) => api::router(main_state),
+                    // A main state without Live builds its own router, which
+                    // needs the transfer routes too.
+                    Some(main_state) => {
+                        let r = api::router(main_state);
+                        #[cfg(feature = "transfer")]
+                        let r = r.merge(transfers.clone());
+                        r
+                    }
                     None => router.clone(),
                 };
                 #[cfg(not(feature = "live"))]
@@ -3428,6 +3452,8 @@ impl Server {
             }
             (true, true) => {
                 let router = api::router(state);
+                #[cfg(feature = "transfer")]
+                let router = router.merge(transfers);
                 // The meter's `LeaseService` is internal: only on the cluster
                 // listener, never on a port with end-user authentication.
                 #[cfg(feature = "meter")]
