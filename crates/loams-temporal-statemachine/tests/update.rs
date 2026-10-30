@@ -59,7 +59,7 @@ fn admit(s: &MutableState, id: &str, now: i64) -> Transition {
 fn body<M: prost::Message>(type_url: &str, m: &M) -> Option<prost_types::Any> {
     Some(prost_types::Any {
         type_url: type_url.into(),
-        value: m.encode_to_vec().into(),
+        value: m.encode_to_vec(),
     })
 }
 

@@ -224,7 +224,7 @@ async fn worker(
             .collect();
         let is_put = match args.op.as_str() {
             "put" => true,
-            "mix" => rng.next() % 10 == 0,
+            "mix" => rng.next().is_multiple_of(10),
             _ => false,
         };
         let t0 = Instant::now();

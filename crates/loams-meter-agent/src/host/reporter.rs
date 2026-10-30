@@ -502,10 +502,11 @@ impl Worker {
     }
 
     fn check_shutdown(&mut self) {
-        if self.buffer.is_empty() && self.batch.is_empty() {
-            if let Some(done) = self.shutdown.take() {
-                let _ = done.send(());
-            }
+        if self.buffer.is_empty()
+            && self.batch.is_empty()
+            && let Some(done) = self.shutdown.take()
+        {
+            let _ = done.send(());
         }
     }
 }
