@@ -1130,6 +1130,7 @@ mod served {
 
     /// The meter of this node, over the metastore and the bucket: the
     /// role's services, and the counter owners over `_system/_meter`.
+    #[allow(clippy::too_many_arguments)]
     pub fn build(
         meta: Arc<dyn MetaStore>,
         store: Store,
@@ -1376,7 +1377,7 @@ mod served {
                 };
                 let payments = Arc::new(
                     StripePayments::new(
-                        StripeConfig::new(key),
+                        StripeConfig::new(key.clone()),
                         WebhookVerifier::new(secrets).map_err(|e| e.to_string())?,
                         Arc::new(loams_meter::export::CustomerPayments(
                             role.customers.clone(),
