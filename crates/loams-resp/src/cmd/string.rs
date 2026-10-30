@@ -160,7 +160,7 @@ impl SetOptions {
 
     /// The expiry in Unix ms (0: none) at `now`, or Valkey's error for a
     /// non-positive or overflowing time.
-    fn expire_at(self, now: u64, command: &str) -> Result<Option<i64>, Value> {
+    pub(crate) fn expire_at(self, now: u64, command: &str) -> Result<Option<i64>, Value> {
         let Some((unit, n)) = self.expire else {
             return Ok(None);
         };

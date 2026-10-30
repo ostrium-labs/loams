@@ -23,6 +23,7 @@ mod hash;
 mod keys;
 mod keyspace;
 mod list;
+mod raw;
 mod server;
 mod set;
 mod string;
@@ -479,6 +480,22 @@ pub async fn dispatch(shared: &Arc<Shared>, conn: &mut Conn, args: Vec<Bytes>) -
         return (wrong_arity(spec.name), Flow::Continue);
     }
     shared.with_client(conn.id, |c| c.last_command = Some(spec.name.to_owned()));
+    // A raw database (`raw_databases`) serves strings on TiKV's RawKV API;
+    // connection and server commands run as usual.
+    if spec.name == "flushall" && !shared.config.raw_databases.is_empty() {
+        return (
+            Value::err(
+                "ERR FLUSHALL is not supported while raw_databases is set: \
+                 the raw databases' keys would survive it",
+            ),
+            Flow::Continue,
+        );
+    }
+    if shared.is_raw(conn.db)
+        && (spec.name == "flushdb" || !matches!(spec.family, Family::Conn | Family::Server))
+    {
+        return (raw::run(shared, conn, spec, &args).await, Flow::Continue);
+    }
     match spec.family {
         Family::Conn => conn::run(shared, conn, spec, &args),
         Family::Server => (server::run(shared, conn, spec, &args).await, Flow::Continue),

@@ -38,20 +38,28 @@ pub async fn ensure_keyspace(pd_http: &str, name: &str) -> Result<KeyspaceMeta, 
     validate_name(name)?;
     let http = http_client(DEFAULT_REQUEST_TIMEOUT)?;
     let base = pd_http.trim_end_matches('/');
-    if let Some(meta) = get(&http, base, name).await? {
-        return Ok(meta);
+    // A concurrent create can answer "already exists" or, while PD's etcd
+    // transaction races the other one, an etcd conflict; either way the
+    // keyspace is (being) created, so read it again, a few times.
+    for attempt in 0..CREATE_ATTEMPTS {
+        if let Some(meta) = get(&http, base, name).await? {
+            return Ok(meta);
+        }
+        if let Some(meta) = create(&http, base, name).await? {
+            tracing::info!(keyspace = name, id = meta.id, "created TiKV keyspace");
+            return Ok(meta);
+        }
+        tokio::time::sleep(Duration::from_millis(50 * (u64::from(attempt) + 1))).await;
     }
-    if let Some(meta) = create(&http, base, name).await? {
-        tracing::info!(keyspace = name, id = meta.id, "created TiKV keyspace");
-        return Ok(meta);
-    }
-    // Someone else created it between our GET and POST.
     get(&http, base, name).await?.ok_or_else(|| TikvError::Pd {
         op: "GET keyspace after a concurrent create",
         status: 500,
         body: "keyspace does not exist".to_string(),
     })
 }
+
+/// How often [`ensure_keyspace`] retries after a concurrent create.
+const CREATE_ATTEMPTS: u32 = 8;
 
 /// Moves the keyspace `name` to `state` (`ENABLED`, `DISABLED`, `ARCHIVED`
 /// or `TOMBSTONE`) through `PUT /pd/api/v2/keyspaces/<name>/state`, and
@@ -79,11 +87,13 @@ pub async fn set_keyspace_state(
     let (status, body) = send(OP, request).await?;
     match classify(status, &body) {
         Answer::Ok => parse(OP, &body, name),
-        Answer::DoesNotExist | Answer::AlreadyExists | Answer::Other => Err(TikvError::Pd {
-            op: OP,
-            status,
-            body,
-        }),
+        Answer::DoesNotExist | Answer::AlreadyExists | Answer::Conflict | Answer::Other => {
+            Err(TikvError::Pd {
+                op: OP,
+                status,
+                body,
+            })
+        }
     }
 }
 
@@ -109,7 +119,7 @@ pub(crate) async fn get(
     match classify(status, &body) {
         Answer::Ok => parse(OP, &body, name).map(Some),
         Answer::DoesNotExist => Ok(None),
-        Answer::AlreadyExists | Answer::Other => Err(TikvError::Pd {
+        Answer::AlreadyExists | Answer::Conflict | Answer::Other => Err(TikvError::Pd {
             op: OP,
             status,
             body,
@@ -198,7 +208,8 @@ async fn create(
     let (status, body) = send(OP, request).await?;
     match classify(status, &body) {
         Answer::Ok => parse(OP, &body, name).map(Some),
-        Answer::AlreadyExists => Ok(None),
+        // Another create of it is in flight or done: the caller reads it.
+        Answer::AlreadyExists | Answer::Conflict => Ok(None),
         Answer::DoesNotExist | Answer::Other => Err(TikvError::Pd {
             op: OP,
             status,
@@ -245,6 +256,8 @@ enum Answer {
     Ok,
     DoesNotExist,
     AlreadyExists,
+    /// PD's etcd transaction lost to a concurrent create.
+    Conflict,
     Other,
 }
 
@@ -254,6 +267,8 @@ fn classify(status: u16, body: &str) -> Answer {
         200 => Answer::Ok,
         500 if body.contains("keyspace does not exist") => Answer::DoesNotExist,
         500 if body.contains("keyspace already exists") => Answer::AlreadyExists,
+        // PD v8.5.8 under concurrent creates of one keyspace.
+        500 if body.contains("ErrEtcdTxnConflict") => Answer::Conflict,
         _ => Answer::Other,
     }
 }
@@ -282,6 +297,13 @@ mod tests {
     #[test]
     fn classify_reads_pd_v8_5_8_bodies() {
         assert_eq!(classify(200, "{}"), Answer::Ok);
+        assert_eq!(
+            classify(
+                500,
+                "\"[PD:etcd:ErrEtcdTxnConflict]etcd transaction failed, conflicted and rolled back\""
+            ),
+            Answer::Conflict
+        );
         assert_eq!(
             classify(500, "\"keyspace does not exist\""),
             Answer::DoesNotExist

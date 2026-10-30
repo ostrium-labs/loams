@@ -62,6 +62,11 @@ pub struct RespConfig {
     /// How writes are acknowledged (D1651; ruling K2-3).
     #[serde(default)]
     pub durability: Durability,
+    /// Databases kept on TiKV's RawKV API, strings only, without PD
+    /// timestamps (coordinator ruling 2026-10-30; `cmd/raw.rs`). Needs the
+    /// `tikv` store (or `memory`, for tests). Default: none.
+    #[serde(default)]
+    pub raw_databases: Vec<u8>,
     /// Where keys are stored.
     pub store: StoreSection,
 }
@@ -165,6 +170,21 @@ impl RespConfig {
                 "databases must be 1 to {MAX_DATABASES}, not {}",
                 self.databases
             ));
+        }
+        for db in &self.raw_databases {
+            if u16::from(*db) >= self.databases {
+                return Err(format!(
+                    "raw_databases names database {db}, but databases is {}",
+                    self.databases
+                ));
+            }
+        }
+        if !self.raw_databases.is_empty() && matches!(self.store, StoreSection::Embedded { .. }) {
+            return Err(
+                "raw_databases needs the tikv store (or memory for tests): the embedded store \
+                 has no raw keyspace"
+                    .into(),
+            );
         }
         if self.requirepass.is_some() && self.requirepass_file.is_some() {
             return Err("set requirepass or requirepass_file, not both".into());
