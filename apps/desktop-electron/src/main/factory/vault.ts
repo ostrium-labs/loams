@@ -29,8 +29,11 @@ export interface VaultCrypto {
 	decrypt(b: Buffer): string;
 }
 
-/** A factory app, or an agent provider's key (D675: `agent:<provider>`). */
-export type VaultKey = FactoryAppId | `agent:${string}`;
+/**
+ * A factory app, an agent provider's key (D675: `agent:<provider>`), or a
+ * server's transfer key (§85 §12: `transfer:<serverId>`).
+ */
+export type VaultKey = FactoryAppId | `agent:${string}` | `transfer:${string}`;
 
 export interface VaultEntry {
 	url: string;
