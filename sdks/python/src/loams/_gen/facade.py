@@ -50,7 +50,7 @@ from loams.live.v1.admin_connect import LiveAdminServiceClient, LiveAdminService
 from loams.meter.v1.customer_pb2 import CreateCustomerRequest, CreateCustomerResponse, GetCustomerRequest, GetCustomerResponse, ListCustomersRequest, ListCustomersResponse, SetPaymentStateRequest, SetPaymentStateResponse, SetSpendControlsRequest, SetSpendControlsResponse, UpdateCustomerRequest, UpdateCustomerResponse
 from loams.meter.v1.entitlement_pb2 import CheckAccessRequest, CheckAccessResponse, CreateEntitlementRequest, CreateEntitlementResponse, CreateGrantRequest, CreateGrantResponse, GetBalanceHistoryRequest, GetBalanceHistoryResponse, GetEntitlementValueRequest, GetEntitlementValueResponse, ListEntitlementsRequest, ListEntitlementsResponse, ListGrantsRequest, ListGrantsResponse, ResetEntitlementRequest, ResetEntitlementResponse, VoidGrantRequest, VoidGrantResponse
 from loams.meter.v1.meter_pb2 import QueryMeterRequest, QueryMeterResponse
-from loams.meter.v1.notification_pb2 import CreateRuleRequest, CreateRuleResponse, CreateWebhookRequest, CreateWebhookResponse, ListDeliveriesRequest, ListDeliveriesResponse, ListRulesRequest, ListRulesResponse, RotateWebhookSecretRequest, RotateWebhookSecretResponse
+from loams.meter.v1.notification_pb2 import CreateRuleRequest, CreateRuleResponse, CreateWebhookRequest, CreateWebhookResponse, ListConsoleNotificationsRequest, ListConsoleNotificationsResponse, ListDeliveriesRequest, ListDeliveriesResponse, ListRulesRequest, ListRulesResponse, RotateWebhookSecretRequest, RotateWebhookSecretResponse
 from loams.meter.v1.plan_pb2 import ApplyPlanRequest, ApplyPlanResponse, AssignPlanRequest, AssignPlanResponse, ListPlansRequest, ListPlansResponse, UnassignPlanRequest, UnassignPlanResponse
 from loams.meter.v1.customer_connect import CustomerServiceClient, CustomerServiceClientSync
 from loams.meter.v1.entitlement_connect import EntitlementServiceClient, EntitlementServiceClientSync
@@ -103,6 +103,10 @@ Reason = Literal[
     "lsn_out_of_retention",
     "endpoint_exists_for_branch",
     "compute_start_failed",
+    "unsupported_pg_version",
+    "beta_major_requires_opt_in",
+    "compute_major_mismatch_refused",
+    "import_checksums_enabled",
     "quota_exceeded",
     "storage_unavailable",
     "secret_already_issued",
@@ -243,6 +247,10 @@ REASONS: Final[tuple[Reason, ...]] = (
     "lsn_out_of_retention",
     "endpoint_exists_for_branch",
     "compute_start_failed",
+    "unsupported_pg_version",
+    "beta_major_requires_opt_in",
+    "compute_major_mismatch_refused",
+    "import_checksums_enabled",
     "quota_exceeded",
     "storage_unavailable",
     "secret_already_issued",
@@ -379,6 +387,10 @@ REASON_CODES: Final[dict[Reason, str]] = {
     "lsn_out_of_retention": "failed_precondition",
     "endpoint_exists_for_branch": "already_exists",
     "compute_start_failed": "unavailable",
+    "unsupported_pg_version": "invalid_argument",
+    "beta_major_requires_opt_in": "failed_precondition",
+    "compute_major_mismatch_refused": "failed_precondition",
+    "import_checksums_enabled": "failed_precondition",
     "quota_exceeded": "resource_exhausted",
     "storage_unavailable": "unavailable",
     "secret_already_issued": "failed_precondition",
@@ -2052,6 +2064,19 @@ MODULES: Final[tuple[ModuleBinding, ...]] = (
             ),
             CallBinding(
                 module="meter.notifications",
+                name="list_console_notifications",
+                proto_name="listConsoleNotifications",
+                method="ListConsoleNotifications",
+                rpc="loams.meter.v1.NotificationService/ListConsoleNotifications",
+                service="loams.meter.v1.NotificationService",
+                package="loams.meter.v1",
+                idempotency="no_side_effects",
+                retry="safe",
+                streaming="unary",
+                pagination=None,
+            ),
+            CallBinding(
+                module="meter.notifications",
                 name="list_deliveries",
                 proto_name="listDeliveries",
                 method="ListDeliveries",
@@ -3133,6 +3158,13 @@ METHODS: Final[dict[str, MethodInfo[Message, Message]]] = {
         input=CreateWebhookRequest,
         output=CreateWebhookResponse,
         idempotency_level=IDEMPOTENCY_LEVELS["none"],
+    ),
+    "loams.meter.v1.NotificationService/ListConsoleNotifications": MethodInfo(
+        name="ListConsoleNotifications",
+        service_name="loams.meter.v1.NotificationService",
+        input=ListConsoleNotificationsRequest,
+        output=ListConsoleNotificationsResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["no_side_effects"],
     ),
     "loams.meter.v1.NotificationService/ListDeliveries": MethodInfo(
         name="ListDeliveries",
@@ -5648,6 +5680,16 @@ class MeterNotificationsModule(Protocol):
     ) -> loams.meter.v1.notification_pb2.CreateWebhookResponse:
         ...
 
+    """`loams.meter.v1.NotificationService/ListConsoleNotifications`, retried: safe.
+    """
+    async def list_console_notifications(
+        self,
+        request: loams.meter.v1.notification_pb2.ListConsoleNotificationsRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.notification_pb2.ListConsoleNotificationsResponse:
+        ...
+
     """`loams.meter.v1.NotificationService/ListDeliveries`, retried: safe.
     """
     async def list_deliveries(
@@ -5707,6 +5749,16 @@ class MeterNotificationsModuleSync(Protocol):
         *,
         options: CallOptions | None = None,
     ) -> loams.meter.v1.notification_pb2.CreateWebhookResponse:
+        ...
+
+    """`loams.meter.v1.NotificationService/ListConsoleNotifications`, retried: safe.
+    """
+    def list_console_notifications(
+        self,
+        request: loams.meter.v1.notification_pb2.ListConsoleNotificationsRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.notification_pb2.ListConsoleNotificationsResponse:
         ...
 
     """`loams.meter.v1.NotificationService/ListDeliveries`, retried: safe.

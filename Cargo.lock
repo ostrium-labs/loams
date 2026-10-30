@@ -9828,6 +9828,7 @@ dependencies = [
  "loams-proto",
  "proptest",
  "reqwest 0.13.5",
+ "rustls",
  "serde",
  "serde_json",
  "serde_yaml_ng",

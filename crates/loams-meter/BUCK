@@ -112,6 +112,7 @@ cargo_package(
     dev_deps = [
         "//third-party/rust:jsonschema",
         "//third-party/rust:proptest",
+        "//third-party/rust:rustls",
         "//third-party/rust:tower",
     ],
     rustc_flags = [
