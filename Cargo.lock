@@ -8566,6 +8566,7 @@ dependencies = [
  "loams-store",
  "loams-stream-grpc",
  "loams-tikv",
+ "loams-transfer",
  "loams-upgrade",
  "loams-worker",
  "loams-zitadel",
