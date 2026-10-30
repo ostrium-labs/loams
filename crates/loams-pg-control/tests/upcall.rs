@@ -1187,3 +1187,52 @@ async fn timeline_import_status_error_and_garbage() {
         .await;
     assert_eq!(code, 400);
 }
+
+// ---- the pageserver's generation validation (NF2 Task 13, part 2) ----
+
+impl Rig {
+    async fn validate(&self, bearer: Option<&str>, body: &Value) -> (u16, String) {
+        let mut req = self
+            .http
+            .post(format!("{}/upcall/v1/validate", self.base))
+            .json(body);
+        if let Some(t) = bearer {
+            req = req.bearer_auth(t);
+        }
+        let resp = req.send().await.unwrap();
+        (resp.status().as_u16(), resp.text().await.unwrap())
+    }
+}
+
+/// The pageserver's deletion queue validates each tenant's generation
+/// before it deletes layers or reports a remote consistent LSN. Loams runs
+/// one pageserver per tenant shard, attached at its last known generation
+/// (emergency mode), so every generation it asks about is current; before
+/// this route its control_plane_api was a junk address and validation
+/// retried forever.
+#[tokio::test]
+async fn pageserver_generations_validate() {
+    let r = import_rig().await;
+    let body = serde_json::json!({"tenants": [
+        {"id": "0f3a3b1c2d4e5f60718293a4b5c6d7e8", "gen": 1},
+        {"id": "1f3a3b1c2d4e5f60718293a4b5c6d7e8-0004", "gen": 7},
+    ]});
+    let (code, text) = r.validate(Some(PAGESERVER_TOKEN), &body).await;
+    assert_eq!(code, 200, "{text}");
+    assert_eq!(
+        serde_json::from_str::<Value>(&text).unwrap(),
+        serde_json::json!({"tenants": [
+            {"id": "0f3a3b1c2d4e5f60718293a4b5c6d7e8", "valid": true},
+            {"id": "1f3a3b1c2d4e5f60718293a4b5c6d7e8-0004", "valid": true},
+        ]})
+    );
+    let (code, _) = r.validate(Some("wrong"), &body).await;
+    assert_eq!(code, 401);
+    let (code, _) = r
+        .validate(Some(PAGESERVER_TOKEN), &serde_json::json!({"nope": 1}))
+        .await;
+    assert_eq!(code, 400);
+    let r = rig().await;
+    let (code, _) = r.validate(Some(PAGESERVER_TOKEN), &body).await;
+    assert_eq!(code, 404, "no pageserver token: not served");
+}
