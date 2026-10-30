@@ -93,8 +93,13 @@ async fn hash_counters() {
             c.call(&["HINCRBY", "h", "n", "x"]).await,
             Value::err("ERR value is not an integer or out of range")
         );
+        // -2 + i64::MAX fits (Valkey answers the sum); 3 more does not.
         assert_eq!(
             c.call(&["HINCRBY", "h", "n", "9223372036854775807"]).await,
+            int(9_223_372_036_854_775_805)
+        );
+        assert_eq!(
+            c.call(&["HINCRBY", "h", "n", "3"]).await,
             Value::err("ERR increment or decrement would overflow")
         );
         assert_eq!(

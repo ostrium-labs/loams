@@ -33,9 +33,18 @@ pub(crate) async fn create<K: Kv>(
     kind: Kind,
     stored: Option<&Meta>,
 ) -> Result<Meta, TxnError> {
+    // A version this transaction deleted earlier (its meta key gone, its GC
+    // entry queued) is not in `stored`, but its data is still there until GC
+    // runs, and GC would then drop the new collection's data too. A fresh
+    // transaction's start timestamp is above every version GC holds, so a GC
+    // entry at the candidate can only be this transaction's own: step past it.
+    let mut ver = layout::next_version(txn.start_ts(), stored.map(|m| m.ver));
+    while txn.get(&layout::gc_key(db, ukey, ver)).await?.is_some() {
+        ver = ver.saturating_add(1);
+    }
     let meta = Meta {
         kind,
-        ver: layout::next_version(txn.start_ts(), stored.map(|m| m.ver)),
+        ver,
         expire_at_ms: 0,
         trailer: Vec::new(),
     };
