@@ -1,3 +1,26 @@
 # An empty include target: set LOAMS_POSTGRES_COMPOSE=./postgres-off.yaml in
 # .env to run the stack without the Loams Postgres (Neon) services.
-services: {}
+#
+# Only pg-upcall-token stays (profile postgres-control), with its volume: the
+# pageserver's upcall token, which pg-control reads at start
+# (--pageserver-upcall-token-file; NF2 Task 13). Without the Postgres stack no
+# pageserver uses it.
+services:
+  pg-upcall-token:
+    profiles: [postgres-control]
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-pg-control:${LOAMS_VERSION:-0.1.3}
+    restart: "no"
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        set -e; t=/run/pg-upcall/token;
+        if [ ! -s "$$t" ]; then
+        head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$$t.new"; chmod 0444 "$$t.new"; mv "$$t.new" "$$t";
+        fi
+    network_mode: none
+    volumes:
+      - pg-upcall-token:/run/pg-upcall
+
+volumes:
+  pg-upcall-token:
