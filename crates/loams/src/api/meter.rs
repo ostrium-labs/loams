@@ -55,10 +55,36 @@ pub struct MeterConfig {
     /// `LOAMS_METER_STRIPE_WEBHOOK_SECRET_FILE`: the endpoint's signing
     /// secrets, one per line (two during a rotation).
     pub stripe_webhook_secret_file: Option<std::path::PathBuf>,
+    /// `LOAMS_METER_STRIPE_EXPORT_USAGE` (default on with a Stripe key): send
+    /// each closed hour's overage as Stripe meter events (D2403). The key
+    /// then also needs write access to meter events.
+    pub stripe_export_usage: bool,
+    /// `LOAMS_METER_EXPORT_MAPPING_FILE`: the provider names per feature,
+    /// meter and customer (YAML or JSON, `loams_meter::export::ExportMapping`);
+    /// without it every default applies.
+    pub export_mapping_file: Option<std::path::PathBuf>,
+    /// `LOAMS_METER_LAGO_URL`: Lago's API (feature `meter-export-lago`).
+    pub lago_url: Option<String>,
+    /// `LOAMS_METER_LAGO_API_KEY_FILE`.
+    pub lago_api_key_file: Option<std::path::PathBuf>,
+    /// `LOAMS_METER_OPENMETER_URL`: OpenMeter's API (feature
+    /// `meter-export-openmeter`).
+    pub openmeter_url: Option<String>,
+    /// `LOAMS_METER_OPENMETER_TOKEN_FILE`: a bearer token, if OpenMeter
+    /// needs one.
+    pub openmeter_token_file: Option<std::path::PathBuf>,
+    /// `LOAMS_METER_OPENMETER_TYPES`: comma-separated type prefixes;
+    /// default every Loams usage type.
+    pub openmeter_types: Vec<String>,
 }
 
 /// A secret file's contents, trimmed.
-#[cfg(any(feature = "meter-export-webhook", feature = "meter-export-stripe"))]
+#[cfg(any(
+    feature = "meter-export-webhook",
+    feature = "meter-export-stripe",
+    feature = "meter-export-lago",
+    feature = "meter-export-openmeter"
+))]
 fn read_secret(path: &std::path::Path, what: &str) -> Result<String, String> {
     std::fs::read_to_string(path)
         .map(|t| t.trim().to_string())
@@ -1164,7 +1190,7 @@ mod served {
             ),
             reader: Arc::new(MeterStream {
                 meta: meta.clone(),
-                reader,
+                reader: reader.clone(),
                 id: tokio::sync::OnceCell::new(),
                 missing_logged: std::sync::atomic::AtomicBool::new(false),
             }),
@@ -1178,6 +1204,8 @@ mod served {
             events: Some(appender.clone() as Arc<dyn MeterEventSink>),
             notifier: Some(Arc::new(role.notifier.clone()) as Arc<dyn MeterEventHandler>),
         });
+        #[allow(unused_variables)]
+        let export_reader = reader;
         let exports_stop = Arc::new(tokio::sync::Notify::new());
         #[allow(unused_mut)]
         let mut public = axum::Router::new();
@@ -1263,7 +1291,62 @@ mod served {
                     clock.clone(),
                 ));
                 exporters.payments = Some(payments);
+                if config.stripe_export_usage {
+                    exporters.stripe = Some(
+                        loams_meter::export::exporters::stripe::StripeExporter::new(
+                            StripeConfig::new(key),
+                            ledger.clone(),
+                        )
+                        .map_err(|e| e.to_string())?,
+                    );
+                }
                 any = true;
+            }
+            #[cfg(feature = "meter-export-lago")]
+            if let Some(url) = &config.lago_url {
+                use loams_meter::export::exporters::lago::{LagoConfig, LagoExporter};
+                let key = match &config.lago_api_key_file {
+                    Some(path) => super::read_secret(path, "LOAMS_METER_LAGO_API_KEY_FILE")?,
+                    None => {
+                        return Err(
+                            "LOAMS_METER_LAGO_URL needs LOAMS_METER_LAGO_API_KEY_FILE".into()
+                        );
+                    }
+                };
+                exporters.lago = Some(
+                    LagoExporter::new(LagoConfig::new(url.clone(), key), ledger.clone())
+                        .map_err(|e| e.to_string())?,
+                );
+                any = true;
+            }
+            #[cfg(feature = "meter-export-openmeter")]
+            if let Some(url) = &config.openmeter_url {
+                use loams_meter::export::exporters::openmeter::{
+                    OpenMeterConfig, OpenMeterExporter,
+                };
+                let mut cfg = OpenMeterConfig::new(url.clone());
+                cfg.token = match &config.openmeter_token_file {
+                    Some(path) => Some(super::read_secret(
+                        path,
+                        "LOAMS_METER_OPENMETER_TOKEN_FILE",
+                    )?),
+                    None => None,
+                };
+                cfg.types = config.openmeter_types.clone();
+                let cursors =
+                    ledger.clone() as Arc<dyn loams_meter::export::exporters::ExportCursors>;
+                exporters.openmeter = Some((
+                    OpenMeterExporter::new(cfg, cursors.clone()).map_err(|e| e.to_string())?,
+                    cursors,
+                ));
+                any = true;
+            }
+            if let Some(path) = &config.export_mapping_file {
+                let text = std::fs::read_to_string(path).map_err(|e| {
+                    format!("LOAMS_METER_EXPORT_MAPPING_FILE {}: {e}", path.display())
+                })?;
+                exporters.mapping =
+                    loams_meter::export::ExportMapping::parse(&text).map_err(|e| e.to_string())?;
             }
             let _ = &ledger;
             if any {
@@ -1272,6 +1355,13 @@ mod served {
                     store: Arc::new(DocStore::new(records.clone())) as Arc<dyn MeterStore>,
                     exporters,
                     clock: clock.clone(),
+                    stream: Some(Arc::new(MeterStream {
+                        meta: meta.clone(),
+                        reader: export_reader.clone(),
+                        id: tokio::sync::OnceCell::new(),
+                        missing_logged: std::sync::atomic::AtomicBool::new(false),
+                    })),
+                    owned: Some(counters.clone()),
                 };
                 exports = Some(Box::pin(schedule.run(exports_stop.clone())));
             }

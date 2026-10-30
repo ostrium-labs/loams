@@ -18,11 +18,25 @@
 //!   identity, and [`stripe_webhook_router`] serves
 //!   `POST /v1/meter/webhooks/stripe`.
 //!
-//! Not wired yet: Stripe's period export (it needs each customer's
-//! included amount and the Stripe meter's event name per feature), Lago
-//! (it needs the subscription and billable-metric code per customer and
-//! meter) and OpenMeter's raw-event export (it needs a stream reader with
-//! the events' offsets). The ledger and cursors they take are here.
+//! - The scheduled exports of D2403, each on when its exporter is
+//!   configured, every [`EXPORT_EVERY`] with the window exporters:
+//!   - Stripe's period export ([`stripe_periods`]): each customer with a
+//!     Stripe id, each metered `SUM` or `COUNT` feature of its subjects,
+//!     the current period (and the previous one for [`LOOKBACK`] after it
+//!     ends), its closed hours from `_meter.windows FINAL` and what the
+//!     grants gave at the period's start;
+//!   - Lago ([`lago_windows`]): the closed hour windows of the last
+//!     [`LOOKBACK`], each with its customer's subscription and the meter's
+//!     billable-metric code;
+//!   - OpenMeter's raw events ([`ExportSchedule::openmeter_once`]): each
+//!     `_system/_meter` partition this node owns, read from the exporter's
+//!     cursor (from the start of the retained stream the first time).
+//!
+//!   The names each provider needs come from [`ExportMapping`]
+//!   (`LOAMS_METER_EXPORT_MAPPING_FILE`), with defaults: the Stripe meter's
+//!   `event_name` and the Lago billable metric's `code` are the meter's
+//!   slug, and the Lago `external_subscription_id` is the Loams customer's
+//!   id.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -39,7 +53,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Notify;
 
 use crate::customers::Clock;
-use crate::store::VersionedDoc;
+use crate::store::{Records, VersionedDoc};
 
 pub use loams_meter_export as exporters;
 
@@ -314,6 +328,312 @@ pub async fn closed_hour_windows<H: HouseSql>(
     parse_hour_windows(&tsv)
 }
 
+/// The provider names the scheduled exports need, per feature, meter and
+/// customer (D2403). Every map is optional: what it does not name gets the
+/// default. Read from YAML or JSON (`LOAMS_METER_EXPORT_MAPPING_FILE`):
+///
+/// ```yaml
+/// stripe:
+///   features: [house_cpu]          # empty: every SUM or COUNT feature
+///   event_names: {house_cpu: loams_house_cpu}   # default: the meter's slug
+/// lago:
+///   meters: [house_cpu_ms]         # empty: every meter
+///   codes: {house_cpu_ms: house_cpu}            # default: the meter's slug
+///   subscriptions: {01JC...: sub_42, org_7: sub_7}  # by customer id or
+///                                  # subject; default: the customer's id
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExportMapping {
+    #[serde(default)]
+    pub stripe: StripeMapping,
+    #[serde(default)]
+    pub lago: LagoMapping,
+}
+
+/// Stripe's names (D2403).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StripeMapping {
+    /// The features to export; empty: every metered `SUM` or `COUNT`
+    /// feature.
+    #[serde(default)]
+    pub features: Vec<String>,
+    /// Feature key → the Stripe meter's `event_name`; default: the
+    /// feature's meter slug.
+    #[serde(default)]
+    pub event_names: BTreeMap<String, String>,
+}
+
+/// Lago's names (D2403).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LagoMapping {
+    /// The meters to export; empty: every meter.
+    #[serde(default)]
+    pub meters: Vec<String>,
+    /// Meter slug → the billable metric's `code`; default: the slug.
+    #[serde(default)]
+    pub codes: BTreeMap<String, String>,
+    /// Customer id or subject → `external_subscription_id`; default: the
+    /// customer's id.
+    #[serde(default)]
+    pub subscriptions: BTreeMap<String, String>,
+}
+
+impl ExportMapping {
+    /// Parses YAML (JSON is YAML too).
+    pub fn parse(text: &str) -> Result<ExportMapping, ExportError> {
+        if text.trim().is_empty() {
+            return Ok(ExportMapping::default());
+        }
+        serde_yaml_ng::from_str(text)
+            .map_err(|e| ExportError::Invalid(format!("the export mapping: {e}")))
+    }
+
+    /// The Stripe meter `event_name` of `feature`, counting `meter`.
+    pub fn stripe_event_name(&self, feature: &str, meter: &str) -> Option<String> {
+        if !self.stripe.features.is_empty() && !self.stripe.features.iter().any(|f| f == feature) {
+            return None;
+        }
+        Some(
+            self.stripe
+                .event_names
+                .get(feature)
+                .cloned()
+                .unwrap_or_else(|| meter.to_string()),
+        )
+    }
+
+    /// The Lago `code` of `meter`, or `None` when it is not exported.
+    pub fn lago_code(&self, meter: &str) -> Option<String> {
+        if !self.lago.meters.is_empty() && !self.lago.meters.iter().any(|m| m == meter) {
+            return None;
+        }
+        Some(
+            self.lago
+                .codes
+                .get(meter)
+                .cloned()
+                .unwrap_or_else(|| meter.to_string()),
+        )
+    }
+
+    /// The Lago subscription of `customer_id` (for `subject`).
+    pub fn lago_subscription(&self, customer_id: &str, subject: &str) -> String {
+        self.lago
+            .subscriptions
+            .get(customer_id)
+            .or_else(|| self.lago.subscriptions.get(subject))
+            .cloned()
+            .unwrap_or_else(|| customer_id.to_string())
+    }
+}
+
+/// One Stripe period to export: the exporter's input but the hours, and
+/// what selects the hours.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StripePeriod {
+    pub event_name: String,
+    pub subject: String,
+    pub stripe_customer_id: String,
+    /// `[start, end)`, Unix seconds.
+    pub period: (i64, i64),
+    pub included: Quantity,
+    /// The feature (its meter and group-by filter).
+    pub feature: loams_meter_house::sql::FeatureDef,
+}
+
+/// The Stripe periods to export at `now` (module docs, D2403).
+pub fn stripe_periods(records: &Records, mapping: &ExportMapping, now: i64) -> Vec<StripePeriod> {
+    use loams_meter_core::balance::balance;
+    use loams_meter_core::{AsOf, EntitlementKind, UtcNanos};
+    let lookback = i64::try_from(LOOKBACK.as_secs()).unwrap_or(0);
+    let mut out = Vec::new();
+    for c in &records.customers {
+        let Some(stripe_id) = c.stripe_customer_id.as_deref() else {
+            continue;
+        };
+        for e in records
+            .entitlements
+            .iter()
+            .filter(|e| c.subjects.contains(&e.subject))
+        {
+            let EntitlementKind::Metered { usage_period, .. } = &e.kind else {
+                continue;
+            };
+            let Some(feature) = records
+                .features
+                .iter()
+                .find(|f| f.key == e.feature && !f.archived)
+            else {
+                continue;
+            };
+            let Some(meter) = feature
+                .meter
+                .as_ref()
+                .and_then(|slug| records.meters.iter().find(|m| &m.slug == slug))
+            else {
+                continue;
+            };
+            if !matches!(
+                meter.aggregation,
+                loams_meter_core::Aggregation::Sum | loams_meter_core::Aggregation::Count
+            ) || feature.unit == loams_meter_core::Unit::ByteHours
+            {
+                continue;
+            }
+            let Some(event_name) =
+                mapping.stripe_event_name(feature.key.as_str(), meter.slug.as_str())
+            else {
+                continue;
+            };
+            let grants: Vec<loams_meter_core::Grant> = records
+                .grants
+                .iter()
+                .filter(|g| g.entitlement == e.id)
+                .cloned()
+                .collect();
+            for (start, end) in loams_meter_house::period::periods_for(
+                usage_period,
+                UtcNanos(now * UtcNanos::SECOND),
+                1,
+            ) {
+                if start > now || end + lookback < now {
+                    continue;
+                }
+                let included = match balance(
+                    e,
+                    &grants,
+                    &[],
+                    UtcNanos(start * UtcNanos::SECOND),
+                    AsOf::Replay,
+                ) {
+                    Ok(b) => Quantity::from_raw(b.total_available.raw().max(0)),
+                    Err(err) => {
+                        tracing::warn!(entitlement = e.id.as_str(), %err, "no included amount; period not exported");
+                        continue;
+                    }
+                };
+                out.push(StripePeriod {
+                    event_name: event_name.clone(),
+                    subject: e.subject.as_str().to_string(),
+                    stripe_customer_id: stripe_id.to_string(),
+                    period: (start, end),
+                    included,
+                    feature: loams_meter_house::period::feature_def(feature, meter),
+                });
+            }
+        }
+    }
+    out
+}
+
+/// The closed hours of `p`'s feature for its subject, summed over the
+/// feature's groups: `hour_start\tvalue\tclose_run` rows.
+pub fn period_hours_sql(p: &StripePeriod, now: i64) -> String {
+    use loams_meter_house::sql::{DATABASE, at, quote};
+    let filter: String = p
+        .feature
+        .filter
+        .iter()
+        .map(|(k, v)| {
+            format!(
+                " AND JSONExtractString(group_key, {}) = {}",
+                quote(k),
+                quote(v)
+            )
+        })
+        .collect();
+    format!(
+        "SELECT toUnixTimestamp(window_start), sum(value), max(close_run) FROM {DATABASE}.windows \
+         FINAL WHERE window_size = 'hour' AND meter = {} AND subject = {} AND window_start >= {} \
+         AND window_start < {}{filter} GROUP BY window_start ORDER BY window_start \
+         FORMAT TabSeparated",
+        quote(&p.feature.meter.slug),
+        quote(&p.subject),
+        at(p.period.0),
+        at(p.period.1.min(now)),
+    )
+}
+
+/// Parses [`period_hours_sql`]'s answer.
+#[cfg(feature = "export-stripe")]
+pub fn parse_period_hours(
+    tsv: &str,
+) -> Result<Vec<loams_meter_export::stripe::HourUsage>, ExportError> {
+    let bad = |line: &str| ExportError::Invalid(format!("a period hour row: {line:?}"));
+    tsv.lines()
+        .filter(|l| !l.is_empty())
+        .map(|line| {
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() != 3 {
+                return Err(bad(line));
+            }
+            Ok(loams_meter_export::stripe::HourUsage {
+                hour_start: f[0].parse().map_err(|_| bad(line))?,
+                value: Quantity::parse(f[1]).map_err(|_| bad(line))?,
+                close_run: f[2].parse().map_err(|_| bad(line))?,
+            })
+        })
+        .collect()
+}
+
+/// The Lago events of `rows`: each window of an exported meter whose
+/// subject belongs to a customer, with the customer's subscription.
+#[cfg(feature = "export-lago")]
+pub fn lago_windows(
+    rows: Vec<WindowRow>,
+    records: &Records,
+    mapping: &ExportMapping,
+) -> Vec<loams_meter_export::lago::LagoWindow> {
+    let mut by_subject: BTreeMap<&str, &str> = BTreeMap::new();
+    for c in &records.customers {
+        for s in &c.subjects {
+            by_subject.insert(s.as_str(), c.id.as_str());
+        }
+    }
+    rows.into_iter()
+        .filter_map(|w| {
+            let code = mapping.lago_code(&w.meter)?;
+            let customer = by_subject.get(w.subject.as_str())?;
+            Some(loams_meter_export::lago::LagoWindow {
+                external_subscription_id: mapping.lago_subscription(customer, &w.subject),
+                code,
+                window: w,
+            })
+        })
+        .collect()
+}
+
+/// A usage event read off `_system/_meter` as OpenMeter's exporter takes it.
+#[cfg(feature = "export-openmeter")]
+pub fn event_row(
+    partition: u32,
+    offset: u64,
+    e: &loams_meter_core::Event,
+) -> loams_meter_export::openmeter::EventRow {
+    loams_meter_export::openmeter::EventRow {
+        subject: e.subject.as_str().to_string(),
+        r#type: e.r#type.clone(),
+        source: e.source.clone(),
+        id: e.id.clone(),
+        time: e.time.to_rfc3339(),
+        tenantid: e.tenant.as_ref().map(|t| t.to_string()).unwrap_or_default(),
+        lease: e.lease.as_ref().map(|l| l.to_string()).unwrap_or_default(),
+        data: serde_json::Value::Object(e.data.clone()).to_string(),
+        stream_partition: partition,
+        stream_offset: offset,
+    }
+}
+
+/// Events read per partition per OpenMeter request.
+pub const OPENMETER_READ: usize = 500;
+
+/// The most reads per partition in one run, so one busy partition does
+/// not hold up the others (the next run continues).
+pub const OPENMETER_ROUNDS: usize = 20;
+
 /// Stripe's payment state into `SetPaymentState`, as the billing exporter.
 #[cfg(feature = "export-stripe")]
 #[derive(Debug, Clone)]
@@ -396,6 +716,19 @@ pub struct Exporters {
     pub webhook: Option<loams_meter_export::webhook::WebhookExporter>,
     #[cfg(feature = "export-stripe")]
     pub payments: Option<Arc<loams_meter_export::stripe::payment::StripePayments>>,
+    /// Stripe's period export (D2403).
+    #[cfg(feature = "export-stripe")]
+    pub stripe: Option<loams_meter_export::stripe::StripeExporter>,
+    #[cfg(feature = "export-lago")]
+    pub lago: Option<loams_meter_export::lago::LagoExporter>,
+    /// With the cursors it keeps.
+    #[cfg(feature = "export-openmeter")]
+    pub openmeter: Option<(
+        loams_meter_export::openmeter::OpenMeterExporter,
+        Arc<dyn ExportCursors>,
+    )>,
+    /// The provider names (D2403).
+    pub mapping: ExportMapping,
 }
 
 impl fmt::Debug for Exporters {
@@ -410,6 +743,11 @@ pub struct ExportSchedule<H> {
     pub store: Arc<dyn crate::store::MeterStore>,
     pub exporters: Exporters,
     pub clock: Clock,
+    /// `_system/_meter`, for OpenMeter's raw events.
+    pub stream: Option<Arc<dyn crate::owner::PartitionReader>>,
+    /// The partitions this node exports from (the counter partitions it
+    /// owns, so each is exported by one node); `None`: every partition.
+    pub owned: Option<Arc<crate::run::Counters>>,
 }
 
 impl<H> fmt::Debug for ExportSchedule<H> {
@@ -423,17 +761,141 @@ impl<H: HouseSql> ExportSchedule<H> {
         (self.clock)().0.div_euclid(1_000_000_000)
     }
 
-    /// One run of the window exporters.
+    /// One run of the window exporters (the webhook and Lago).
     pub async fn windows_once(&self) -> Result<usize, ExportError> {
         let now = self.now_secs();
         let since = now - i64::try_from(LOOKBACK.as_secs()).unwrap_or(0);
-        #[cfg(feature = "export-webhook")]
-        if let Some(webhook) = &self.exporters.webhook {
-            let rows = closed_hour_windows(&*self.house, since).await?;
-            let report = webhook.export(&rows, now).await?;
-            return Ok(report.sent as usize);
+        #[allow(unused_mut)]
+        let mut sent = 0;
+        #[cfg(any(feature = "export-webhook", feature = "export-lago"))]
+        {
+            #[allow(unused_mut, unused_assignments)]
+            let mut wanted = false;
+            #[cfg(feature = "export-webhook")]
+            {
+                wanted |= self.exporters.webhook.is_some();
+            }
+            #[cfg(feature = "export-lago")]
+            {
+                wanted |= self.exporters.lago.is_some();
+            }
+            if wanted {
+                let rows = closed_hour_windows(&*self.house, since).await?;
+                #[cfg(feature = "export-webhook")]
+                if let Some(webhook) = &self.exporters.webhook {
+                    sent += webhook.export(&rows, now).await?.sent as usize;
+                }
+                #[cfg(feature = "export-lago")]
+                if let Some(lago) = &self.exporters.lago {
+                    let records = self.store.records().await.map_err(ledger_err)?;
+                    let windows = lago_windows(rows, &records, &self.exporters.mapping);
+                    sent += lago.export(&windows).await?.sent as usize;
+                }
+            }
         }
         let _ = since;
+        Ok(sent)
+    }
+
+    /// The partitions this node exports from.
+    #[cfg_attr(not(feature = "export-openmeter"), allow(dead_code))]
+    async fn partitions(&self) -> Vec<u32> {
+        match &self.owned {
+            Some(counters) => counters.owned().await.into_iter().map(|(p, _)| p).collect(),
+            None => (0..crate::owner::METER_PARTITIONS).collect(),
+        }
+    }
+
+    /// Whether this node exports `subject` (its partition is owned here).
+    #[cfg_attr(not(feature = "export-stripe"), allow(dead_code))]
+    fn exports_subject(&self, subject: &str, owned: &[u32]) -> bool {
+        self.owned.is_none()
+            || owned.contains(&crate::owner::partition_of(
+                subject,
+                crate::owner::METER_PARTITIONS,
+            ))
+    }
+
+    /// One run of Stripe's period export (D2403): every period of
+    /// [`stripe_periods`] whose subject's partition this node owns. A
+    /// customer whose export fails is logged and the others go on; an
+    /// off-hour period stops that customer's export (§63 §16).
+    pub async fn stripe_once(&self) -> Result<usize, ExportError> {
+        #[cfg(feature = "export-stripe")]
+        if let Some(stripe) = &self.exporters.stripe {
+            let now = self.now_secs();
+            let records = self.store.records().await.map_err(ledger_err)?;
+            let owned = self.partitions().await;
+            let mut sent = 0;
+            for p in stripe_periods(&records, &self.exporters.mapping, now) {
+                if !self.exports_subject(&p.subject, &owned) {
+                    continue;
+                }
+                let tsv = self
+                    .house
+                    .query(&period_hours_sql(&p, now))
+                    .await
+                    .map_err(|e| ExportError::Invalid(format!("House: {e}")))?;
+                let export = loams_meter_export::stripe::PeriodExport {
+                    event_name: p.event_name.clone(),
+                    subject: p.subject.clone(),
+                    stripe_customer_id: p.stripe_customer_id.clone(),
+                    period_start: p.period.0,
+                    included: p.included,
+                    hours: parse_period_hours(&tsv)?,
+                };
+                match stripe.export_period(&export).await {
+                    Ok(r) => sent += r.sent as usize,
+                    Err(err @ ExportError::OffHourPeriod { .. }) => {
+                        tracing::error!(subject = p.subject.as_str(), %err, "Stripe export stopped for this customer");
+                    }
+                    Err(err) => {
+                        tracing::warn!(subject = p.subject.as_str(), event_name = p.event_name.as_str(), %err, "Stripe period export failed; the next run resends");
+                    }
+                }
+            }
+            return Ok(sent);
+        }
+        Ok(0)
+    }
+
+    /// One run of OpenMeter's raw-event export (D2403): each owned
+    /// partition from the exporter's cursor, [`OPENMETER_READ`] events per
+    /// request, at most [`OPENMETER_ROUNDS`] requests per partition.
+    pub async fn openmeter_once(&self) -> Result<u64, ExportError> {
+        #[cfg(feature = "export-openmeter")]
+        if let (Some((exporter, cursors)), Some(stream)) = (&self.exporters.openmeter, &self.stream)
+        {
+            use loams_meter_export::openmeter::EXPORTER;
+            let mut sent = 0;
+            for partition in self.partitions().await {
+                for _ in 0..OPENMETER_ROUNDS {
+                    let from = cursors.get(EXPORTER, partition).await?.unwrap_or(0);
+                    let events = stream
+                        .read(partition, from, OPENMETER_READ)
+                        .await
+                        .map_err(|e| ExportError::Invalid(format!("meter stream: {e}")))?;
+                    let Some(last) = events.last().map(|(o, _)| *o) else {
+                        break;
+                    };
+                    let rows: Vec<_> = events
+                        .iter()
+                        .map(|(o, e)| event_row(partition, *o, e))
+                        .collect();
+                    sent += exporter.export(&rows).await?.sent;
+                    // Every row read was exported or filtered: the cursor
+                    // is past the last one (records the reader skipped as
+                    // malformed included).
+                    if cursors.get(EXPORTER, partition).await?.unwrap_or(0) <= last {
+                        cursors.put(EXPORTER, partition, last + 1).await?;
+                    }
+                    if events.len() < OPENMETER_READ {
+                        break;
+                    }
+                }
+            }
+            return Ok(sent);
+        }
         Ok(0)
     }
 
@@ -465,6 +927,12 @@ impl<H: HouseSql> ExportSchedule<H> {
         loop {
             if let Err(err) = self.windows_once().await {
                 tracing::warn!(%err, "the meter's window export failed; the next run resends");
+            }
+            if let Err(err) = self.stripe_once().await {
+                tracing::warn!(%err, "the meter's Stripe period export failed; the next run resends");
+            }
+            if let Err(err) = self.openmeter_once().await {
+                tracing::warn!(%err, "the meter's OpenMeter export failed; the next run resends");
             }
             if self.now_secs() >= next_poll {
                 next_poll = self.now_secs() + i64::try_from(POLL_EVERY.as_secs()).unwrap_or(0);

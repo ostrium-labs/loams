@@ -673,6 +673,22 @@ impl Native {
             stripe_api_key_file: env_value("LOAMS_METER_STRIPE_API_KEY_FILE").map(PathBuf::from),
             stripe_webhook_secret_file: env_value("LOAMS_METER_STRIPE_WEBHOOK_SECRET_FILE")
                 .map(PathBuf::from),
+            stripe_export_usage: env_value("LOAMS_METER_STRIPE_EXPORT_USAGE")
+                .is_none_or(|v| !matches!(v.trim(), "0" | "false" | "off" | "no")),
+            export_mapping_file: env_value("LOAMS_METER_EXPORT_MAPPING_FILE").map(PathBuf::from),
+            lago_url: env_value("LOAMS_METER_LAGO_URL"),
+            lago_api_key_file: env_value("LOAMS_METER_LAGO_API_KEY_FILE").map(PathBuf::from),
+            openmeter_url: env_value("LOAMS_METER_OPENMETER_URL"),
+            openmeter_token_file: env_value("LOAMS_METER_OPENMETER_TOKEN_FILE").map(PathBuf::from),
+            openmeter_types: env_value("LOAMS_METER_OPENMETER_TYPES")
+                .map(|v| {
+                    v.split(',')
+                        .map(str::trim)
+                        .filter(|t| !t.is_empty())
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default(),
         };
         config.connect_socket = self
             .connect_socket
