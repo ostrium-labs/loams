@@ -82,6 +82,8 @@ Merged outside `HotLayer` on every node (`api::router` and `api::internal_router
 | POST | `/internal/v1/hot/warm` | internal | `loams.internal.v1.HotService/Warm` | `hot::warm_local` | `cluster.rs`, `hot_http.rs` (owner path) |
 | POST | `/internal/v1/graph/{method}` | internal | `loams.internal.v1.GraphForwardService/Forward` (GR1 Task 12; moves with API1 Task 8) | `GraphAdmin::serve_forwarded` (feature `graph`) | `loams-graph` `ownership` tests |
 | POST | `/internal/v1/git/commit` | internal | `loams.internal.v1.GitForwardService/Commit` (GT1 Task 14; moves with API1 Task 8) | `api::git_internal::commit` (a postcard `ForwardedTxn` to the sequencer owner) | `git/repos.rs::forwarded_commit_route_commits_here` |
+| POST | `/internal/v1/meter/partitions/{partition}/records` | internal | none: the meter's service ingest (D2206, ME1; the node agent's forwarder), feature `meter` | `api::meter::ingest` (each event to its subject's `_system/_meter` partition) | `api::meter` unit tests, the meter-agent e2e ingest test |
+| POST | `/internal/v1/meter/counted` | internal | none: a counter read forwarded to the partition's owner (D2208), feature `meter` | `api::meter::counted` | `api::meter` unit tests |
 
 ## Cluster bootstrap (`crates/loams/src/server.rs`)
 
