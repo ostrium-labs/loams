@@ -13,7 +13,10 @@ pub struct Hist {
 
 impl Default for Hist {
     fn default() -> Self {
-        Hist { counts: vec![0; BUCKETS], total: 0 }
+        Hist {
+            counts: vec![0; BUCKETS],
+            total: 0,
+        }
     }
 }
 
@@ -73,7 +76,18 @@ mod tests {
 
     #[test]
     fn index_and_value_round_trip_within_precision() {
-        for v in [0u64, 1, 31, 32, 33, 64, 1000, 123_456, 9_999_999, u64::MAX / 4] {
+        for v in [
+            0u64,
+            1,
+            31,
+            32,
+            33,
+            64,
+            1000,
+            123_456,
+            9_999_999,
+            u64::MAX / 4,
+        ] {
             let back = value(index(v));
             let err = (back as f64 - v as f64).abs() / (v.max(1) as f64);
             assert!(err < 0.04, "{v} -> {back}");
