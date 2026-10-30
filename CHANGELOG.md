@@ -7,8 +7,8 @@ All notable changes to this project are documented here. The format follows [Kee
 ## [0.1.4] - 2026-10-30
 
 Everything new in 0.1.4 is **preview**: it runs and has tests, but its interfaces can still
-change. Nothing new changes the default stack, which is 0.1.3's. 70 pull requests have merged
-since 0.1.3 was cut (#1556 to #1636, not counting the release PRs and the three 0.1.3 fixes that
+change. Nothing new changes the default stack, which is 0.1.3's. 74 pull requests have merged
+since 0.1.3 was cut (#1556 to #1643, not counting the release PRs and the three 0.1.3 fixes that
 reached the v0.1.3 tag after it was tagged).
 
 Highlights:
@@ -85,9 +85,15 @@ Highlights:
   - Grafeo's indexed label lookups (LG-0007): graph point lookups went from 96/s to 24,268/s.
   - The House serves waiting statements in turn, so under contention it no longer answers
     `202 TOO_MANY_SIMULTANEOUS_QUERIES`.
+- **A Redis-gateway data bug is fixed (preview `--module resp`).** Before the fix, a collection
+  emptied and re-created in the same transaction reused the old version. It then shared the old
+  members, and GC could later drop its data (#1643). Only `MULTI` could reach this, because
+  every other command is its own transaction.
 - **Security.** Dependabot alerts are fixed across Rust, Go, npm and pip:
   - zip 9.0.5 (critical), russh 0.64.1, libz-sys 1.1.31, pgx, x/crypto, grpc, undici, qs and
     setuptools;
+  - electron 44.9.1, happy-dom, fast-uri and wrangler, which v0.1.3 shipped from main (#1569) and
+    dev now has too (#1638);
   - ten CodeQL findings are fixed: ReDoS, URL escaping, a TLS floor and plaintext credentials;
   - two secret-scanner alerts on test fixtures are closed.
 
@@ -160,11 +166,15 @@ chDB pins are unchanged. Grafeo stays at 0.5.43, on a newer fork rev (v0.5.43-lo
 - CI:
   - `cargo check` runs on every release image's feature set (#1587);
   - Windows is checked on Rust PRs, and `sdks/rust` has its own rustfmt job (#1619);
-  - dev-green fixes: #1561, #1625, #1626, #1635.
+  - dev-green fixes: #1561, #1625, #1626, #1635, #1637 and #1642 (clippy 1.97 across the
+    workspace, `GetInstance` announcing `transfer`, `transport`, `knowledge` and the meter
+    exporters, and the buf 1.74.0 pin).
 - Dependencies: #1563, #1572, #1574 and #1582.
 
 ### Fixed
 - The House serves pool waiters, and statements waiting for memory, in turn (#1597, #1621).
+- `loams-resp`: a collection emptied and re-created in one transaction gets a new version, not
+  the GC-queued one. Two test expectations now match Valkey (#1643).
 - `migrate`: the preview.2 fingerprint accepts the reserved system streams in `_system` (#1566).
   Only preview.2 stacks were affected.
 
@@ -172,7 +182,8 @@ chDB pins are unchanged. Grafeo stays at 0.5.43, on a newer fork rev (v0.5.43-lo
 - Rust: zip 9.0.5, russh 0.64.1, libz-sys 1.1.31, pulldown-cmark, ctutils and zstd, with the
   `deny.toml` ignores they retire (#1626, #1627).
 - Go: pgx, x/crypto, compress, grpc, x/net and edwards25519 (#1612).
-- npm: undici, body-parser, qs and @modelcontextprotocol (#1614).
+- npm: undici, body-parser, qs and @modelcontextprotocol (#1614); electron 44.9.1, happy-dom
+  21.0.4, fast-uri 3.1.9 and wrangler 4.155.0 brought from main (#1638).
 - pip: setuptools 84.1.0 (#1615).
 - CodeQL findings: ReDoS, URL escaping, a TLS floor and plaintext credentials (#1628).
 - Secret-scanner test fixtures no longer match real key patterns (#1611).
