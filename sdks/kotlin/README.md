@@ -11,7 +11,7 @@ Gradle (Kotlin DSL):
 
 ```kotlin
 dependencies {
-    implementation("dev.loams:loams-kotlin:0.1.3")
+    implementation("dev.loams:loams-kotlin:0.1.4")
 }
 ```
 
@@ -21,7 +21,7 @@ Maven:
 <dependency>
   <groupId>dev.loams</groupId>
   <artifactId>loams-kotlin</artifactId>
-  <version>0.1.3</version>
+  <version>0.1.4</version>
 </dependency>
 ```
 

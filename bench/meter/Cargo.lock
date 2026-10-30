@@ -1651,7 +1651,7 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
 name = "loams-cache"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "bytes",
  "crc32c",
@@ -1664,7 +1664,7 @@ dependencies = [
 
 [[package]]
 name = "loams-cloudevents"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -1679,7 +1679,7 @@ dependencies = [
 
 [[package]]
 name = "loams-common"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "serde",
@@ -1689,7 +1689,7 @@ dependencies = [
 
 [[package]]
 name = "loams-log"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1709,7 +1709,7 @@ dependencies = [
 
 [[package]]
 name = "loams-meter-agent"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -1737,7 +1737,7 @@ dependencies = [
 
 [[package]]
 name = "loams-meter-core"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "bytes",
  "loams-cloudevents",
@@ -1750,14 +1750,14 @@ dependencies = [
 
 [[package]]
 name = "loams-meter-gate"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "loams-store"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1773,7 +1773,7 @@ dependencies = [
 
 [[package]]
 name = "loams-worker"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "loams-common",

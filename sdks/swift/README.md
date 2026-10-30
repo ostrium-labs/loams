@@ -27,16 +27,16 @@ one port an instance serves.
 ## Install
 
 ```swift
-.package(url: "https://github.com/ostrium-labs/loams.git", from: "0.1.3")
+.package(url: "https://github.com/ostrium-labs/loams.git", from: "0.1.4")
 ```
 
 and `.product(name: "Loams", package: "loams")` in the target's dependencies.
 
 The package is the main repository: its root `Package.swift` exposes this
-directory's `Sources/Loams`, and the Loams release tag (`v0.1.3`) is
+directory's `Sources/Loams`, and the Loams release tag (`v0.1.4`) is
 the package version, so there is no mirror and no second tag. In 0.x the API
-may change between minor versions; `from: "0.1.3"` stays below 1.0.0, so pin
-`.upToNextMinor(from: "0.1.3")` to stay on the 0.1 line.
+may change between minor versions; `from: "0.1.4"` stays below 1.0.0, so pin
+`.upToNextMinor(from: "0.1.4")` to stay on the 0.1 line.
 
 ## Quickstart
 

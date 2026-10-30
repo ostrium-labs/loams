@@ -1,5 +1,5 @@
 # .env (keys that --cloud sets)
-LOAMS_VERSION=0.1.3
+LOAMS_VERSION=0.1.4
 LOAMS_BUCKET=s3://my-bkt/loams
 COMPOSE_PROFILES=
 TS_AUTHKEY=<from secret store>

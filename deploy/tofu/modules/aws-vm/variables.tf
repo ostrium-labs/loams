@@ -11,10 +11,10 @@ variable "name" {
 variable "release" {
   description = "The Loams release to install. The bundle's signature is checked on the VM."
   type        = string
-  default     = "0.1.3"
+  default     = "0.1.4"
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+([-.][0-9A-Za-z.]+)?$", var.release))
-    error_message = "release is a version such as 0.1.3, never latest."
+    error_message = "release is a version such as 0.1.4, never latest."
   }
 }
 

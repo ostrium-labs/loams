@@ -12,7 +12,7 @@ Build software with agents, on ground you own. Free and open source. Runs on gro
 
 Loams is open-source tooling for building software with AI agents: **Loams Studio (The Field)** runs your coding agents side by side, each in its own plot, **Loams Software Factory (The Greenhouse)** keeps your development toolchain beside them, and the **Loams Marketplace (The Seed Exchange, coming soon)** is where agents, apps and harnesses will come from. All three sit on the Loams data platform, written in Rust, which keeps your data in *your* object-storage bucket (S3, GCS, Azure Blob, RustFS or a local directory) in open formats.
 
-> **0.1.3 — a patch release of 0.1, the first release.** You run the stack yourself with Docker Compose, locally or on your own VMs, over your own Tailscale tailnet; the engine serves the console at `/ui/`, and Loams Desktop opens in Studio. 0.x: APIs and on-disk formats may change between minor versions; upgrades are supported with `loams upgrade`.
+> **0.1.4 — a patch release of 0.1, the first release.** You run the stack yourself with Docker Compose, locally or on your own VMs, over your own Tailscale tailnet; the engine serves the console at `/ui/`, and Loams Desktop opens in Studio. 0.x: APIs and on-disk formats may change between minor versions; upgrades are supported with `loams upgrade`.
 
 [Products](https://loams.dev/products) · [Download Loams Desktop](https://github.com/ostrium-labs/loams/releases/latest) · [Run Loams](docs/release/preview.md) · [Documentation](docs/README.md) · [Website](https://loams.dev) · [API reference](https://loams.dev/api-docs) · [Contributing](CONTRIBUTING.md)
 
@@ -44,7 +44,7 @@ Read the [pitch](docs/design/00-pitch.md) and the [architecture](docs/design/01-
   <img src="docs/assets/architecture.svg" alt="Loams architecture: clients reach the retrieval engine, Live, Durable and Postgres; a stateless gateway and router tier (planned) and the runtime and jobs (planned) are shown dashed; TiKV holds metadata and transactions; object storage holds all data in open formats." width="100%">
 </p>
 
-## What ships in 0.1.3
+## What ships in 0.1.4
 
 | | |
 |---|---|
@@ -57,8 +57,8 @@ Read the [pitch](docs/design/00-pitch.md) and the [architecture](docs/design/01-
 | **Console, desktop, CLI** | Web console served by your engine at `/ui/`; Loams Desktop and the `loams` CLI for Linux, macOS and Windows |
 | **Loams Studio and Software Factory** | Experimental. See [Products](#products) above |
 | **Loams Git** | Experimental. `git-remote-loams`, git's remote helper, ships with the `loams` CLI packages: `git clone`, `fetch` and `push` reach a Loams Git repository on a bucket, with no server in between |
-| **Preview in 0.1.3** | Opt-in profiles, off by default: managed RisingWave, Flink SQL and Spark behind `loams-gateway` (design 81); the Temporal gateway (`temporal-gateway`) with SDK legs for eight languages; Airflow and DBOS on Loams Postgres; Loams Meter (metering, entitlements, billing export); the Redis-protocol gateway on Loams KV; Confluent Cloud connectors for BYOC; OpenFGA authorization (`authz`); a headless browser for agents (`browser`) |
-| **SDKs** | TypeScript, Python, Go, Rust, C#, C++ and Swift, each with the app-building API (collections, search, vector, graph, SQL and streams). Published to npm, PyPI, crates.io, NuGet and the Go proxy as `0.1.3`; Swift from the release tag, C++ as a release tarball. Experimental: Java and Kotlin on Maven Central, Ruby on RubyGems |
+| **Preview in 0.1.4** | Cost attribution (design 84) and the offline `loams cost` CLI; resumable transfers and job runs over QUIC in Loams Desktop (design 85). Opt-in profiles, off by default: managed RisingWave, Flink SQL and Spark behind `loams-gateway` (design 81); the Temporal gateway (`temporal-gateway`) with SDK legs for eight languages; Airflow and DBOS on Loams Postgres; Loams Meter (metering, entitlements, billing export); the Redis-protocol gateway on Loams KV; Confluent Cloud connectors for BYOC; OpenFGA authorization (`authz`); a headless browser for agents (`browser`) |
+| **SDKs** | TypeScript, Python, Go, Rust, C#, C++ and Swift, each with the app-building API (collections, search, vector, graph, SQL and streams). Published to npm, PyPI, crates.io, NuGet and the Go proxy as `0.1.4`; Swift from the release tag, C++ as a release tarball. Experimental: Java and Kotlin on Maven Central, Ruby on RubyGems |
 
 **Coming next:** Loams Git on the server (repositories in the release images), first-party connectors, Iceberg analytics, the Kafka wire into the engine (a preview `kafka` profile ships since 0.1.2), functions and jobs. The full status table is in [Running Loams](docs/release/preview.md); the plan is in the [roadmap](docs/design/12-roadmap-testing-risks.md).
 

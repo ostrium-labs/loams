@@ -33,7 +33,7 @@ namespace {
 /// The user agent, read once. `curl_easy_setopt` copies the string, so the
 /// `std::string` has to outlive the call — a function-local static does.
 const std::string& UserAgentString() {
-  static const std::string* const agent = new std::string("loams-cpp/0.1.3 (Connect over HTTP)");
+  static const std::string* const agent = new std::string("loams-cpp/0.1.4 (Connect over HTTP)");
   return *agent;
 }
 

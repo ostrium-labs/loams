@@ -2,8 +2,8 @@
 
 # Loams SDK for Python
 
-> **0.1.3.** `loams` 0.1.3 tracks Loams 0.1.3. In 0.x the API may change between
-> minor versions: pin `loams~=0.1.3` to stay on the 0.1 line.
+> **0.1.4.** `loams` 0.1.4 tracks Loams 0.1.4. In 0.x the API may change between
+> minor versions: pin `loams~=0.1.4` to stay on the 0.1 line.
 
 One `Loams` object over one Loams instance, speaking the unified Connect API.
 The module surface is generated from `proto/` by `scripts/sdk/gen.sh python`;

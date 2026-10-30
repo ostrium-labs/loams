@@ -8,10 +8,10 @@
 ## Install
 
 ```sh
-composer require loams/loams:0.1.3
+composer require loams/loams:0.1.4
 ```
 
-These instructions target the released **0.1.3** package and matching source tag.
+These instructions target the released **0.1.4** package and matching source tag.
 
 The package is `loams/loams` on Packagist. Composer has no `preview` stability,
 so a prerelease such as `v0.1.0-preview.2` is tagged `v0.1.0-alpha.2` there, and
@@ -35,7 +35,7 @@ $client = new Loams\Client('https://acme.loams.dev');
 ## Examples
 
 Runnable service examples (quickstart, approvals, status) and the SDK app tour in
-[`examples/`](examples/) use the published 0.1.3 SDK. The notes app is the full
+[`examples/`](examples/) use the published 0.1.4 SDK. The notes app is the full
 app-module example; it keeps the instance/approval/device samples intact.
 
 ## Build an app

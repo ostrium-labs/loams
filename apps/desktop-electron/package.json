@@ -1,6 +1,6 @@
 {
 	"name": "@loams/desktop",
-	"version": "0.1.3",
+	"version": "0.1.4",
 	"private": true,
 	"description": "Loams Desktop: the console in an Electron shell with a managed local engine.",
 	"license": "Apache-2.0",

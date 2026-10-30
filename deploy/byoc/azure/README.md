@@ -2,7 +2,7 @@
 
 Status: **new, tested without a cloud account** (cloud-init schema, the secrets fetcher against a local mock of IMDS and Key Vault, role checks). A real-subscription run is still to be done.
 
-Creates, in your subscription: one VM (Ubuntu 24.04) with a user-assigned managed identity and a network security group with **no inbound allow rule**. The storage account, container, Key Vault and secrets are yours and are created by you first. Loams 0.1.3's light default stack runs on the VM (single node: back up the disk, keep blob versioning and soft delete on). The engine is reached over your tailnet only. No key is created; see [roles.md](roles.md).
+Creates, in your subscription: one VM (Ubuntu 24.04) with a user-assigned managed identity and a network security group with **no inbound allow rule**. The storage account, container, Key Vault and secrets are yours and are created by you first. Loams 0.1.4's light default stack runs on the VM (single node: back up the disk, keep blob versioning and soft delete on). The engine is reached over your tailnet only. No key is created; see [roles.md](roles.md).
 
 ## Use it
 

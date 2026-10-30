@@ -1,6 +1,6 @@
 # The Loams SDK for .NET (`Loams`)
 
-> **0.1.3.** `Loams` 0.1.3 tracks Loams 0.1.3. In 0.x the API may change between
+> **0.1.4.** `Loams` 0.1.4 tracks Loams 0.1.4. In 0.x the API may change between
 > minor versions.
 
 One `LoamsClient` with namespaced modules over the unified Connect API,
@@ -8,7 +8,7 @@ generated from the Loams protos. `net8.0`; the only dependency is
 `Google.Protobuf`.
 
 ```console
-dotnet add package Loams --version 0.1.3
+dotnet add package Loams --version 0.1.4
 ```
 
 ```csharp

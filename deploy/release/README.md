@@ -49,7 +49,7 @@ healthcheck, except `loams-gateway` and `loams-temporal`, which have no client m
 ```sh
 deploy/release/build.sh loams                        # both platforms, local manifest list
 deploy/release/build.sh --platforms linux/amd64 loams
-deploy/release/build.sh --version 0.1.3 --push   # CI on a tag
+deploy/release/build.sh --version 0.1.4 --push   # CI on a tag
 ```
 
 ## On this machine
@@ -365,8 +365,8 @@ From 0.1.0-preview.2, `loams upgrade` upgrades this stack in place, one release 
 time, with a snapshot first:
 
 ```sh
-loams upgrade check --to 0.1.3  # what it will do and what would stop it
-loams upgrade --to 0.1.3        # snapshot, migrate, restart, verify
+loams upgrade check --to 0.1.4  # what it will do and what would stop it
+loams upgrade --to 0.1.4        # snapshot, migrate, restart, verify
 loams upgrade rollback          # back to the snapshot
 ```
 
@@ -418,9 +418,9 @@ so pick them on the first install. `--services` starts only the services
 named. The VM needs SSH and outbound internet only.
 
 ```sh
-deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.3 --check  # loams upgrade check
-deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.3          # loams upgrade, on the VM
-deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.3 --rollback
+deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.4 --check  # loams upgrade check
+deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.4          # loams upgrade, on the VM
+deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.4 --rollback
 ```
 
 `upgrade.sh` fetches the target release's `loams` CLI on the VM (its Linux
@@ -448,7 +448,7 @@ identity, bucket and secrets in one go, use `deploy/byoc/<cloud>/` (cloud-init)
 or `deploy/tofu/` (OpenTofu modules). Status: tested against local mocks of the
 secret stores; not yet run on a real cloud account.
 
-## Known gaps in 0.1.3
+## Known gaps in 0.1.4
 
 - With `LOAMS_HOUSE_ENDPOINT` empty the engine does not reach the House, so
   `loams.house.v1` answers `house_not_configured`; use the House's own tailnet
@@ -480,7 +480,7 @@ secret stores; not yet run on a real cloud account.
   plain text on the compose networks; no PgDog fronts the computes yet (PG2c),
   so clients connect to an endpoint's published port. Its image,
   `loams-pg-control`, ships from 0.1.0.
-- The preview profiles of 0.1.3 (`risingwave`, `flink`, `spark`,
+- The preview profiles of 0.1.3 and 0.1.4 (`risingwave`, `flink`, `spark`,
   `temporal-gateway`, `connectors`, `authz`, `browser`, and Loams Meter) are off
   by default and have not been through the upgrade gate; turn them on in a
   stack you can rebuild. The release publishes six images (`loams`,
@@ -488,10 +488,16 @@ secret stores; not yet run on a real cloud account.
   `loams-temporal`); the Spark profile's `loams-spark-proxy`, `loams-sail` and
   `loams-spark` images are not published, so build them with
   `deploy/release/build.sh` first.
-- RisingWave's upstream release image carries a built-in licence key that turns
-  its Premium features on for small instances (up to 4 cores and 16 GiB). Loams
-  sets no licence key and uses no Premium feature (D1901), but the image itself
-  does not stop a user from calling one. Turning that key off is still to do.
+- Loams Meter, and the meter's cost domain, need a source build: the release
+  images and packages do not enable the `loams` features `meter` and
+  `meter-export-*`. `loams cost` (offline, from files) is in every build.
+- `loams-transfer.exe`, the transfer sidecar in Loams Desktop for Windows, is not
+  signed by SignPath yet (D2449). Abandoned transfers are not garbage-collected
+  yet (Q1513).
+- The cluster CA and `loams ca` are behind the off-by-default `transport`
+  feature, in no release image, and no cluster traffic uses them yet.
+- The `kafka` profile's pinned Iggy image predates the fork's faster Kafka
+  consume path (ostrium-labs/iggy#28).
 - Loams Meter seals webhook secrets with `LOAMS_METER_SECRETS_KEY_FILE` (default
   `<data_dir>/meter/secrets.key`, made on first use). On a cluster of several
   gateway nodes, every node must mount the same file.
