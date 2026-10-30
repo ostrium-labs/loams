@@ -52,6 +52,9 @@ struct Args {
     dir: PathBuf,
     /// Requests per `check_many` / events per `emit_batch`; 1 = unpipelined.
     depth: usize,
+    /// Install the meter's unmetered grant (D2400: a pair without a policy,
+    /// counting only) instead of a limiting one.
+    unmetered: bool,
 }
 
 fn parse_cores(s: &str) -> Vec<usize> {
@@ -89,6 +92,7 @@ fn args() -> Args {
         spool: true,
         dir: PathBuf::from("/mnt/Projects/bench-data/bq1-meter"),
         depth: 1,
+        unmetered: false,
     };
     while let Some(flag) = it.next() {
         let mut value = || it.next().unwrap_or_else(|| panic!("{flag} needs a value"));
@@ -103,6 +107,7 @@ fn args() -> Args {
             "--no-spool" => a.spool = false,
             "--dir" => a.dir = PathBuf::from(value()),
             "--depth" => a.depth = value().parse::<usize>().expect("depth").max(1),
+            "--unmetered" => a.unmetered = true,
             other => panic!("unknown flag {other}"),
         }
     }
@@ -178,6 +183,9 @@ fn gate_mode(a: &Args) -> Value {
     let grant = LeaseGrant {
         ttl: Duration::from_secs(3600),
         refresh_after: Duration::from_secs(3600),
+        // The meter's unmetered grant (lease_client::unmetered_grant).
+        counting: a.unmetered,
+        lease: if a.unmetered { LeaseId::NONE } else { LeaseId(1) },
         ..LeaseGrant::limit(LeaseId(1), u64::MAX / 4, 1)
     };
     let gate = Arc::new(
@@ -258,6 +266,7 @@ fn gate_mode(a: &Args) -> Value {
     let stats = gate.stats();
     json!({
         "mode": "gate",
+        "unmetered": a.unmetered,
         "depth": a.depth,
         "errors": ERRORS.load(Ordering::Relaxed),
         "threads": a.threads,

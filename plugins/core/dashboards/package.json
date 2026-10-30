@@ -6,7 +6,7 @@
   "types": "src/index.ts",
   "dependencies": {
     "@loams-core/store": "workspace:*",
-    "cordis": "^4.0.0-rc.10",
+    "cordis": "^4.0.0-rc.11",
     "fast-json-patch": "^3.1.0",
     "uuid": "^14.0.3",
     "@loams-core/types": "workspace:*"

@@ -20,7 +20,7 @@
     "@loams-core/http": "workspace:*",
     "@loams-core/types": "workspace:*",
     "cookie": "^1.1.1",
-    "cordis": "^4.0.0-rc.10",
+    "cordis": "^4.0.0-rc.11",
     "jose": "^6.2.12",
     "openid-client": "^6.8.8",
     "@base-ui/react": "catalog:",

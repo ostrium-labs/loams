@@ -14,7 +14,13 @@
 #   `engines/<ns>/risingwave/` (`hummock/`, `backup/`), with RisingWave
 #   leaving the shared bucket's lifecycle rules alone (D1952, ENG81 R6).
 # - The image is pinned by digest: RisingWave v3.1.0, released 2026-09-21
-#   (D1958). No licence key; telemetry is off (D1959, R4).
+#   (D1958). Telemetry is off (D1959, R4).
+# - Licence (D1901, R4): the meta node reads RW_LICENSE_KEY_PATH, the empty
+#   file risingwave/license.key. RisingWave's release builds embed a trial
+#   key that turns Premium features on for clusters of 4 cores and 16 GiB
+#   or less; the empty key keeps this cluster on the free tier, and while a
+#   key path is set `ALTER SYSTEM SET license_key` is refused. Keep the
+#   file empty.
 # - No host port of its own. Clients use `engine-gateway` on
 #   127.0.0.1:4566 (compose.lake.yaml, R7, R8) with ENGINE_GATEWAY_KEY as
 #   the password, or the frontend on the compose network
@@ -31,6 +37,7 @@ x-risingwave: &risingwave
   restart: unless-stopped
   volumes:
     - ./risingwave/risingwave.toml:/risingwave/config/risingwave.toml:ro
+    - ./risingwave/license.key:/risingwave/config/license.key:ro
   cap_drop: [ALL]
   security_opt:
     - no-new-privileges:true
@@ -63,6 +70,8 @@ services:
       RW_DASHBOARD_HOST: 0.0.0.0:5691
       RW_PROMETHEUS_HOST: 0.0.0.0:1250
       RW_BACKEND: postgres
+      # Empty: the free tier, locked (D1901).
+      RW_LICENSE_KEY_PATH: /risingwave/config/license.key
       RW_SQL_ENDPOINT: ${LOAMS_PG_HOST:-compute1}:${LOAMS_PG_PORT:-55433}
       RW_SQL_USERNAME: ${RISINGWAVE_META_DB:-rw_default}
       RW_SQL_PASSWORD: ${RISINGWAVE_META_PASSWORD:-risingwave}

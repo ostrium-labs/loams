@@ -1,5 +1,6 @@
 import {
   Activity,
+  ArrowDownUp,
   Bot,
   Boxes,
   ChartColumn,
@@ -78,6 +79,8 @@ const ICONS: Record<string, LucideIcon> = {
   // Loams Meter (design 63 §18): Settings › Billing.
   billing: CreditCard,
   meter: Gauge,
+  // Loams Desktop's Transfers page (design 85).
+  transfers: ArrowDownUp,
 };
 
 export const ICON_NAMES = Object.keys(ICONS);

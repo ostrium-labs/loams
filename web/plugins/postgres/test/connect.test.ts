@@ -44,6 +44,36 @@ const PROJECT = {
 };
 
 describe('createConnectPgControl', () => {
+  it('lists Postgres versions with their state, and sends the beta opt-in', async () => {
+    const f = fake((path) =>
+      path.endsWith('/ListPgVersions')
+        ? {
+            body: {
+              versions: [
+                { major: 18, state: 'PG_VERSION_STATE_BETA', minor: '18.6', eolDate: '2030-11-14' },
+                { major: 17, state: 'PG_VERSION_STATE_SUPPORTED', isDefault: true, minor: '17.11' },
+                { major: 16, state: 'PG_VERSION_STATE_MAINTENANCE', minor: '16.15' },
+              ],
+            },
+          }
+        : {
+            body: {
+              project: { ...PROJECT, pgVersion: 18 },
+              operation: { id: 'op-1', state: 'OPERATION_STATE_RUNNING' },
+            },
+          },
+    );
+    const client = createConnectPgControl({ baseUrl: BASE, fetch: f.fetch });
+    const versions = await client.listPgVersions();
+    expect(versions.map((v) => [v.major, v.state, v.isDefault])).toEqual([
+      [18, 'beta', false],
+      [17, 'supported', true],
+      [16, 'maintenance', false],
+    ]);
+    await client.createProject('default', { name: 'next', pgVersion: 18, allowBetaMajor: true });
+    expect(f.calls.at(-1)?.body).toMatchObject({ pgVersion: 18, allowBetaMajor: true });
+  });
+
   it('lists projects across pages and maps proto3 JSON', async () => {
     const f = fake((_p, body) =>
       body.pageToken

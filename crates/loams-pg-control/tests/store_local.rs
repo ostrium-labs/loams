@@ -29,6 +29,7 @@ async fn local_store_survives_a_reopen() {
         created_at_ms: 1,
         parent_time_ms: None,
         updated_at_ms: 1,
+        pg_version: 17,
     };
     let v = {
         let store = local::open(&path, StoreOptions::default())

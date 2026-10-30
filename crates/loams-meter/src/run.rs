@@ -62,6 +62,12 @@ pub const TICK: Duration = Duration::from_millis(250);
 /// How often the cached records are read again.
 pub const CATALOG_REFRESH: Duration = Duration::from_secs(10);
 
+/// The oldest the cached records may be when new events are counted: an
+/// event read with an older catalog could miss an entitlement made just
+/// before it, and an event read is counted once (found by the e2e ingest
+/// test: usage right after a plan assignment was not counted).
+pub const CATALOG_MAX_AGE_ON_READ: Duration = Duration::from_secs(1);
+
 /// How often failed webhook deliveries are retried.
 pub const RETRY_EVERY: Duration = Duration::from_secs(30);
 
@@ -242,6 +248,7 @@ pub fn fail_open(policy: LeasePolicy, customer: Option<&Customer>, allowance: Am
 #[derive(Debug, Default)]
 pub struct Catalog {
     index: FeatureIndex,
+    meters: HashMap<loams_meter_core::Slug, loams_meter_core::Meter>,
     features: HashMap<FeatureKey, Feature>,
     entitlements: HashMap<(SubjectKey, FeatureKey), Entitlement>,
     grants: HashMap<String, Vec<Grant>>,
@@ -266,6 +273,11 @@ impl Catalog {
         }
         Catalog {
             index,
+            meters: records
+                .meters
+                .iter()
+                .map(|m| (m.slug.clone(), m.clone()))
+                .collect(),
             features: records
                 .features
                 .into_iter()
@@ -283,6 +295,30 @@ impl Catalog {
 
     pub fn index(&self) -> &FeatureIndex {
         &self.index
+    }
+
+    /// Every (subject, feature) with a metered entitlement to a live
+    /// feature.
+    pub fn metered_pairs(&self) -> Vec<(String, String)> {
+        self.entitlements
+            .iter()
+            .filter(|(_, e)| matches!(e.kind, EntitlementKind::Metered { .. }))
+            .filter(|((_, f), _)| self.features.get(f).is_some_and(|f| !f.archived))
+            .map(|((s, f), _)| (s.to_string(), f.to_string()))
+            .collect()
+    }
+
+    /// Every metered entitlement with its live feature and that feature's
+    /// meter.
+    pub fn metered(
+        &self,
+    ) -> impl Iterator<Item = (&Entitlement, &Feature, &loams_meter_core::Meter)> + '_ {
+        self.entitlements.values().filter_map(|e| {
+            e.usage_period()?;
+            let f = self.features.get(&e.feature).filter(|f| !f.archived)?;
+            let m = self.meters.get(f.meter.as_ref()?)?;
+            Some((e, f, m))
+        })
     }
 
     pub fn entitlement(&self, subject: &SubjectKey, feature: &FeatureKey) -> Option<&Entitlement> {
@@ -345,6 +381,9 @@ pub struct Counters {
     partitions: u32,
     owners: Mutex<CounterOwners>,
     catalog: RwLock<Arc<Catalog>>,
+    /// The (subject, feature) pairs with a metered entitlement: where the
+    /// products' gate applies (D2400).
+    policies: Arc<loams_meter_gate::scope::Policies>,
 }
 
 impl Counters {
@@ -353,6 +392,7 @@ impl Counters {
             partitions,
             owners: Mutex::new(CounterOwners::new()),
             catalog: RwLock::new(Arc::new(Catalog::default())),
+            policies: loams_meter_gate::scope::Policies::new(),
         })
     }
 
@@ -364,7 +404,15 @@ impl Counters {
     }
 
     pub fn set_catalog(&self, catalog: Catalog) {
+        self.policies.set(loams_meter_gate::scope::PolicySet::new(
+            catalog.metered_pairs(),
+        ));
         *self.catalog.write().unwrap_or_else(PoisonError::into_inner) = Arc::new(catalog);
+    }
+
+    /// Where the products' gate applies, kept current with the records.
+    pub fn policies(&self) -> Arc<loams_meter_gate::scope::Policies> {
+        Arc::clone(&self.policies)
     }
 
     /// The partitions this instance counts, with their owner epochs.
@@ -629,11 +677,10 @@ impl<L> fmt::Debug for RuntimeParts<L> {
     }
 }
 
-/// The House side when the House cannot say where its pipe stands: the
-/// House pipe keeps its cursor (the stream offsets it has committed) in its
-/// Iceberg table's properties, which no SQL reads (ME-house ruling T5-1,
-/// D2203). Without the cursor the counters are rebuilt from the stream alone
-/// (its 14 days of retention) and reconciliation has no split to rebase on.
+/// The House side when the role has no House: no split to rebuild or
+/// reconcile at (D2203), so the counters are rebuilt from the stream alone
+/// (its 14 days of retention) and reconciliation changes nothing. With a
+/// House the role uses [`crate::house::HousePipeTotals`] (D2401).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct StreamOnly;
 
@@ -673,6 +720,8 @@ pub struct CounterRuntime<L> {
     rebuilding: std::collections::BTreeMap<u32, u64>,
     next_round: Option<UtcNanos>,
     next_catalog: Option<UtcNanos>,
+    /// When the cached records were last read.
+    catalog_at: Option<UtcNanos>,
     next_reconcile: Option<UtcNanos>,
 }
 
@@ -710,6 +759,7 @@ impl<L: PartitionLeases> CounterRuntime<L> {
             rebuilding: std::collections::BTreeMap::new(),
             next_round: None,
             next_catalog: None,
+            catalog_at: None,
             next_reconcile: None,
         }
     }
@@ -719,13 +769,7 @@ impl<L: PartitionLeases> CounterRuntime<L> {
     pub async fn step(&mut self) {
         let now = (self.clock)();
         if due(self.next_catalog, now) {
-            match self.store.records().await {
-                Ok(records) => {
-                    self.counters.set_catalog(Catalog::new(records));
-                    self.next_catalog = Some(now.add_nanos(nanos(CATALOG_REFRESH)));
-                }
-                Err(err) => tracing::warn!(%err, "the meter could not read its records"),
-            }
+            self.reload_catalog(now).await;
         }
         if due(self.next_round, now) {
             self.next_round = Some(now.add_nanos(nanos(RENEW_EVERY)));
@@ -753,6 +797,29 @@ impl<L: PartitionLeases> CounterRuntime<L> {
             }
         }
         self.expire(now).await;
+    }
+
+    async fn reload_catalog(&mut self, now: UtcNanos) {
+        match self.store.records().await {
+            Ok(records) => {
+                self.counters.set_catalog(Catalog::new(records));
+                self.catalog_at = Some(now);
+                self.next_catalog = Some(now.add_nanos(nanos(CATALOG_REFRESH)));
+            }
+            Err(err) => tracing::warn!(%err, "the meter could not read its records"),
+        }
+    }
+
+    /// Reads the records again when they are older than
+    /// [`CATALOG_MAX_AGE_ON_READ`], before new events are counted.
+    async fn fresh_catalog(&mut self) {
+        let now = (self.clock)();
+        let fresh = self
+            .catalog_at
+            .is_some_and(|at| now.0.saturating_sub(at.0) <= nanos(CATALOG_MAX_AGE_ON_READ));
+        if !fresh {
+            self.reload_catalog(now).await;
+        }
     }
 
     async fn on_changes(&mut self, changes: Vec<OwnershipChange>) {
@@ -850,6 +917,7 @@ impl<L: PartitionLeases> CounterRuntime<L> {
             if batch.is_empty() {
                 break;
             }
+            self.fresh_catalog().await;
             let catalog = self.counters.catalog();
             let mut owners = self.counters.owners.lock().await;
             let Some(c) = owners.get_mut(partition) else {

@@ -815,3 +815,152 @@ export interface LoamsDesktopApi {
 		onState(cb: (s: PreviewViewState) => void): () => void;
 	};
 }
+
+// ---- Transfers (design §85, DQ1 Task 6) ----
+
+/** The transfer sidecar's progress report (§85 §12, D2436). */
+export interface TransferProgress {
+	tid: string;
+	direction: "upload" | "download";
+	phase: "connecting" | "transferring" | "verifying" | "done";
+	/** Committed (upload) or verified and durable (download) bytes. */
+	bytes_done: number;
+	bytes_total: number;
+	/** Bytes already done when this session started: above 0 means a resume. */
+	resumed_from: number;
+	/** Bytes per second over the last 5 s. */
+	rate_bps: number;
+	eta_s?: number;
+	transport?: "h3" | "h2" | "h2c";
+	inflight: number;
+	retries: number;
+}
+
+export type TransferJobState =
+	| "queued"
+	| "running"
+	| "paused"
+	| "done"
+	| "failed"
+	| "cancelled";
+
+/** One upload, download or followed run. */
+export interface TransferJob {
+	id: string;
+	kind: "upload" | "download" | "run";
+	tid?: string;
+	rid?: string;
+	/** The file name, or a run's job name. */
+	name: string;
+	/** The local source (upload) or destination (download). */
+	path?: string;
+	dest?: string;
+	/** The server origin, and its id in the server list when known. */
+	server: string;
+	serverId?: string;
+	ns: string;
+	state: TransferJobState;
+	/** It continued from a checkpoint instead of starting at 0. */
+	resumed: boolean;
+	progress: TransferProgress | null;
+	error: { code: string; message: string } | null;
+	/** A run's latest log lines (the whole log is in the sidecar's mirror). */
+	log: string[];
+	logOffset?: number;
+}
+
+export type TransferAgentState =
+	| { phase: "stopped" }
+	| { phase: "starting" }
+	| { phase: "ready"; version: string }
+	| { phase: "failed"; reason: string };
+
+export interface TransferSnapshot {
+	agent: TransferAgentState;
+	jobs: TransferJob[];
+}
+
+/** A server from the server list, and a namespace on it. */
+export interface TransferTarget {
+	serverId: string;
+	ns: string;
+}
+
+/** How the sidecar reaches one server (§85 §10, D2438). */
+export interface TransferServerSettings {
+	/** `auto` (HTTP/3, falling back to HTTP/2+TLS), `h3` or `h2`. */
+	mode?: "auto" | "h3" | "h2";
+	/** Pin the server certificate by SHA-256 (dev engines). */
+	pin?: string;
+	/** A PEM CA bundle for this server. */
+	caFile?: string;
+}
+
+/** What the server holds in a namespace. */
+export interface TransferRemoteList {
+	transfers: {
+		tid: string;
+		state: "open" | "complete" | "abandoned";
+		committed_chunks: number;
+		committed_bytes: number;
+	}[];
+	runs: { rid: string; state: string; job: string }[];
+}
+
+/** The transfer IPC channels (kept apart from CH, so tasks add without conflict). */
+export const TRANSFER_CH = {
+	snapshot: "transfer:snapshot",
+	event: "transfer:event",
+	hasToken: "transfer:has-token",
+	setToken: "transfer:set-token",
+	upload: "transfer:upload",
+	download: "transfer:download",
+	pause: "transfer:pause",
+	resume: "transfer:resume",
+	cancel: "transfer:cancel",
+	dismiss: "transfer:dismiss",
+	remoteList: "transfer:remote-list",
+	startRun: "transfer:start-run",
+	followRun: "transfer:follow-run",
+} as const;
+
+export interface LoamsDesktopApi {
+	/**
+	 * Resumable transfers and remote job runs over QUIC (§85). Optional: an older
+	 * desktop build has none, and the Transfers page says so.
+	 */
+	transfers?: {
+		snapshot(): Promise<TransferSnapshot>;
+		onChange(cb: (s: TransferSnapshot) => void): () => void;
+		hasKey(serverId: string): Promise<boolean>;
+		/** Stores the API key (and how to reach the server) in the keychain. */
+		saveKey(
+			serverId: string,
+			key: string,
+			settings: TransferServerSettings,
+		): Promise<IpcResult<void>>;
+		/** Asks for a file, then uploads it; `null` when the user cancels. */
+		upload(target: TransferTarget): Promise<IpcResult<TransferJob | null>>;
+		/** Asks where to save, then downloads; `null` when the user cancels. */
+		download(
+			target: TransferTarget,
+			tid: string,
+			name: string,
+		): Promise<IpcResult<TransferJob | null>>;
+		pause(id: string): Promise<IpcResult<void>>;
+		resume(id: string): Promise<IpcResult<TransferJob>>;
+		cancel(id: string): Promise<IpcResult<void>>;
+		dismiss(id: string): Promise<void>;
+		remoteList(target: TransferTarget): Promise<IpcResult<TransferRemoteList>>;
+		startRun(
+			target: TransferTarget,
+			job: string,
+			params: Record<string, string>,
+		): Promise<IpcResult<TransferJob>>;
+		followRun(
+			target: TransferTarget,
+			rid: string,
+			job: string,
+		): Promise<IpcResult<TransferJob>>;
+	};
+}
