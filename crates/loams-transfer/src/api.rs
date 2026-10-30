@@ -120,6 +120,16 @@ impl Client {
         })
     }
 
+    /// The server origin (`https://host:port`).
+    pub fn origin(&self) -> &str {
+        &self.origin
+    }
+
+    /// The namespace.
+    pub fn ns(&self) -> &str {
+        &self.ns
+    }
+
     /// The connection, made or remade on demand.
     pub async fn conn(&self) -> io::Result<Conn> {
         let mut g = self.conn.lock().await;

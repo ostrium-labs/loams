@@ -23,10 +23,17 @@
 //! - [`api`]: a typed client over either transport.
 //! - [`standalone`]: `loams-transfer serve`, the API without the engine.
 //!
-//! The client pipelines and the sidecar are later tasks.
+//!
+//! The client (DQ1 Task 3):
+//!
+//! - [`client`]: resumable upload and download pipelines with bounded
+//!   memory, the local state, progress, and following a run's log.
+//! - [`agent`]: the desktop sidecar, JSON lines on stdio.
 
+pub mod agent;
 pub mod api;
 pub mod checkpoint;
+pub mod client;
 pub mod error;
 pub mod journal;
 pub mod keys;

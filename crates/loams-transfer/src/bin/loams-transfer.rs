@@ -4,17 +4,25 @@
 //! - `serve`: the transfer API on a single-node metastore and a bucket,
 //!   over HTTP/3 and HTTP/2+TLS on one port number.
 //!
-//! Later DQ1 tasks add `agent` (the desktop sidecar), `put`, `get`,
-//! `runner` and `tail`.
+//! - `agent`: the desktop sidecar (JSON lines on stdio).
+//! - `put` and `get`: one upload or download, resuming what an earlier run
+//!   left, with progress as JSON lines.
+//!
+//! Task 4 adds `runner`.
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use loams_store::Store;
 use loams_transfer::TransfersConfig;
-use loams_transfer::net::ServerIdentity;
+use loams_transfer::agent::ServerSpec;
+use loams_transfer::api::Client;
+use loams_transfer::client::{StateDir, Tracker, UploadOpts};
+use loams_transfer::net::{Mode, ServerIdentity};
 use loams_transfer::server::Access;
 use loams_transfer::standalone::{self, Serve};
 
@@ -33,6 +41,16 @@ struct Cli {
 enum Cmd {
     /// Serve the transfer API alone (tests, benchmarks, dev).
     Serve(ServeArgs),
+    /// The desktop sidecar: JSON commands on stdin, JSON events on stdout.
+    Agent {
+        /// The state directory (`<userData>/transfers`).
+        #[arg(long)]
+        state: PathBuf,
+    },
+    /// Upload one file, resuming an unfinished upload of it.
+    Put(PutArgs),
+    /// Download one transfer, resuming a part file left beside the destination.
+    Get(GetArgs),
 }
 
 #[derive(clap::Args, Debug)]
@@ -156,6 +174,183 @@ async fn serve(args: ServeArgs) -> Result<()> {
     Ok(())
 }
 
+#[derive(clap::Args, Debug)]
+struct Remote {
+    /// The server, `https://host:port`.
+    #[arg(long)]
+    server: String,
+    /// Pin the server certificate by SHA-256 (dev servers).
+    #[arg(long)]
+    pin: Option<String>,
+    /// A PEM CA bundle for the server.
+    #[arg(long)]
+    ca_file: Option<PathBuf>,
+    /// `auto` (HTTP/3, falling back to HTTP/2), `h3` or `h2`.
+    #[arg(long, default_value = "auto")]
+    mode: String,
+    #[arg(long)]
+    ns: String,
+    /// A file holding the bearer token.
+    #[arg(long)]
+    token_file: PathBuf,
+    /// The local state directory (resume state, install id, lock).
+    #[arg(long)]
+    state: PathBuf,
+    /// Chunks in flight.
+    #[arg(long, default_value_t = 8)]
+    window: usize,
+    /// A pause before each chunk request, in ms (tests).
+    #[arg(long, hide = true)]
+    pace_ms: Option<u64>,
+}
+
+impl Remote {
+    fn spec(&self) -> Result<ServerSpec> {
+        let mode = match self.mode.as_str() {
+            "auto" => Mode::Auto,
+            "h3" => Mode::H3,
+            "h2" => Mode::H2,
+            m => bail!("unknown mode {m}"),
+        };
+        Ok(ServerSpec {
+            base: self.server.clone(),
+            pin: self.pin.clone(),
+            ca_file: self.ca_file.clone(),
+            mode,
+        })
+    }
+
+    fn client(&self, state: &StateDir) -> Result<Client> {
+        let token = std::fs::read_to_string(&self.token_file)
+            .with_context(|| format!("read {}", self.token_file.display()))?;
+        Ok(Client::new(
+            self.spec()?.connect_opts(state),
+            &self.ns,
+            token.trim(),
+        )?)
+    }
+
+    fn opts(&self) -> UploadOpts {
+        UploadOpts {
+            window: self.window.clamp(1, 64),
+            pace: self.pace_ms.map(Duration::from_millis),
+            ..UploadOpts::default()
+        }
+    }
+}
+
+#[derive(clap::Args, Debug)]
+struct PutArgs {
+    #[command(flatten)]
+    remote: Remote,
+    /// A fixed chunk size in bytes (a power of two).
+    #[arg(long)]
+    chunk_size: Option<u64>,
+    /// The file to upload.
+    file: PathBuf,
+}
+
+#[derive(clap::Args, Debug)]
+struct GetArgs {
+    #[command(flatten)]
+    remote: Remote,
+    #[arg(long)]
+    tid: String,
+    #[arg(long)]
+    dest: PathBuf,
+}
+
+/// The peak resident set, in KiB, where the OS reports it.
+fn vm_hwm_kib() -> Option<u64> {
+    let s = std::fs::read_to_string("/proc/self/status").ok()?;
+    s.lines()
+        .find_map(|l| l.strip_prefix("VmHWM:"))
+        .and_then(|v| v.trim().trim_end_matches("kB").trim().parse().ok())
+}
+
+/// Prints the tracker's progress as JSON lines, at most every 250 ms.
+fn spawn_reporter(slot: Arc<Mutex<Option<Tracker>>>) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            let snap = slot
+                .lock()
+                .ok()
+                .and_then(|g| g.as_ref().map(Tracker::snapshot));
+            if let Some(p) = snap {
+                println!(
+                    "{}",
+                    serde_json::json!({"event": "progress", "progress": p})
+                );
+            }
+        }
+    })
+}
+
+async fn put(args: PutArgs) -> Result<()> {
+    let state = StateDir::new(&args.remote.state)?;
+    let _lock = state.lock()?;
+    let client = args.remote.client(&state)?;
+    let path = args.file.canonicalize()?;
+    let resume = loams_transfer::agent::find_resumable(&state, &client, &path);
+    let mut opts = args.remote.opts();
+    opts.chunk_size = args.chunk_size;
+    let slot = Arc::new(Mutex::new(None));
+    let reporter = spawn_reporter(Arc::clone(&slot));
+    let s2 = Arc::clone(&slot);
+    let r = loams_transfer::client::upload(
+        &client,
+        &state,
+        &path,
+        resume.as_deref(),
+        &opts,
+        move |t| {
+            if let Ok(mut g) = s2.lock() {
+                *g = Some(t);
+            }
+        },
+    )
+    .await;
+    reporter.abort();
+    let v = r?;
+    println!(
+        "{}",
+        serde_json::json!({
+            "event": "done", "tid": v.tid, "file_sha256": v.file_sha256,
+            "resumed": resume.is_some(), "vm_hwm_kib": vm_hwm_kib(),
+        })
+    );
+    Ok(())
+}
+
+async fn get(args: GetArgs) -> Result<()> {
+    let state = StateDir::new(&args.remote.state)?;
+    let _lock = state.lock()?;
+    let client = args.remote.client(&state)?;
+    let slot = Arc::new(Mutex::new(None));
+    let reporter = spawn_reporter(Arc::clone(&slot));
+    let s2 = Arc::clone(&slot);
+    let r = loams_transfer::client::download(
+        &client,
+        &args.tid,
+        &args.dest,
+        &args.remote.opts(),
+        move |t| {
+            if let Ok(mut g) = s2.lock() {
+                *g = Some(t);
+            }
+        },
+    )
+    .await;
+    reporter.abort();
+    let p = r?;
+    println!(
+        "{}",
+        serde_json::json!({"event": "done", "path": p, "vm_hwm_kib": vm_hwm_kib()})
+    );
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -167,5 +362,8 @@ async fn main() -> Result<()> {
         .init();
     match Cli::parse().cmd {
         Cmd::Serve(a) => serve(a).await,
+        Cmd::Agent { state } => loams_transfer::agent::run(state).await,
+        Cmd::Put(a) => put(a).await,
+        Cmd::Get(a) => get(a).await,
     }
 }
