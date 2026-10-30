@@ -52,6 +52,11 @@ http-body.workspace = true
 loams-authz.workspace = true
 loams-meter = { workspace = true, optional = true }
 loams-meter-core = { workspace = true, optional = true }
+loams-meter-gate = { workspace = true, optional = true }
+# The deployment CA on `meta` nodes and `loams ca` (CT1 Task 3, design §83
+# §6; feature `transport`).
+loams-ca = { path = "../loams-ca", optional = true }
+loams-transport = { path = "../loams-transport", optional = true }
 # The identity sync (design 76 §8.1, plan IA1 IA3), off unless LOAMS_IDENTITY_SYNC=on.
 loams-identity-sync.workspace = true
 loams-zitadel.workspace = true
@@ -103,6 +108,8 @@ loams-agentd-cli.workspace = true
 loams-confluent.workspace = true
 # `loams risingwave …`: the managed RisingWave's SQL client (design 81, RW1).
 loams-risingwave.workspace = true
+# `loams cost` (design 84, CA1 Task 8): offline cost reports, preview.
+loams-cost = { path = "../loams-cost", version = "0.1.4", features = ["cli"] }
 # `loams spark` (design 81 SP-b, preview).
 loams-spark = { workspace = true, optional = true }
 # `loams flink …` (design 81, D1989): the managed Flink SQL client. Feature
@@ -121,6 +128,7 @@ opensrv-mysql = { workspace = true, optional = true }
 loams-qdrant = { workspace = true, optional = true }
 loams-query.workspace = true
 loams-store.workspace = true
+loams-transfer = { workspace = true, optional = true }
 loams-sqlgate = { path = "../loams-sqlgate", optional = true }
 loams-stream-grpc = { workspace = true, optional = true }
 loams-tikv = { workspace = true, optional = true }
@@ -151,7 +159,10 @@ ulid.workspace = true
 url.workspace = true
 
 [features]
-default = ["es", "flight", "hnsw", "knowledge", "live", "qdrant"]
+default = ["es", "flight", "hnsw", "knowledge", "live", "qdrant", "transfer"]
+# Resumable transfers and job runs for the desktop (design 85, DQ1 Task 5):
+# `/v1/namespaces/{ns}/transfers` and `/runs`, and HTTP/3 on the TLS main port.
+transfer = ["dep:loams-transfer"]
 # Serve the Elasticsearch REST API (plan M1.5; `--es-listen`).
 es = ["dep:loams-es"]
 # The TiKV metastore (R1 plan Task 6; `--meta tikv://…` on `dev` and
@@ -185,7 +196,15 @@ flight = []
 # Loams Meter's `meter` role (design §63 §5.2; ME1 role wiring): the
 # customer, entitlement, plan and notification services on the main port of
 # a gateway node. Off by default.
-meter = ["dep:loams-meter", "dep:loams-meter-core"]
+meter = ["dep:loams-meter", "dep:loams-meter-core", "dep:loams-meter-gate"]
+# The meter's exporters (design §63 §16, D2207), each off by default: the
+# CloudEvents webhook of closed hour windows, and Stripe's payment state
+# (webhook route and daily poll). Lago and OpenMeter build their ledger and
+# cursors but are not scheduled yet.
+meter-export-webhook = ["meter", "loams-meter/export-webhook"]
+meter-export-stripe = ["meter", "loams-meter/export-stripe"]
+meter-export-lago = ["meter", "loams-meter/export-lago"]
+meter-export-openmeter = ["meter", "loams-meter/export-openmeter"]
 # Serve the Qdrant REST and gRPC APIs (plan M1.4; `--qdrant-listen`).
 qdrant = ["dep:loams-qdrant"]
 # The qdrant-edge HNSW engine for hot artifacts (M1.3); without it the hot
@@ -231,6 +250,11 @@ buildcache = []
 registry = []
 # The Loams SQL gate (`--sqlgate-listen`; plan SQ1 Task 4).
 sqldb = ["dep:loams-sqlgate"]
+# Cluster transport (design §83, plan CT1): the deployment CA's
+# `loams.ca.internal.v1.CertificateService` on `meta` nodes' cluster listener
+# and the `loams ca` command (Task 3). Off by default until CT1 T1 (Task 6)
+# puts the cluster listener on mTLS.
+transport = ["dep:loams-ca", "dep:loams-transport", "dep:hex"]
 # Builds the multi-process cluster tests (`tests/cluster.rs`, M1.3 Task 11;
 # E43); CI runs them in their own job.
 cluster-tests = []

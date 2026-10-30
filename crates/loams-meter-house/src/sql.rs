@@ -699,7 +699,7 @@ fn window_filter(feature: &FeatureDef) -> String {
 
 /// The filter of raw events by the feature's group-by values, through the
 /// meter's paths.
-fn event_filter(feature: &FeatureDef) -> String {
+pub fn event_filter(feature: &FeatureDef) -> String {
     feature
         .filter
         .iter()
@@ -1393,6 +1393,53 @@ impl QueryRun {
             QueryState::Done => Ok(None),
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Reconciliation against the pipe's cursor (§63 §12, D2401).
+
+/// `system.loams_pipe_cursors`' row for `_meter.events` and `partition`
+/// (D2401): `next_offset\tsnapshot_id`.
+pub fn pipe_cursor_sql(partition: u32) -> String {
+    format!(
+        "SELECT min(next_offset), any(snapshot_id) FROM system.loams_pipe_cursors \
+         WHERE database = {} AND table = 'events' AND partition = {partition} \
+         HAVING count() > 0 FORMAT TabSeparated",
+        quote(DATABASE)
+    )
+}
+
+/// The House setting that pins a read to one snapshot. It is passed with
+/// the request (`HouseSql::query_with`), never in the statement:
+/// a `SETTINGS` clause is chDB's, which knows no Loams setting (code 115).
+pub const SNAPSHOT_SETTING: &str = "loams_snapshot_id";
+
+/// The period-to-date usage of `feature` by each of `subjects` in
+/// `[start, end)` (Unix seconds) from `_meter.events FINAL`: what the
+/// counters count, summed per event as they do (`COUNT` is one per event).
+/// Run it pinned to the cursor's snapshot ([`SNAPSHOT_SETTING`]).
+pub fn pinned_totals_sql(subjects: &[&str], feature: &FeatureDef, start: i64, end: i64) -> String {
+    let value = match feature.meter.aggregation {
+        Aggregation::Count => "toDecimal128(count(), 9)".to_string(),
+        _ => format!(
+            "sum(ifNull({}, toDecimal128(0, 9)))",
+            value_expr(&feature.meter)
+        ),
+    };
+    let list = subjects
+        .iter()
+        .map(|s| quote(s))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "SELECT subject, {value} FROM {}.events FINAL WHERE subject IN ({list}) AND {} \
+         AND time >= {} AND time < {}{} GROUP BY subject FORMAT TabSeparated",
+        DATABASE,
+        events_filter(&feature.meter),
+        at64(start),
+        at64(end),
+        event_filter(feature),
+    )
 }
 
 #[cfg(test)]

@@ -24,12 +24,12 @@ use crate::customers::{Clock, Customers};
 use crate::entitlements::{Entitlements, ValueSource};
 use crate::error::{MeterError, Result};
 use crate::house::{HouseSchedule, RoleHouse};
-use crate::queries::MeterQueries;
 use crate::notify::Notifier;
-use crate::notify::sealing::SecretSealer;
 use crate::notify::notifier::{Console, Mailer, NotificationStore};
+use crate::notify::sealing::SecretSealer;
 use crate::notify::webhook::Transport;
 use crate::plans::{MeterUsage, Plans};
+use crate::queries::MeterQueries;
 use crate::store::{DocStore, MeterStore, VersionedDoc};
 
 /// The billing exporter's service identity: the only caller of

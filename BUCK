@@ -27,6 +27,15 @@ export_file(
 )
 
 export_file(
+    name = "file=bench+stream+compose.yaml",
+    src = "bench/stream/compose.yaml",
+    mode = "reference",
+    visibility = [
+        "PUBLIC",
+    ],
+)
+
+export_file(
     name = "file=conformance+graph+desktop+error_denied.json",
     src = "conformance/graph/desktop/error_denied.json",
     mode = "reference",
@@ -144,6 +153,33 @@ export_file(
 )
 
 export_file(
+    name = "file=deploy+helm+loams-risingwave+templates+configmap.yaml",
+    src = "deploy/helm/loams-risingwave/templates/configmap.yaml",
+    mode = "reference",
+    visibility = [
+        "PUBLIC",
+    ],
+)
+
+export_file(
+    name = "file=deploy+helm+loams-risingwave+templates+workloads.yaml",
+    src = "deploy/helm/loams-risingwave/templates/workloads.yaml",
+    mode = "reference",
+    visibility = [
+        "PUBLIC",
+    ],
+)
+
+export_file(
+    name = "file=deploy+helm+loams-risingwave+values.yaml",
+    src = "deploy/helm/loams-risingwave/values.yaml",
+    mode = "reference",
+    visibility = [
+        "PUBLIC",
+    ],
+)
+
+export_file(
     name = "file=deploy+pins+loams-postgres-images.toml",
     src = "deploy/pins/loams-postgres-images.toml",
     mode = "reference",
@@ -153,8 +189,35 @@ export_file(
 )
 
 export_file(
+    name = "file=deploy+release+compose.risingwave.yaml",
+    src = "deploy/release/compose.risingwave.yaml",
+    mode = "reference",
+    visibility = [
+        "PUBLIC",
+    ],
+)
+
+export_file(
     name = "file=deploy+release+compose.yaml",
     src = "deploy/release/compose.yaml",
+    mode = "reference",
+    visibility = [
+        "PUBLIC",
+    ],
+)
+
+export_file(
+    name = "file=deploy+release+risingwave+license.key",
+    src = "deploy/release/risingwave/license.key",
+    mode = "reference",
+    visibility = [
+        "PUBLIC",
+    ],
+)
+
+export_file(
+    name = "file=deploy+release+risingwave+risingwave.toml",
+    src = "deploy/release/risingwave/risingwave.toml",
     mode = "reference",
     visibility = [
         "PUBLIC",

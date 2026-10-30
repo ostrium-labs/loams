@@ -7,7 +7,7 @@
   "dependencies": {
     "@loams-core/data": "workspace:*",
     "@loams-core/types": "workspace:*",
-    "cordis": "^4.0.0-rc.10"
+    "cordis": "^4.0.0-rc.11"
   },
   "scripts": {
     "build": "pnpm --filter @loams-plugins/root build"

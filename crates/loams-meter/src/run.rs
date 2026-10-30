@@ -26,9 +26,8 @@
 //! [`RETRY_EVERY`].
 //!
 //! [`CounterValues`] answers balances from the counters of the partitions
-//! this instance owns. A subject whose partition another instance owns, or
-//! one still being rebuilt, answers `meter_unavailable`: never a balance
-//! without its usage.
+//! this instance owns, from the owner's counters for the others, and from
+//! the House when neither answers; never a balance without its usage.
 
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;
@@ -47,14 +46,14 @@ use crate::customers::Clock;
 use crate::entitlements::ValueSource;
 use crate::error::{MeterError, Result};
 use crate::lease_service::{AllocatorInputs, LeaseInputs, LeaseServer};
+use crate::notify::events::DEFAULT_THRESHOLDS;
+use crate::notify::{MeterEvent, Notifier, ThresholdTracker};
 use crate::owner::assign::RENEW_EVERY;
 use crate::owner::{
     Applied, Assigner, CounterKey, CounterOwners, FeatureIndex, HouseTotals, OwnershipChange,
     PartitionLeases, PartitionReader, Periods, READ_BATCH, partition_of,
 };
 use crate::reconcile::{Allowances, RECONCILE_EVERY, reconcile};
-use crate::notify::events::DEFAULT_THRESHOLDS;
-use crate::notify::{MeterEvent, Notifier, ThresholdTracker};
 use crate::store::{Customer, MeterStore, PaymentState, Records};
 
 /// How often owned partitions are read to their end.
@@ -62,6 +61,12 @@ pub const TICK: Duration = Duration::from_millis(250);
 
 /// How often the cached records are read again.
 pub const CATALOG_REFRESH: Duration = Duration::from_secs(10);
+
+/// The oldest the cached records may be when new events are counted: an
+/// event read with an older catalog could miss an entitlement made just
+/// before it, and an event read is counted once (found by the e2e ingest
+/// test: usage right after a plan assignment was not counted).
+pub const CATALOG_MAX_AGE_ON_READ: Duration = Duration::from_secs(1);
 
 /// How often failed webhook deliveries are retried.
 pub const RETRY_EVERY: Duration = Duration::from_secs(30);
@@ -135,14 +140,16 @@ pub fn to_cloudevent(e: &MeterEvent) -> Result<loams_cloudevents::CloudEvent> {
 
 /// A stream event of the meter's own types, as the notifier takes it.
 pub fn meter_event(e: &loams_meter_core::Event) -> Option<MeterEvent> {
-    e.r#type.starts_with(METER_EVENT_PREFIX).then(|| MeterEvent {
-        id: e.id.clone(),
-        r#type: e.r#type.clone(),
-        source: e.source.clone(),
-        subject: e.subject.to_string(),
-        time: e.time,
-        data: e.data.clone(),
-    })
+    e.r#type
+        .starts_with(METER_EVENT_PREFIX)
+        .then(|| MeterEvent {
+            id: e.id.clone(),
+            r#type: e.r#type.clone(),
+            source: e.source.clone(),
+            subject: e.subject.to_string(),
+            time: e.time,
+            data: e.data.clone(),
+        })
 }
 
 /// The service identity a gate on another node has on the cluster
@@ -206,10 +213,42 @@ pub fn policy(mode: &Mode, customer: Option<&Customer>) -> LeasePolicy {
     }
 }
 
+/// Whole units of `a` for ME-gate's integer amounts (D2180), floored, and
+/// zero below zero.
+pub fn gate_units(a: Amount) -> u64 {
+    u64::try_from(a.raw().div_euclid(Amount::SCALE).max(0)).unwrap_or(u64::MAX)
+}
+
+/// What a gate may spend for a subject's feature when the owner cannot be
+/// reached and its lease has expired: ME-gate's policy table (§13's "when
+/// unreachable" row). No payment method fails closed; a card fails open up
+/// to the overage headroom (else the allowance); a contract up to the
+/// headroom (else without bound).
+pub fn fail_open(policy: LeasePolicy, customer: Option<&Customer>, allowance: Amount) -> Amount {
+    use loams_meter_gate::policy::{Funding, PolicyTable, WhenUnreachable};
+    let funding = match customer.map(|c| (c.payment_state, c.spend_controls.overage_enabled)) {
+        None | Some((PaymentState::None, _)) => Funding::Free,
+        Some((PaymentState::Card, true)) => Funding::PaidOverage,
+        Some((PaymentState::Card, false)) => Funding::Paid,
+        Some((PaymentState::Invoice, _)) => Funding::Contract,
+    };
+    let headroom = match policy {
+        LeasePolicy::Overage { headroom } => Some(gate_units(headroom)),
+        _ => None,
+    };
+    match PolicyTable::default().when_unreachable(funding, headroom, gate_units(allowance)) {
+        WhenUnreachable::FailClosed => Amount::ZERO,
+        WhenUnreachable::FailOpen { budget } => {
+            Amount::from_raw(i128::from(budget).saturating_mul(Amount::SCALE))
+        }
+    }
+}
+
 /// The records the runtime works from, read every [`CATALOG_REFRESH`].
 #[derive(Debug, Default)]
 pub struct Catalog {
     index: FeatureIndex,
+    meters: HashMap<loams_meter_core::Slug, loams_meter_core::Meter>,
     features: HashMap<FeatureKey, Feature>,
     entitlements: HashMap<(SubjectKey, FeatureKey), Entitlement>,
     grants: HashMap<String, Vec<Grant>>,
@@ -221,7 +260,10 @@ impl Catalog {
         let index = FeatureIndex::new(&records.meters, &records.features);
         let mut grants: HashMap<String, Vec<Grant>> = HashMap::new();
         for g in records.grants {
-            grants.entry(g.entitlement.as_str().to_string()).or_default().push(g);
+            grants
+                .entry(g.entitlement.as_str().to_string())
+                .or_default()
+                .push(g);
         }
         let mut customers = HashMap::new();
         for c in records.customers {
@@ -231,6 +273,11 @@ impl Catalog {
         }
         Catalog {
             index,
+            meters: records
+                .meters
+                .iter()
+                .map(|m| (m.slug.clone(), m.clone()))
+                .collect(),
             features: records
                 .features
                 .into_iter()
@@ -248,6 +295,30 @@ impl Catalog {
 
     pub fn index(&self) -> &FeatureIndex {
         &self.index
+    }
+
+    /// Every (subject, feature) with a metered entitlement to a live
+    /// feature.
+    pub fn metered_pairs(&self) -> Vec<(String, String)> {
+        self.entitlements
+            .iter()
+            .filter(|(_, e)| matches!(e.kind, EntitlementKind::Metered { .. }))
+            .filter(|((_, f), _)| self.features.get(f).is_some_and(|f| !f.archived))
+            .map(|((s, f), _)| (s.to_string(), f.to_string()))
+            .collect()
+    }
+
+    /// Every metered entitlement with its live feature and that feature's
+    /// meter.
+    pub fn metered(
+        &self,
+    ) -> impl Iterator<Item = (&Entitlement, &Feature, &loams_meter_core::Meter)> + '_ {
+        self.entitlements.values().filter_map(|e| {
+            e.usage_period()?;
+            let f = self.features.get(&e.feature).filter(|f| !f.archived)?;
+            let m = self.meters.get(f.meter.as_ref()?)?;
+            Some((e, f, m))
+        })
     }
 
     pub fn entitlement(&self, subject: &SubjectKey, feature: &FeatureKey) -> Option<&Entitlement> {
@@ -287,7 +358,11 @@ impl Catalog {
 
 impl Periods for Catalog {
     fn period(&self, subject: &SubjectKey, feature: &FeatureKey, at: UtcNanos) -> Option<Period> {
-        Some(self.entitlement(subject, feature)?.usage_period()?.period_at(at))
+        Some(
+            self.entitlement(subject, feature)?
+                .usage_period()?
+                .period_at(at),
+        )
     }
 }
 
@@ -306,6 +381,9 @@ pub struct Counters {
     partitions: u32,
     owners: Mutex<CounterOwners>,
     catalog: RwLock<Arc<Catalog>>,
+    /// The (subject, feature) pairs with a metered entitlement: where the
+    /// products' gate applies (D2400).
+    policies: Arc<loams_meter_gate::scope::Policies>,
 }
 
 impl Counters {
@@ -314,6 +392,7 @@ impl Counters {
             partitions,
             owners: Mutex::new(CounterOwners::new()),
             catalog: RwLock::new(Arc::new(Catalog::default())),
+            policies: loams_meter_gate::scope::Policies::new(),
         })
     }
 
@@ -325,7 +404,15 @@ impl Counters {
     }
 
     pub fn set_catalog(&self, catalog: Catalog) {
+        self.policies.set(loams_meter_gate::scope::PolicySet::new(
+            catalog.metered_pairs(),
+        ));
         *self.catalog.write().unwrap_or_else(PoisonError::into_inner) = Arc::new(catalog);
+    }
+
+    /// Where the products' gate applies, kept current with the records.
+    pub fn policies(&self) -> Arc<loams_meter_gate::scope::Policies> {
+        Arc::clone(&self.policies)
     }
 
     /// The partitions this instance counts, with their owner epochs.
@@ -349,14 +436,141 @@ impl Counters {
     }
 }
 
-/// Balances from the counters (§63 §9.3): the entitlement's grants replayed
-/// with the period's usage so far.
+/// The lease holder name of one meter instance:
+/// `meter-counters;<node>;<incarnation>;<addr>`, where `<addr>` is where
+/// other nodes reach its cluster listener (empty on a single node). Another
+/// instance reads it from the partition lease to forward a counter read.
+pub fn holder_name(node_id: u64, incarnation: &str, addr: Option<&str>) -> String {
+    format!(
+        "{};{node_id};{incarnation};{}",
+        crate::owner::CONSUMER,
+        addr.unwrap_or("")
+    )
+}
+
+/// The cluster address in a [`holder_name`], if it has one.
+pub fn holder_addr(holder: &str) -> Option<&str> {
+    let mut parts = holder.splitn(4, ';');
+    if parts.next()? != crate::owner::CONSUMER {
+        return None;
+    }
+    let _node = parts.next()?;
+    let _incarnation = parts.next()?;
+    parts.next().filter(|a| !a.is_empty())
+}
+
+/// Reads a counter on the instance that owns its partition (an internal
+/// call on that instance's cluster listener).
+#[async_trait]
+pub trait CounterPeer: Send + Sync + fmt::Debug {
+    /// `key`'s count and its point on the owner at `addr`; `None` when the
+    /// owner no longer counts that partition.
+    async fn counted(&self, addr: &str, key: &CounterKey) -> Result<Option<(Amount, AsOf)>>;
+}
+
+/// Period-to-date usage from the House, when no counter can be read.
+#[async_trait]
+pub trait UsageSoFar: Send + Sync + fmt::Debug {
+    /// `e`'s usage in `[start, at)`.
+    async fn usage(&self, e: &Entitlement, start: UtcNanos, at: UtcNanos) -> Result<Amount>;
+}
+
+/// Balances (§63 §9.3): the entitlement's grants replayed with the period's
+/// usage so far, which comes from
+///
+/// 1. this instance's counters, when it owns the subject's partition;
+/// 2. else the owner's counters, read over its cluster listener (the owner
+///    is the holder of the partition's lease);
+/// 3. else the House (`_meter.events FINAL`, behind by the pipe's lag), as
+///    of [`AsOf::House`];
+/// 4. else `meter_unavailable`: never a balance without its usage.
 ///
 /// Only the current period's usage is known to the counters; earlier
 /// periods replay with none, which matters only to rollover of grants that
-/// span periods. ME-house's closed period totals fill that in.
+/// span periods.
 #[derive(Debug, Clone)]
-pub struct CounterValues(pub Arc<Counters>);
+pub struct CounterValues {
+    counters: Arc<Counters>,
+    owners: Option<(Arc<dyn PartitionLeases>, Arc<dyn CounterPeer>)>,
+    house: Option<Arc<dyn UsageSoFar>>,
+}
+
+impl CounterValues {
+    pub fn new(counters: Arc<Counters>) -> Self {
+        CounterValues {
+            counters,
+            owners: None,
+            house: None,
+        }
+    }
+
+    /// Forwards to the partition's owner, found in `leases`.
+    pub fn with_owners(
+        mut self,
+        leases: Arc<dyn PartitionLeases>,
+        peer: Arc<dyn CounterPeer>,
+    ) -> Self {
+        self.owners = Some((leases, peer));
+        self
+    }
+
+    /// Falls back to the House.
+    pub fn with_house(mut self, house: Arc<dyn UsageSoFar>) -> Self {
+        self.house = Some(house);
+        self
+    }
+
+    /// The usage from the partition's owner, if it can be read.
+    async fn owner_usage(&self, key: &CounterKey) -> Option<(Amount, AsOf)> {
+        let (leases, peer) = self.owners.as_ref()?;
+        let p = partition_of(key.subject.as_str(), self.counters.partitions);
+        let wanted = crate::owner::assign::partition_key(p);
+        let now = leases.now_ms();
+        let holder = match leases.list(crate::owner::assign::LEASE_PREFIX).await {
+            Ok(all) => all
+                .into_iter()
+                .find(|(k, v)| *k == wanted && v.is_held_at(now))
+                .and_then(|(_, v)| v.holder)?,
+            Err(err) => {
+                tracing::debug!(%err, "the meter's partition leases are unreadable");
+                return None;
+            }
+        };
+        let addr = holder_addr(&holder)?;
+        match peer.counted(addr, key).await {
+            Ok(found) => found,
+            Err(err) => {
+                tracing::debug!(addr, %err, "the partition's owner did not answer");
+                None
+            }
+        }
+    }
+
+    async fn usage(
+        &self,
+        e: &Entitlement,
+        key: &CounterKey,
+        at: UtcNanos,
+    ) -> Result<(Amount, AsOf)> {
+        if let Some(found) = self.counters.counted(key).await {
+            return Ok(found);
+        }
+        if let Some(found) = self.owner_usage(key).await {
+            return Ok(found);
+        }
+        let p = partition_of(e.subject.as_str(), self.counters.partitions);
+        if let Some(house) = &self.house {
+            match house.usage(e, key.period_start, at).await {
+                Ok(u) => return Ok((u, AsOf::House { snapshot: 0 })),
+                Err(err) => tracing::debug!(%err, "the House could not answer a balance"),
+            }
+        }
+        Err(MeterError::Unavailable(format!(
+            "partition {p} of the subject is not counted here, its owner did not answer, \
+             and the House could not either"
+        )))
+    }
+}
 
 #[async_trait]
 impl ValueSource for CounterValues {
@@ -370,13 +584,7 @@ impl ValueSource for CounterValues {
             feature: e.feature.clone(),
             period_start: period.start,
         };
-        let Some((counted, as_of)) = self.0.counted(&key).await else {
-            let p = partition_of(e.subject.as_str(), self.0.partitions);
-            return Err(MeterError::Unavailable(format!(
-                "partition {p} of the subject is not counted on this meter instance \
-                 (another instance owns it, or it is being rebuilt)"
-            )));
-        };
+        let (counted, as_of) = self.usage(e, &key, at).await?;
         let usage = if counted.is_positive() {
             vec![UsageSegment {
                 start: period.start,
@@ -424,11 +632,7 @@ impl LeaseInputs for CatalogInputs {
         };
         // The lease server only asks for owned partitions; one lost
         // meanwhile counts nothing, and the next acquire is `not_owner`.
-        let counted = self
-            .0
-            .counted(&key)
-            .await
-            .map_or(Amount::ZERO, |(c, _)| c);
+        let counted = self.0.counted(&key).await.map_or(Amount::ZERO, |(c, _)| c);
         let allowance = catalog.allowance_at(e, period).ok_or_else(|| {
             MeterError::Unavailable(format!("no allowance for entitlement {}", e.id.as_str()))
         })?;
@@ -438,6 +642,11 @@ impl LeaseInputs for CatalogInputs {
             min_chunk: min_chunk(&f.unit),
             policy: policy(mode, catalog.customer(subject)),
             counted,
+            fail_open: fail_open(
+                policy(mode, catalog.customer(subject)),
+                catalog.customer(subject),
+                allowance,
+            ),
         }))
     }
 }
@@ -468,11 +677,10 @@ impl<L> fmt::Debug for RuntimeParts<L> {
     }
 }
 
-/// The House side when the House cannot say where its pipe stands: the
-/// House pipe keeps its cursor (the stream offsets it has committed) in its
-/// Iceberg table's properties, which no SQL reads (ME-house ruling T5-1,
-/// D2203). Without the cursor the counters are rebuilt from the stream alone
-/// (its 14 days of retention) and reconciliation has no split to rebase on.
+/// The House side when the role has no House: no split to rebuild or
+/// reconcile at (D2203), so the counters are rebuilt from the stream alone
+/// (its 14 days of retention) and reconciliation changes nothing. With a
+/// House the role uses [`crate::house::HousePipeTotals`] (D2401).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct StreamOnly;
 
@@ -512,6 +720,8 @@ pub struct CounterRuntime<L> {
     rebuilding: std::collections::BTreeMap<u32, u64>,
     next_round: Option<UtcNanos>,
     next_catalog: Option<UtcNanos>,
+    /// When the cached records were last read.
+    catalog_at: Option<UtcNanos>,
     next_reconcile: Option<UtcNanos>,
 }
 
@@ -549,6 +759,7 @@ impl<L: PartitionLeases> CounterRuntime<L> {
             rebuilding: std::collections::BTreeMap::new(),
             next_round: None,
             next_catalog: None,
+            catalog_at: None,
             next_reconcile: None,
         }
     }
@@ -558,13 +769,7 @@ impl<L: PartitionLeases> CounterRuntime<L> {
     pub async fn step(&mut self) {
         let now = (self.clock)();
         if due(self.next_catalog, now) {
-            match self.store.records().await {
-                Ok(records) => {
-                    self.counters.set_catalog(Catalog::new(records));
-                    self.next_catalog = Some(now.add_nanos(nanos(CATALOG_REFRESH)));
-                }
-                Err(err) => tracing::warn!(%err, "the meter could not read its records"),
-            }
+            self.reload_catalog(now).await;
         }
         if due(self.next_round, now) {
             self.next_round = Some(now.add_nanos(nanos(RENEW_EVERY)));
@@ -592,6 +797,29 @@ impl<L: PartitionLeases> CounterRuntime<L> {
             }
         }
         self.expire(now).await;
+    }
+
+    async fn reload_catalog(&mut self, now: UtcNanos) {
+        match self.store.records().await {
+            Ok(records) => {
+                self.counters.set_catalog(Catalog::new(records));
+                self.catalog_at = Some(now);
+                self.next_catalog = Some(now.add_nanos(nanos(CATALOG_REFRESH)));
+            }
+            Err(err) => tracing::warn!(%err, "the meter could not read its records"),
+        }
+    }
+
+    /// Reads the records again when they are older than
+    /// [`CATALOG_MAX_AGE_ON_READ`], before new events are counted.
+    async fn fresh_catalog(&mut self) {
+        let now = (self.clock)();
+        let fresh = self
+            .catalog_at
+            .is_some_and(|at| now.0.saturating_sub(at.0) <= nanos(CATALOG_MAX_AGE_ON_READ));
+        if !fresh {
+            self.reload_catalog(now).await;
+        }
     }
 
     async fn on_changes(&mut self, changes: Vec<OwnershipChange>) {
@@ -689,6 +917,7 @@ impl<L: PartitionLeases> CounterRuntime<L> {
             if batch.is_empty() {
                 break;
             }
+            self.fresh_catalog().await;
             let catalog = self.counters.catalog();
             let mut owners = self.counters.owners.lock().await;
             let Some(c) = owners.get_mut(partition) else {
@@ -766,7 +995,10 @@ impl<L: PartitionLeases> CounterRuntime<L> {
                     continue;
                 }
             };
-            out.extend(self.tracker.observe(key, period, b.usage, b.total_available, now));
+            out.extend(
+                self.tracker
+                    .observe(key, period, b.usage, b.total_available, now),
+            );
             let reason = (!b.has_access).then_some("entitlement_exhausted");
             out.extend(self.tracker.access(key, b.has_access, reason, now));
         }
@@ -813,8 +1045,7 @@ impl<L: PartitionLeases> CounterRuntime<L> {
     /// gone.
     async fn expire(&mut self, now: UtcNanos) {
         // Threshold memory for periods that started over 40 days ago.
-        self.tracker
-            .expire(now.add_nanos(-40 * UtcNanos::DAY));
+        self.tracker.expire(now.add_nanos(-40 * UtcNanos::DAY));
         let catalog = self.counters.catalog();
         let mut owners = self.counters.owners.lock().await;
         let owned: BTreeSet<u32> = owners.owned().map(|(p, _)| p).collect();

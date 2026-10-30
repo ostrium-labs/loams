@@ -1,0 +1,35 @@
+# CT1 Task 2 (design 83): a stack spike, not a product crate and not a member
+# of the root workspace (like bench/meter). One axum router served over HTTP/3
+# (quinn + h3) and HTTP/2 (hyper + tokio-rustls), both with mTLS from a
+# throwaway CA carrying SPIFFE URI SANs; a client for each; a short loopback
+# smoke (handshake, 1 KiB unary at 64 in flight, a 64 MiB stream). Task 11 is
+# the real benchmark.
+[package]
+name = "ct1-transport-spike"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.97"
+license = "Apache-2.0"
+publish = false
+
+[workspace]
+
+[dependencies]
+anyhow = "1"
+axum = { version = "0.8", default-features = false, features = ["http1", "http2", "tokio"] }
+bytes = "1"
+futures = "0.3"
+h3 = "=0.0.8"
+h3-quinn = "=0.0.10"
+http = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["client", "server", "http2"] }
+hyper-util = { version = "0.1", features = ["tokio", "server", "http2"] }
+quinn = { version = "=0.11.12", default-features = false, features = ["runtime-tokio", "rustls-aws-lc-rs", "log"] }
+rcgen = "0.14"
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "logging"] }
+rustls-pki-types = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs"] }
+tower = { version = "0.5", features = ["util"] }
+x509-parser = "0.18"

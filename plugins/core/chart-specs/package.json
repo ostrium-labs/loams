@@ -6,7 +6,7 @@
   "types": "src/index.ts",
   "dependencies": {
     "@loams-core/bi": "workspace:*",
-    "cordis": "^4.0.0-rc.10",
+    "cordis": "^4.0.0-rc.11",
     "flint-chart": "~0.5.1",
     "@loams-core/types": "workspace:*"
   },

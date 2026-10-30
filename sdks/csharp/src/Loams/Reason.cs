@@ -233,6 +233,10 @@ public enum Reason
     WorkspaceFenced = 66,
     /// <summary>A batch write stopped at a failed chunk; earlier chunks stay applied.</summary>
     BatchPartiallyApplied = 132,
+    UnsupportedPgVersion = 133,
+    BetaMajorRequiresOptIn = 134,
+    ComputeMajorMismatchRefused = 135,
+    ImportChecksumsEnabled = 136,
 
     /// <summary>The workspace or snapshot is read-only.</summary>
     WorkspaceReadOnly = 67,
@@ -308,6 +312,24 @@ public enum Reason
 
     /// <summary>The credential cannot be checked now: the issuer's JWKS or the principal store is unreachable.</summary>
     AuthUnavailable = 91,
+
+    /// <summary>No join token with that id, or its secret does not match.</summary>
+    JoinTokenUnknown = 137,
+
+    /// <summary>The join token was already used; join tokens work once.</summary>
+    JoinTokenSpent = 138,
+
+    /// <summary>The join token is past its hour.</summary>
+    JoinTokenExpired = 139,
+
+    /// <summary>The CSR asks for an identity the join token or the current certificate does not hold.</summary>
+    IdentityNotGranted = 140,
+
+    /// <summary>The certificate, or an identity asked for, is on the CA's deny list.</summary>
+    IdentityRevoked = 141,
+
+    /// <summary>The deployment has no CA yet, or this node cannot open its intermediate key.</summary>
+    CaNotInitialized = 142,
 
     /// <summary>A call to a Live app that is disabled or deleted.</summary>
     LiveAppDisabled = 92,
@@ -512,6 +534,10 @@ public static class ReasonRegistry
         Reason.LsnOutOfRetention,
         Reason.EndpointExistsForBranch,
         Reason.ComputeStartFailed,
+        Reason.UnsupportedPgVersion,
+        Reason.BetaMajorRequiresOptIn,
+        Reason.ComputeMajorMismatchRefused,
+        Reason.ImportChecksumsEnabled,
         Reason.QuotaExceeded,
         Reason.StorageUnavailable,
         Reason.SecretAlreadyIssued,
@@ -598,6 +624,12 @@ public static class ReasonRegistry
         Reason.PrincipalNotAllowed,
         Reason.CorsOriginNotAllowed,
         Reason.AuthUnavailable,
+        Reason.JoinTokenUnknown,
+        Reason.JoinTokenSpent,
+        Reason.JoinTokenExpired,
+        Reason.IdentityNotGranted,
+        Reason.IdentityRevoked,
+        Reason.CaNotInitialized,
         Reason.InvalidArgument,
         Reason.NotFound,
         Reason.AlreadyExists,
@@ -649,6 +681,10 @@ public static class ReasonRegistry
             [Reason.LsnOutOfRetention] = "lsn_out_of_retention",
             [Reason.EndpointExistsForBranch] = "endpoint_exists_for_branch",
             [Reason.ComputeStartFailed] = "compute_start_failed",
+            [Reason.UnsupportedPgVersion] = "unsupported_pg_version",
+            [Reason.BetaMajorRequiresOptIn] = "beta_major_requires_opt_in",
+            [Reason.ComputeMajorMismatchRefused] = "compute_major_mismatch_refused",
+            [Reason.ImportChecksumsEnabled] = "import_checksums_enabled",
             [Reason.QuotaExceeded] = "quota_exceeded",
             [Reason.StorageUnavailable] = "storage_unavailable",
             [Reason.SecretAlreadyIssued] = "secret_already_issued",
@@ -735,6 +771,12 @@ public static class ReasonRegistry
             [Reason.PrincipalNotAllowed] = "principal_not_allowed",
             [Reason.CorsOriginNotAllowed] = "cors_origin_not_allowed",
             [Reason.AuthUnavailable] = "auth_unavailable",
+            [Reason.JoinTokenUnknown] = "join_token_unknown",
+            [Reason.JoinTokenSpent] = "join_token_spent",
+            [Reason.JoinTokenExpired] = "join_token_expired",
+            [Reason.IdentityNotGranted] = "identity_not_granted",
+            [Reason.IdentityRevoked] = "identity_revoked",
+            [Reason.CaNotInitialized] = "ca_not_initialized",
             [Reason.InvalidArgument] = "invalid_argument",
             [Reason.NotFound] = "not_found",
             [Reason.AlreadyExists] = "already_exists",
@@ -808,6 +850,9 @@ public static class ReasonRegistry
             [Reason.ProjectNotFound] = Code.NotFound,
             [Reason.BranchHasChildren] = Code.FailedPrecondition,
             [Reason.BranchProtected] = Code.FailedPrecondition,
+            [Reason.BetaMajorRequiresOptIn] = Code.FailedPrecondition,
+            [Reason.ComputeMajorMismatchRefused] = Code.FailedPrecondition,
+            [Reason.ImportChecksumsEnabled] = Code.FailedPrecondition,
             [Reason.LsnOutOfRetention] = Code.FailedPrecondition,
             [Reason.EndpointExistsForBranch] = Code.AlreadyExists,
             [Reason.ComputeStartFailed] = Code.Unavailable,
@@ -865,6 +910,7 @@ public static class ReasonRegistry
             [Reason.InvalidConsistencyToken] = Code.InvalidArgument,
             [Reason.NamespaceRequired] = Code.InvalidArgument,
             [Reason.SqlParamCount] = Code.InvalidArgument,
+            [Reason.UnsupportedPgVersion] = Code.InvalidArgument,
             [Reason.LiveIndexNotReady] = Code.FailedPrecondition,
             [Reason.LiveAppDisabled] = Code.FailedPrecondition,
             [Reason.LiveAppExists] = Code.FailedPrecondition,
@@ -897,6 +943,12 @@ public static class ReasonRegistry
             [Reason.PrincipalNotAllowed] = Code.PermissionDenied,
             [Reason.CorsOriginNotAllowed] = Code.PermissionDenied,
             [Reason.AuthUnavailable] = Code.Unavailable,
+            [Reason.JoinTokenUnknown] = Code.Unauthenticated,
+            [Reason.JoinTokenSpent] = Code.Unauthenticated,
+            [Reason.JoinTokenExpired] = Code.Unauthenticated,
+            [Reason.IdentityNotGranted] = Code.PermissionDenied,
+            [Reason.IdentityRevoked] = Code.PermissionDenied,
+            [Reason.CaNotInitialized] = Code.FailedPrecondition,
             [Reason.InvalidArgument] = Code.InvalidArgument,
             [Reason.NotFound] = Code.NotFound,
             [Reason.AlreadyExists] = Code.AlreadyExists,

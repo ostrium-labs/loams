@@ -144,7 +144,12 @@ impl Backend {
 
 async fn open(args: &Args) -> Result<Backend, String> {
     let run_root = format!("bq1n/{}/", std::process::id()).into_bytes();
-    let kv = |c| async move { Store::open(c).await.map(Backend::Kv).map_err(|e| e.to_string()) };
+    let kv = |c| async move {
+        Store::open(c)
+            .await
+            .map(Backend::Kv)
+            .map_err(|e| e.to_string())
+    };
     match args.backend.as_str() {
         "memory" => {
             let mut c = EmbeddedConfig::in_memory(&format!("bq1-{}", std::process::id()), "kv");
@@ -214,14 +219,20 @@ async fn worker(
     let value = vec![b'v'; args.value_size];
     let mut res = Res::default();
     while !stop.load(Ordering::Relaxed) {
-        let keys: Vec<Vec<u8>> = (0..args.depth).map(|_| key(rng.next() % args.keys)).collect();
+        let keys: Vec<Vec<u8>> = (0..args.depth)
+            .map(|_| key(rng.next() % args.keys))
+            .collect();
         let is_put = match args.op.as_str() {
             "put" => true,
-            "mix" => rng.next() % 10 == 0,
+            "mix" => rng.next().is_multiple_of(10),
             _ => false,
         };
         let t0 = Instant::now();
-        let r = if is_put { b.put(keys, &value).await } else { b.get(keys).await };
+        let r = if is_put {
+            b.put(keys, &value).await
+        } else {
+            b.get(keys).await
+        };
         let ns = u64::try_from(t0.elapsed().as_nanos()).unwrap_or(u64::MAX);
         if measuring.load(Ordering::Relaxed) {
             res.requests += 1;

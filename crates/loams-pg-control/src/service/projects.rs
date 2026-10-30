@@ -35,6 +35,8 @@ pub struct CreateProject {
     pub region: String,
     pub history_retention: Option<Duration>,
     pub wal_pool: String,
+    /// Opts into a beta major (design 62 §9.2).
+    pub allow_beta_major: bool,
     pub idempotency_key: String,
 }
 
@@ -81,7 +83,116 @@ pub(crate) fn check_version(expected: Option<u64>, current: u64) -> Result<(), S
     }
 }
 
+/// One Postgres major as `ListPgVersions` reports it (design 62 §9.2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PgVersionInfo {
+    pub major: u32,
+    pub state: PgVersionState,
+    pub is_default: bool,
+    /// The pinned minor, e.g. "17.11"; empty when the pin file has none.
+    pub minor: String,
+    /// Upstream's end of life, "YYYY-MM-DD"; empty when unknown.
+    pub eol_date: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PgVersionState {
+    Supported,
+    Beta,
+    Maintenance,
+}
+
 impl<N: NeonRead> PgService<N> {
+    /// The major a new project gets (design 62 §9.2, D1114): 0 takes the
+    /// default; a supported major is taken; a beta major needs
+    /// `allow_beta_major` (`beta_major_requires_opt_in`); a maintenance major
+    /// or any other is `unsupported_pg_version`, whose metadata lists the
+    /// offered majors.
+    pub(crate) fn new_project_pg_version(
+        &self,
+        requested: u32,
+        allow_beta_major: bool,
+    ) -> Result<u32, ServiceError> {
+        let c = &self.config;
+        let offered = || {
+            let mut v: Vec<String> = c.pg_versions.iter().map(u32::to_string).collect();
+            v.extend(c.beta_pg_versions.iter().map(|m| format!("{m} (beta)")));
+            v.join(",")
+        };
+        match requested {
+            0 => Ok(c.default_pg_version),
+            v if c.pg_versions.contains(&v) => Ok(v),
+            v if c.beta_pg_versions.contains(&v) => {
+                if allow_beta_major {
+                    Ok(v)
+                } else {
+                    Err(ServiceError::new(
+                        Reason::BetaMajorRequiresOptIn,
+                        format!("Postgres {v} is in beta: set allow_beta_major to use it"),
+                    )
+                    .with("field", "pg_version")
+                    .with("pg_version", v.to_string()))
+                }
+            }
+            v if c.maintenance_pg_versions.contains(&v) => Err(ServiceError::new(
+                Reason::UnsupportedPgVersion,
+                format!(
+                    "Postgres {v} is in maintenance: existing projects keep it, new projects use \
+                     Postgres {} or another offered major",
+                    c.pg_versions
+                        .iter()
+                        .max()
+                        .copied()
+                        .unwrap_or(c.default_pg_version)
+                ),
+            )
+            .with("field", "pg_version")
+            .with("offered", offered())),
+            v => Err(ServiceError::new(
+                Reason::UnsupportedPgVersion,
+                format!("Postgres {v} is not offered: {}", offered()),
+            )
+            .with("field", "pg_version")
+            .with("offered", offered())),
+        }
+    }
+
+    /// `ListPgVersions`: every major the service serves, newest first.
+    pub fn list_pg_versions(&self) -> Vec<PgVersionInfo> {
+        let c = &self.config;
+        let lookup = |table: &[(u32, &str)], m: u32| {
+            table
+                .iter()
+                .find(|(major, _)| *major == m)
+                .map(|(_, v)| v.to_string())
+                .unwrap_or_default()
+        };
+        let mut out: Vec<PgVersionInfo> = c
+            .pg_versions
+            .iter()
+            .map(|m| (*m, PgVersionState::Supported))
+            .chain(
+                c.beta_pg_versions
+                    .iter()
+                    .map(|m| (*m, PgVersionState::Beta)),
+            )
+            .chain(
+                c.maintenance_pg_versions
+                    .iter()
+                    .map(|m| (*m, PgVersionState::Maintenance)),
+            )
+            .map(|(major, state)| PgVersionInfo {
+                major,
+                state,
+                is_default: major == c.default_pg_version,
+                minor: lookup(loams_postgres::majors::MINORS, major),
+                eol_date: lookup(loams_postgres::majors::EOL, major),
+            })
+            .collect();
+        out.sort_by_key(|v| std::cmp::Reverse(v.major));
+        out
+    }
+
     /// The project `project_id` of `namespace`.
     pub(crate) async fn project(
         &self,
@@ -129,16 +240,7 @@ impl<N: NeonRead> PgService<N> {
     ) -> Result<ProjectCreated, ServiceError> {
         check_namespace(&req.namespace)?;
         check_name("name", &req.name)?;
-        let pg_version = match req.pg_version {
-            0 => self.config.default_pg_version,
-            v if self.config.pg_versions.contains(&v) => v,
-            v => {
-                return Err(ServiceError::invalid(
-                    "pg_version",
-                    format!("Postgres {v} is not offered: {:?}", self.config.pg_versions),
-                ));
-            }
-        };
+        let pg_version = self.new_project_pg_version(req.pg_version, req.allow_beta_major)?;
         let retention_s = self.retention(req.history_retention)?;
         let region = match req.region.as_str() {
             "" => self.config.default_region.clone(),
@@ -191,6 +293,7 @@ impl<N: NeonRead> PgService<N> {
                 created_at_ms: now,
                 parent_time_ms: None,
                 updated_at_ms: now,
+                pg_version,
             };
             let operation = pending(
                 OperationKind::ProjectCreate,

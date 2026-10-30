@@ -2326,15 +2326,26 @@ impl Server {
         // X8); a dropped gate means the start failed.
         let (serve_now, serve_gate) = oneshot::channel::<()>();
         let app = parts.app;
+        // HTTP/3 at the main port's number on UDP, with its TLS files (design
+        // 85, D2437): the same app; the TCP listener is the HTTP/2 fallback.
+        #[cfg(feature = "transfer")]
+        let h3 = api::transfers::h3_endpoint(&config.tls, local_addr);
         let http = tokio::spawn(async move {
             if serve_gate.await.is_err() {
                 return;
             }
+            #[cfg(feature = "transfer")]
+            let h3_task =
+                h3.map(|ep| tokio::spawn(loams_transfer::net::h3::serve(ep, app.clone())));
             let serve = axum::serve(listener, app).with_graceful_shutdown(async move {
                 let _ = stopped.await;
             });
             if let Err(err) = serve.await {
                 tracing::error!(%err, "HTTP server failed");
+            }
+            #[cfg(feature = "transfer")]
+            if let Some(t) = h3_task {
+                t.abort();
             }
         });
         let mut server = Self {
@@ -3135,6 +3146,12 @@ impl Server {
         // The placement, for Loams Git's sequencer owners on a cluster node (GT1 Task 14).
         #[cfg(feature = "git")]
         let git_placement = routing.as_ref().map(|(placement, _)| placement.clone());
+        // Where other nodes reach this one, for the meter's counter reads
+        // forwarded to a partition's owner.
+        #[cfg(feature = "meter")]
+        let meter_advertise = routing
+            .as_ref()
+            .map(|(placement, _)| placement.registry().me().addr.to_string());
         if let Some((placement, remote)) = routing {
             collections.set_placement(placement, remote);
         }
@@ -3290,30 +3307,51 @@ impl Server {
         // Part 2: the counter owners run beside them (partitions of
         // `_system/_meter` by fenced leases in the metastore), and a cluster
         // node serves the internal `LeaseService` on its cluster listener.
-        #[cfg(feature = "meter")]
-        let (meter, meter_runtime, meter_internal, meter_main) = if roles.gateway {
-            match api::meter::build(
+        // The deployment CA (design §83 §6.3, CT1 Task 3): `meta` nodes of
+        // a cluster serve `loams.ca.internal.v1.CertificateService` on the
+        // cluster listener. It is internal, so never on a port with end-user
+        // authentication.
+        #[cfg(feature = "transport")]
+        let ca_routes = (roles.meta && config.cluster.is_some()).then(|| {
+            crate::ca::routes(Arc::new(crate::ca::authority(
                 meta_store.clone(),
                 store.clone(),
-                reader.clone(),
-                node_id,
-                &principals,
-                writer.clone(),
-                &config.meter,
                 &config.data_dir,
-            ) {
-                Ok(node) => {
-                    let (role, runtime, internal, main) = node.start();
-                    (Some(role), Some(runtime), Some(internal), Some(main))
+            )))
+        });
+        #[cfg(feature = "meter")]
+        let (meter, meter_runtime, meter_internal, meter_main, meter_public, meter_gate) =
+            if roles.gateway {
+                match api::meter::build(
+                    meta_store.clone(),
+                    store.clone(),
+                    reader.clone(),
+                    node_id,
+                    &principals,
+                    writer.clone(),
+                    &config.meter,
+                    &config.data_dir,
+                    meter_advertise,
+                ) {
+                    Ok(node) => {
+                        let started = node.start();
+                        (
+                            Some(started.role),
+                            Some(started.runtime),
+                            Some(started.internal),
+                            Some(started.main),
+                            Some(started.public),
+                            Some(started.entitlements),
+                        )
+                    }
+                    Err(err) => {
+                        tracing::warn!(%err, "Loams Meter's services are off on this node");
+                        (None, None, None, None, None, None)
+                    }
                 }
-                Err(err) => {
-                    tracing::warn!(%err, "Loams Meter's services are off on this node");
-                    (None, None, None, None)
-                }
-            }
-        } else {
-            (None, None, None, None)
-        };
+            } else {
+                (None, None, None, None, None, None)
+            };
         let state = AppState {
             meta: meta_store.clone(),
             writer: writer.clone(),
@@ -3347,15 +3385,30 @@ impl Server {
             durable: durable.filter(|_| main_port_serves_durable(config)),
             #[cfg(feature = "meter")]
             meter,
+            #[cfg(feature = "meter")]
+            meter_gate: meter_gate.clone(),
         };
+        // Resumable transfers and job runs (design 85, DQ1 Task 5): one set of
+        // routes on this node's metastore and bucket, on every gateway router.
+        #[cfg(feature = "transfer")]
+        let transfers = api::transfers::routes(meta_store.clone(), store.clone());
         let (app, tailscale, connect_socket) = match (roles.gateway, config.cluster.is_some()) {
             (true, false) => {
                 #[cfg(feature = "live")]
                 let main_state = without_live_beyond_loopback(&state, config);
                 let router = api::router(state);
+                #[cfg(feature = "transfer")]
+                let router = router.merge(transfers.clone());
                 #[cfg(feature = "live")]
                 let main_router = match main_state {
-                    Some(main_state) => api::router(main_state),
+                    // A main state without Live builds its own router, which
+                    // needs the transfer routes too.
+                    Some(main_state) => {
+                        let r = api::router(main_state);
+                        #[cfg(feature = "transfer")]
+                        let r = r.merge(transfers.clone());
+                        r
+                    }
                     None => router.clone(),
                 };
                 #[cfg(not(feature = "live"))]
@@ -3363,9 +3416,9 @@ impl Server {
                 // The meter's service ingest on a single node's main port, for
                 // the operator (its node agent's key).
                 #[cfg(feature = "meter")]
-                let main_router = match meter_main {
-                    Some(main) => main_router.merge(main),
-                    None => main_router,
+                let main_router = match (meter_main, meter_public) {
+                    (Some(main), Some(public)) => main_router.merge(main).merge(public),
+                    _ => main_router,
                 };
                 // The console ships with the deployment (crate::console):
                 // served next to the API on both listeners, outside the
@@ -3411,22 +3464,46 @@ impl Server {
             }
             (true, true) => {
                 let router = api::router(state);
+                #[cfg(feature = "transfer")]
+                let router = router.merge(transfers);
                 // The meter's `LeaseService` is internal: only on the cluster
                 // listener, never on a port with end-user authentication.
                 #[cfg(feature = "meter")]
-                let router = match meter_internal {
-                    Some(internal) => router.merge(internal),
+                let router = match (meter_internal, meter_public) {
+                    (Some(internal), Some(public)) => router.merge(internal).merge(public),
+                    _ => router,
+                };
+                #[cfg(feature = "transport")]
+                let router = match ca_routes {
+                    Some(ca) => router.merge(ca),
                     None => router,
                 };
                 (router, None, None)
             }
-            (false, _) => (api::internal_router(state), None, None),
+            (false, _) => {
+                let router = api::internal_router(state);
+                #[cfg(feature = "transport")]
+                let router = match ca_routes {
+                    Some(ca) => router.merge(ca),
+                    None => router,
+                };
+                (router, None, None)
+            }
         };
         let flight = flight_listener.map(|(listener, addr)| {
             let streams: Arc<dyn StreamProducer> = Arc::new(NativeStreamProducer {
                 meta: meta_store.clone(),
                 writer: writer.clone(),
             });
+            // The meter's gate on produce (D2400): stream_ingest_bytes.
+            #[cfg(feature = "meter")]
+            let streams: Arc<dyn StreamProducer> = match &meter_gate {
+                Some(e) => Arc::new(loams_query::metered::MeteredProducer::new(
+                    streams,
+                    e.clone(),
+                )),
+                None => streams,
+            };
             // Each statement's graph reads are its principal's (GR1 R24.12).
             let principals = principals.clone();
             let graph_callers: loams_query::flight::GraphCallers = Arc::new(move |extensions| {
@@ -3448,6 +3525,15 @@ impl Server {
                 meta: meta_store.clone(),
                 writer: writer.clone(),
             });
+            // The meter's gate on produce (D2400): stream_ingest_bytes.
+            #[cfg(feature = "meter")]
+            let streams: Arc<dyn StreamProducer> = match &meter_gate {
+                Some(e) => Arc::new(loams_query::metered::MeteredProducer::new(
+                    streams,
+                    e.clone(),
+                )),
+                None => streams,
+            };
             let events: Arc<dyn loams_stream_grpc::EventProducer> =
                 Arc::new(api::events::NativeEventProducer {
                     meta: meta_store.clone(),

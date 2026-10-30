@@ -12,12 +12,12 @@ ok() { echo "ok   $*"; }
 bad() { echo "FAIL $*"; fail=1; }
 
 cat >"$tmp/secrets.json" <<JSON
-{"aws": {"loams/t/tailnet-authkey": "tskey-auth-PLANTED-1", "loams/t/setup-token": "setup-PLANTED-2", "loams/t/api-keys": "apikeys-PLANTED-3",
+{"aws": {"loams/t/tailnet-authkey": "authkey-PLANTED-1", "loams/t/setup-token": "setup-PLANTED-2", "loams/t/api-keys": "apikeys-PLANTED-3",
          "loams/t/confluent-confluent-api-key": "CKEY-PLANTED-4", "loams/t/confluent-confluent-api-secret": "csecret-PLANTED-5\n",
          "loams/t/confluent-confluent-sr-key": "SRKEY-PLANTED-6", "loams/t/confluent-confluent-sr-secret": "srsecret-PLANTED-7"},
- "gcp": {"mock-project/loams-t-tailnet-authkey": "tskey-auth-PLANTED-1", "mock-project/loams-t-setup-token": "setup-PLANTED-2",
+ "gcp": {"mock-project/loams-t-tailnet-authkey": "authkey-PLANTED-1", "mock-project/loams-t-setup-token": "setup-PLANTED-2",
          "mock-project/loams-t-confluent-events-api-key": "CKEY-PLANTED-8"},
- "azure": {"loams-t-tailnet-authkey": "tskey-auth-PLANTED-1", "loams-t-setup-token": "setup-PLANTED-2", "loams-t-api-keys": "apikeys-PLANTED-3"}}
+ "azure": {"loams-t-tailnet-authkey": "authkey-PLANTED-1", "loams-t-setup-token": "setup-PLANTED-2", "loams-t-api-keys": "apikeys-PLANTED-3"}}
 JSON
 python3 -I "$here/mock_cloud.py" "$tmp/port" "$tmp/secrets.json" &
 srv=$!
@@ -51,7 +51,7 @@ check_clean_output() {  # no planted value in what the script printed
 }
 check_env() {
   local d="$tmp/stack-$1"
-  grep -q '^TS_AUTHKEY=tskey-auth-PLANTED-1$' "$d/.env" && grep -q '^LOAMS_SETUP_TOKEN=setup-PLANTED-2$' "$d/.env" \
+  grep -q '^TS_AUTHKEY=authkey-PLANTED-1$' "$d/.env" && grep -q '^LOAMS_SETUP_TOKEN=setup-PLANTED-2$' "$d/.env" \
     && grep -q '^OTHER=keep$' "$d/.env" && ok "$1: .env has the tailnet key and setup token, other keys kept" \
     || bad "$1: .env wrong: $(sed 's/=.*/=…/' "$d/.env" | tr '\n' ' ')"
   [[ "$(stat -c %a "$d/.env")" == 600 ]] && ok "$1: .env is mode 600" || bad "$1: .env mode $(stat -c %a "$d/.env")"

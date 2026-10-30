@@ -1,0 +1,36 @@
+[package]
+name = "loams-cost"
+description = "Loams Cost (design §84): cost inputs, attribution of cost to engines, tenants, projects and query classes from Loams Meter telemetry, unit costs, basis labels and traces. Sans-I/O."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+# Sans-I/O: no async, no network, no House. The `meter` role and `loams cost`
+# feed it inputs and usage and read its results (design §84 §5).
+[dependencies]
+# `loams cost` (feature `cli`, design §84 §15).
+clap = { workspace = true, optional = true }
+# Bill files (design §84 §6.2): CSV, plain or gzip, streamed.
+csv = "1.4"
+flate2 = "1.1"
+hex.workspace = true
+loams-meter-core = { path = "../loams-meter-core", version = "0.1.4" }
+serde.workspace = true
+serde_json.workspace = true
+# costs.yaml (design §84 §6), as plans use it (crates/loams-meter).
+serde_yaml_ng = "0.10"
+sha2.workspace = true
+thiserror.workspace = true
+time.workspace = true
+
+[features]
+default = []
+cli = ["dep:clap"]
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

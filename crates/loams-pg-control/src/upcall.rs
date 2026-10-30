@@ -5,6 +5,9 @@
 //! |---|---|---|---|
 //! | `compute_ctl` | `GET /compute/api/v2/computes/{id}/spec` | the compute's upcall JWT ([`ComputeKeys`]) | `{status: "empty"}` for an unbound compute; `{status: "attached", spec, compute_ctl_config}` for a bound one |
 //! | storage controller | `PUT /notify-attach` | a static bearer token ([`UpcallConfig::notify_token`]) | 200 when recorded and every running compute took the new spec; 423 when recorded but not applied; 429 to slow it down |
+//! | pageserver | `POST /upcall/v1/timeline_import_status` | its `control_plane_api_token` ([`UpcallConfig::pageserver_token`]) | 200 when the import's status is recorded (NF2 Task 13) |
+//! | pageserver | `GET /upcall/v1/timeline_import_status` | likewise | the recorded `ShardImportStatus`, or `{"InProgress": null}` for an import not reported yet |
+//! | pageserver | `POST /upcall/v1/validate` | likewise | every tenant shard's generation valid (NF2 Task 13: one pageserver per shard, attached at its last known generation) |
 //!
 //! `notify-safekeepers` is not served: the storage controller manages no
 //! safekeepers (§46 §9.1). Nor is `notify-attach` when no token is
@@ -55,7 +58,7 @@ use axum::body::Body;
 use axum::extract::{Extension, Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, put};
+use axum::routing::{get, post, put};
 use futures::StreamExt;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use loams_postgres::compute_ctl::{
@@ -63,6 +66,7 @@ use loams_postgres::compute_ctl::{
 };
 use loams_postgres::spec::ComputeSpec;
 use loams_postgres::storcon::NotifyAttachRequest;
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use tokio::net::TcpListener;
@@ -85,7 +89,7 @@ pub mod spec_sources {
 use crate::ids::ComputeId;
 use crate::model::{
     BranchPrefix, BranchRec, ComputeKey, ComputeRec, ComputeStatus, EndpointPrefix, EndpointRec,
-    ProjectKey, ProjectRec, ShardAttachment,
+    ImportState, ImportStatusKey, ImportStatusRec, ProjectKey, ProjectRec, ShardAttachment,
 };
 use crate::secrets::Secret;
 use crate::service::Clock;
@@ -160,6 +164,11 @@ pub struct UpcallConfig {
     /// The storage controller's bearer token (its `--control-plane-jwt-token`).
     /// `None`: `notify-attach` is not served.
     pub notify_token: Option<Secret<String>>,
+    /// The pageservers' bearer token (their `control_plane_api_token`), for
+    /// the import status upcall (NF2 Task 13): a pageserver's
+    /// `control_plane_api` points at `http://<this listener>/upcall/v1/`.
+    /// `None`: the import status routes are not served.
+    pub pageserver_token: Option<Secret<String>>,
     /// Pageserver node id → libpq URL, for the spec.
     pub pageservers: BTreeMap<u64, String>,
     /// The node of a branch no `notify-attach` named (single-node mode).
@@ -182,6 +191,7 @@ impl UpcallConfig {
             listen,
             api_listen: None,
             notify_token: None,
+            pageserver_token: None,
             pageservers: BTreeMap::new(),
             default_pageserver: None,
             wal_pools: BTreeMap::new(),
@@ -199,6 +209,7 @@ impl fmt::Debug for UpcallConfig {
             .field("listen", &self.listen)
             .field("api_listen", &self.api_listen)
             .field("notify_token", &self.notify_token)
+            .field("pageserver_token", &self.pageserver_token)
             .field("pageservers", &self.pageservers)
             .field("default_pageserver", &self.default_pageserver)
             .field("wal_pools", &self.wal_pools)
@@ -294,6 +305,7 @@ struct Shared {
     configurer: Arc<dyn ComputeConfigurer>,
     sources: Sources,
     notify_digest: Option<[u8; 32]>,
+    pageserver_digest: Option<[u8; 32]>,
     tenants: Option<Arc<Tenants>>,
     limits: UpcallLimits,
     clock: Clock,
@@ -377,6 +389,10 @@ impl UpcallServer {
             },
             notify_digest: config
                 .notify_token
+                .as_ref()
+                .map(|t| Sha256::digest(t.expose().as_bytes()).into()),
+            pageserver_digest: config
+                .pageserver_token
                 .as_ref()
                 .map(|t| Sha256::digest(t.expose().as_bytes()).into()),
             tenants,
@@ -463,6 +479,14 @@ fn router(shared: Arc<Shared>) -> Router {
     let mut r = Router::new().route("/compute/api/v2/computes/{id}/spec", get(spec_upcall));
     if shared.notify_digest.is_some() {
         r = r.route("/notify-attach", put(notify_attach));
+    }
+    if shared.pageserver_digest.is_some() {
+        r = r
+            .route(
+                "/upcall/v1/timeline_import_status",
+                post(put_import_status).get(get_import_status),
+            )
+            .route("/upcall/v1/validate", post(validate_generations));
     }
     r.with_state(shared)
 }
@@ -640,6 +664,233 @@ async fn spec_answer(s: &Shared, id: &str, kid: &str) -> Response {
 }
 
 /// `PUT /notify-attach`.
+/// Whether `headers` carry the bearer token whose digest is `want`.
+fn token_matches(headers: &HeaderMap, max: usize, want: Option<&[u8; 32]>) -> bool {
+    match (bearer(headers, max), want) {
+        (Some(token), Some(want)) => {
+            let got: [u8; 32] = Sha256::digest(token.as_bytes()).into();
+            bool::from(got.ct_eq(want))
+        }
+        _ => false,
+    }
+}
+
+/// A pageserver's `PutTimelineImportStatusRequest`. The generation is not
+/// kept: Loams runs one pageserver per tenant shard, in emergency mode.
+#[derive(Deserialize)]
+struct PutImportStatus {
+    tenant_shard_id: String,
+    timeline_id: String,
+    status: serde_json::Value,
+}
+
+/// A pageserver's `ValidateRequest`: the tenant shards and generations its
+/// deletion queue wants to act on.
+#[derive(Deserialize)]
+struct ValidateRequest {
+    tenants: Vec<ValidateTenant>,
+}
+
+/// One shard of a `ValidateRequest` (its generation, `gen`, is not read).
+#[derive(Deserialize)]
+struct ValidateTenant {
+    id: String,
+}
+
+/// A pageserver's `TimelineImportStatusRequest`.
+#[derive(Deserialize)]
+struct GetImportStatus {
+    tenant_shard_id: String,
+    timeline_id: String,
+}
+
+/// The state a `ShardImportStatus` names: `"Done"`, `{"Error": "..."}` or
+/// `{"InProgress": ...}`; `None` for anything else.
+pub fn import_state(status: &serde_json::Value) -> Option<ImportState> {
+    match status {
+        serde_json::Value::String(s) if s == "Done" => Some(ImportState::Done),
+        serde_json::Value::Object(m) if m.len() == 1 => {
+            if m.contains_key("InProgress") {
+                Some(ImportState::InProgress)
+            } else {
+                m.get("Error").map(|e| {
+                    ImportState::Error(e.as_str().map_or_else(|| e.to_string(), str::to_string))
+                })
+            }
+        }
+        _ => None,
+    }
+}
+
+/// `POST /upcall/v1/timeline_import_status`: records a pageserver's report
+/// on an import (NF2 Task 13). The last report wins; a repeated one is a
+/// no-op, as the pageserver's at-least-once delivery needs.
+async fn put_import_status(
+    State(s): State<Arc<Shared>>,
+    Extension(peer): Extension<Peer>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    if !token_matches(
+        &headers,
+        s.limits.max_token_bytes,
+        s.pageserver_digest.as_ref(),
+    ) {
+        tracing::info!(peer = %peer.0, "timeline_import_status: token refused");
+        return s.refuse(peer, StatusCode::UNAUTHORIZED, "the token is invalid");
+    }
+    let Ok(bytes) = axum::body::to_bytes(body, s.limits.max_body_bytes).await else {
+        return error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "the body is too large or unreadable",
+        );
+    };
+    let Ok(req) = serde_json::from_slice::<PutImportStatus>(&bytes) else {
+        return error(StatusCode::BAD_REQUEST, "the body is not an import status");
+    };
+    let Some(state) = import_state(&req.status) else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "the status is not a ShardImportStatus",
+        );
+    };
+    let key = ImportStatusKey {
+        tenant_shard_id: req.tenant_shard_id.clone(),
+        timeline_id: req.timeline_id.clone(),
+    };
+    let rec = ImportStatusRec {
+        tenant_shard_id: req.tenant_shard_id,
+        timeline_id: req.timeline_id,
+        state,
+        status_json: req.status.to_string(),
+        updated_at_ms: s.clock.now_ms(),
+    };
+    let api = s.store.api_writer();
+    for _ in 0..3 {
+        let expected = match s.store.get::<ImportStatusRec>(&key).await {
+            Ok(Some(v))
+                if v.record.state == rec.state && v.record.status_json == rec.status_json =>
+            {
+                return StatusCode::OK.into_response();
+            }
+            Ok(Some(v)) => Some(v.version),
+            Ok(None) => None,
+            Err(e) => {
+                tracing::warn!(error = %e, "timeline_import_status: store unavailable");
+                return error(StatusCode::SERVICE_UNAVAILABLE, "the store is unavailable");
+            }
+        };
+        match api.put(&rec, expected).await {
+            Ok(_) => {
+                tracing::info!(
+                    tenant = %rec.tenant_shard_id,
+                    timeline = %rec.timeline_id,
+                    state = ?rec.state,
+                    "timeline import status recorded"
+                );
+                return StatusCode::OK.into_response();
+            }
+            Err(StoreError::Conflict { .. }) => continue,
+            Err(e) => {
+                tracing::warn!(error = %e, "timeline_import_status: store unavailable");
+                return error(StatusCode::SERVICE_UNAVAILABLE, "the store is unavailable");
+            }
+        }
+    }
+    error(StatusCode::SERVICE_UNAVAILABLE, "the status kept changing")
+}
+
+/// `POST /upcall/v1/validate`: every generation a pageserver asks about is
+/// valid. The storage controller answers this to fence a pageserver that
+/// lost its attachment; Loams runs one pageserver per tenant shard, in
+/// emergency mode at its last known generation, so there is nothing to
+/// fence. Without an answer the pageserver's deletion queue never deletes a
+/// layer and never advances its remote consistent LSN (NF2 Task 13).
+async fn validate_generations(
+    State(s): State<Arc<Shared>>,
+    Extension(peer): Extension<Peer>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    if !token_matches(
+        &headers,
+        s.limits.max_token_bytes,
+        s.pageserver_digest.as_ref(),
+    ) {
+        tracing::info!(peer = %peer.0, "validate: token refused");
+        return s.refuse(peer, StatusCode::UNAUTHORIZED, "the token is invalid");
+    }
+    let Ok(bytes) = axum::body::to_bytes(body, s.limits.max_body_bytes).await else {
+        return error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "the body is too large or unreadable",
+        );
+    };
+    let Ok(req) = serde_json::from_slice::<ValidateRequest>(&bytes) else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "the body is not a validate request",
+        );
+    };
+    let tenants: Vec<serde_json::Value> = req
+        .tenants
+        .into_iter()
+        .map(|t| serde_json::json!({"id": t.id, "valid": true}))
+        .collect();
+    axum::Json(serde_json::json!({ "tenants": tenants })).into_response()
+}
+
+/// `GET /upcall/v1/timeline_import_status`: the last recorded report, or
+/// in progress for an import not reported yet (a pageserver asks when it
+/// restarts an import).
+async fn get_import_status(
+    State(s): State<Arc<Shared>>,
+    Extension(peer): Extension<Peer>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    if !token_matches(
+        &headers,
+        s.limits.max_token_bytes,
+        s.pageserver_digest.as_ref(),
+    ) {
+        tracing::info!(peer = %peer.0, "timeline_import_status: token refused");
+        return s.refuse(peer, StatusCode::UNAUTHORIZED, "the token is invalid");
+    }
+    let Ok(bytes) = axum::body::to_bytes(body, s.limits.max_body_bytes).await else {
+        return error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "the body is too large or unreadable",
+        );
+    };
+    let Ok(req) = serde_json::from_slice::<GetImportStatus>(&bytes) else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "the body is not an import status request",
+        );
+    };
+    let key = ImportStatusKey {
+        tenant_shard_id: req.tenant_shard_id,
+        timeline_id: req.timeline_id,
+    };
+    let text = match s.store.get::<ImportStatusRec>(&key).await {
+        Ok(Some(v)) => v.record.status_json,
+        Ok(None) => r#"{"InProgress":null}"#.to_string(),
+        Err(e) => {
+            tracing::warn!(error = %e, "timeline_import_status: store unavailable");
+            return error(StatusCode::SERVICE_UNAVAILABLE, "the store is unavailable");
+        }
+    };
+    (
+        [(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        )],
+        text,
+    )
+        .into_response()
+}
+
 async fn notify_attach(
     State(s): State<Arc<Shared>>,
     Extension(peer): Extension<Peer>,

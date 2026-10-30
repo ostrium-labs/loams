@@ -1,0 +1,137 @@
+# Prices for bench/cost/compute.py.
+#
+# Every value says where it came from (`source`) and what kind of number it
+# is (`label`):
+#   published   read from a vendor's or agency's published price list
+#   measured    taken from our own bill, ledger or results
+#   assumption  chosen by us; the sensitivity table varies it
+#
+# Change a value here and rerun `python3 bench/cost/compute.py --update`
+# to regenerate every table in docs/benchmarks/2026-10-29-cost-per-op/.
+
+# How many cloud vCPUs one busy laptop core is worth. The laptop (Intel Core
+# Ultra 5 225H) has no SMT: a "core" is one physical core. A c7i vCPU is one
+# hyperthread of a Sapphire Rapids core. 1 is the optimistic mapping; the
+# sensitivity table also shows 2 (one whole physical core per laptop core).
+[mapping]
+vcpu_per_core = 1
+vcpu_per_core_sensitivity = [1, 2]
+label = "assumption"
+
+# --- Reference price 1: on-demand cloud vCPU ------------------------------
+[price.on_demand]
+name = "AWS EC2 c7i.large on-demand"
+kind = "cloud"
+usd_per_hour = 0.08925
+vcpus = 2
+region = "us-east-1, Linux, shared tenancy"
+label = "published"
+source = "AWS Price List (pricing calculator feed ec2-ondemand-without-sec-sel, US East (N. Virginia), Linux), publication 2026-10-28T18:03:52Z; https://aws.amazon.com/ec2/pricing/on-demand/"
+retrieved = "2026-10-29"
+
+# --- Reference price 2: 3-year commitment ---------------------------------
+[price.reserved_3y]
+name = "AWS EC2 Instance Savings Plan, c7i, 3 years, no upfront"
+kind = "cloud"
+usd_per_hour = 0.03929
+vcpus = 2
+region = "us-east-1, Linux, c7i.large effective rate"
+label = "published"
+source = "AWS Price List API, AWSComputeSavingsPlan us-east-1 offer file, publication 2026-10-28T18:02:49Z, rate code D2YVZHPR4MTDUCJY.4TFFGXJMCK23ZSWR; https://aws.amazon.com/savingsplans/compute-pricing/"
+retrieved = "2026-10-29"
+
+# --- Reference price 3: owned hardware, 3-year straight-line + power -----
+# The same CPU as the benchmark laptop, in a mini-PC barebone, so the
+# measured per-core throughput applies without a CPU-to-CPU conversion.
+[price.owned]
+name = "Owned: Gigabyte BRIX GB-BRU5-225H (Core Ultra 5 225H), 3 years + power"
+kind = "owned"
+hardware_usd = 612.93
+hardware_label = "published"
+hardware_source = "AVADirect product 19197029, GIGABYTE BRIX GB-BRU5-225H barebone, $612.93; https://www.avadirect.com/BRIX-GB-BRU5-225H-Intel-Core-Ultra-5-225H-2x-DDR5-CSO-DIMM-2x-M-2-NVMe-SSD-Intel-Arc-GPU-Mini-PC-Barebone/Product/19197029"
+hardware_retrieved = "2026-10-29"
+# The barebone has no RAM or SSD. 16 GB DDR5 SO-DIMM + 1 TB NVMe; DRAM
+# prices moved a lot in 2026, so this is a round assumption, not a quote.
+extra_usd = 250.0
+extra_label = "assumption"
+cores = 14
+years = 3
+# Whole-system draw. 100 W is the barebone's power-supply rating (20 V, 5 A),
+# an upper bound; the CPU's base power is 28 W and its maximum turbo power
+# 115 W (package only, short bursts).
+watts = 100.0
+watts_label = "published (PSU rating, used as an upper bound)"
+watts_source = "AVADirect product page above: DC 20V/5A, 100W; CPU 28 W base / 115 W max turbo per https://www.notebookcheck.net/Intel-Core-Ultra-5-225H-Processor-Benchmarks-and-Specs.944682.0.html"
+watts_low = 28.0
+usd_per_kwh = 0.1447
+kwh_label = "published"
+kwh_source = "US EIA, Electric Power Monthly table 5.6.A, commercial sector, August 2026 (preliminary), 14.47 cents/kWh; https://www.eia.gov/electricity/monthly/epm_table_grapher.php?t=epmt_5_6_a"
+kwh_retrieved = "2026-10-29"
+# Not included: rack space, cooling overhead (PUE), network, spares, people.
+label = "published + assumption"
+
+# --- Sensitivity rows (beyond the three references) -----------------------
+[sensitivity.reserved_3y_all_upfront]
+name = "AWS EC2 Instance Savings Plan, c7i, 3 years, all upfront"
+kind = "cloud"
+usd_per_hour = 0.0342
+vcpus = 2
+label = "published"
+source = "AWS Price List API, AWSComputeSavingsPlan us-east-1, rate code KZNFJ7FCP89VT3MR.4TFFGXJMCK23ZSWR, publication 2026-10-28T18:02:49Z"
+
+[sensitivity.on_demand_graviton]
+name = "AWS EC2 c8g.large on-demand (Graviton4; 1 vCPU = 1 physical core)"
+kind = "cloud"
+usd_per_hour = 0.07976
+vcpus = 2
+label = "published"
+source = "AWS Price List (ec2-ondemand-without-sec-sel, US East (N. Virginia), Linux), publication 2026-10-28T18:03:52Z. Arm cores: our x86 throughput was not measured on it."
+
+[sensitivity.on_demand_c8i]
+name = "AWS EC2 c8i.large on-demand"
+kind = "cloud"
+usd_per_hour = 0.09371
+vcpus = 2
+label = "published"
+source = "AWS Price List (ec2-ondemand-without-sec-sel, US East (N. Virginia), Linux), publication 2026-10-28T18:03:52Z"
+
+# --- Confluent Cloud (lane CFB, docs/benchmarks/confluent-cloud-2026-10.md) -
+[confluent]
+# Confluent publishes no Dedicated CKU price ("contact sales"). The lane's
+# guard counted $4.00/CKU-hour; third-party list estimates are $3.00-3.30.
+cku_usd_per_hour = 4.00
+cku_label = "assumption"
+cku_source = "bench/confluent guard rule; Confluent publishes no CKU price (docs/benchmarks/confluent-cloud-2026-10.md, Spend)"
+cku_usd_per_hour_low = 3.00
+cku_low_source = "third-party list estimates of $3.00-3.30 quoted in the CFB ledger"
+data_in_usd_per_gb = 0.05
+data_label = "published"
+data_source = "confluent.io/confluent-cloud/pricing, read 2026-10-26 and 2026-10-28 (CFB ledger, Prices used)"
+# Measured spend (the guard's binding upper bound, before the Costs API
+# reconciliation due by 2026-10-31/11-01) and the ingress it paid for.
+spend_upper_usd = 1211.05
+spend_label = "measured (upper bound)"
+spend_source = ".he0-shared/confluent-bench-ledger.md, phase 3 STOP 2026-10-29T00:58Z"
+ingress_gb = 3177
+ingress_source = "same ledger: data $158.87 = 3,177 GB in (Metrics API)"
+dedicated_test_usd = 542.36
+dedicated_test_gb = 1303
+dedicated_test_source = "bench/confluent/results/2026-10-28/cost.json (Dedicated x4 per-test recount)"
+# Result files the throughput is computed from.
+dedicated_cluster = "bench/confluent/results/2026-10-28/dedicated/loams-cfb-aws-d4"
+dedicated_cku = 4
+burst_series = "bench/confluent/results/2026-10-28/burst/cal96-loams-cfb-aws-x2-series.json"
+burst_cku = 4
+burst_payload_bytes = 10
+
+# --- Iggy native on our hardware ------------------------------------------
+[iggy]
+# bench/all/native/iggy.sh: iggy-bench balanced producer, 100-byte messages.
+message_bytes = 100
+message_source = "bench/all/native/iggy.sh (size=100)"
+# One server, one shard, no replication, the build's default persistence.
+# For a like-for-like with a replicated Kafka service we also show the
+# server cost times this factor (an assumption: each replica costs a full
+# server's CPU, network not counted).
+replication_factor = 3
+replication_label = "assumption"

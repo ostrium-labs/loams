@@ -260,10 +260,34 @@ jobs:
             "$bin" version
           fi
 
+      # The transfer sidecar behind Transfers (design 85); fetch-engine.mjs requires it
+      # (LOAMS_REQUIRE_TRANSFER below).
+      - name: transfer sidecar
+        if: needs.platforms.outputs.full == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe=loams-transfer; [ "$RUNNER_OS" = Windows ] && exe=loams-transfer.exe
+          if [ -n "${RUST_TARGET:-}" ]; then
+            cargo build --release -p loams-transfer --target "$RUST_TARGET"
+            bin="$PWD/target/$RUST_TARGET/release/$exe"
+            echo "LOAMS_TRANSFER_BIN=$bin" >> "$GITHUB_ENV"
+          else
+            cargo build --release -p loams-transfer
+            bin="target/release/$exe"
+          fi
+          if [ "${RUST_TARGET:-}" = x86_64-apple-darwin ]; then
+            arch -x86_64 "$bin" --version
+          elif [ "${RUST_TARGET:-}" = aarch64-apple-darwin ]; then
+            [ "$(lipo -archs "$bin")" = arm64 ]
+          else
+            "$bin" --version
+          fi
       - name: package
         if: needs.platforms.outputs.full == 'true'
         env:
           LOAMS_REQUIRE_AGENTD: "1"
+          LOAMS_REQUIRE_TRANSFER: "1"
         run: pnpm nx run loams-desktop-electron:${{ matrix.target }} --outputStyle=static
 
       - name: the daemon is bundled

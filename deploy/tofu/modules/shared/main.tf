@@ -20,7 +20,7 @@ variable "release" {
   type        = string
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+([-.][0-9A-Za-z.]+)?$", var.release))
-    error_message = "release must be a version such as 0.1.3."
+    error_message = "release must be a version such as 0.1.4."
   }
 }
 

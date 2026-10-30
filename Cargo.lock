@@ -239,7 +239,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -250,7 +250,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1333,7 +1333,7 @@ dependencies = [
  "regex",
  "rustc-hash 2.1.3",
  "shlex",
- "syn 3.0.6",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -1590,7 +1590,7 @@ dependencies = [
 
 [[package]]
 name = "bq1-native"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2344,8 +2344,8 @@ dependencies = [
  "flate2",
  "liblzma",
  "memchr",
- "zstd 0.14.0",
- "zstd-safe 8.0.0",
+ "zstd 0.14.3",
+ "zstd-safe 8.2.0",
 ]
 
 [[package]]
@@ -2861,9 +2861,9 @@ dependencies = [
 
 [[package]]
 name = "ctutils"
-version = "0.4.2"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d5515a3834141de9eafb9717ad39eea8247b5674e6066c404e8c4b365d2a29e"
+checksum = "12218662ccac37d9714f2191252553d67585b97df8c839cbe49e0bde278dc865"
 dependencies = [
  "cmov",
 ]
@@ -3429,7 +3429,7 @@ dependencies = [
  "num-traits",
  "rand 0.9.5",
  "regex",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "uuid",
 ]
 
@@ -4020,7 +4020,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4376,7 +4376,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5137,7 +5137,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-bench"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "clap",
  "loams-gateway",
@@ -5159,7 +5159,7 @@ dependencies = [
  "libc",
  "log",
  "rustversion",
- "windows-link 0.2.1",
+ "windows-link 0.1.3",
  "windows-result 0.4.1",
 ]
 
@@ -5342,7 +5342,7 @@ checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 
 [[package]]
 name = "git-wal-bench"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "bytes",
@@ -5592,7 +5592,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c48eccd894bd15555b0346470e63491ded94aefe76b3fcb1052084b5a393238"
 dependencies = [
  "bstr",
- "hashbrown 0.17.1",
+ "hashbrown 0.15.5",
 ]
 
 [[package]]
@@ -5875,7 +5875,7 @@ dependencies = [
 [[package]]
 name = "grafeo"
 version = "0.5.43"
-source = "git+https://github.com/ostrium-labs/grafeo?rev=92bc59a28ed8b38dbb43659b4a90271770c58956#92bc59a28ed8b38dbb43659b4a90271770c58956"
+source = "git+https://github.com/ostrium-labs/grafeo?rev=bc6091e35953935f8221c3f0631d5aae77858e8f#bc6091e35953935f8221c3f0631d5aae77858e8f"
 dependencies = [
  "grafeo-adapters",
  "grafeo-common",
@@ -5886,7 +5886,7 @@ dependencies = [
 [[package]]
 name = "grafeo-adapters"
 version = "0.5.43"
-source = "git+https://github.com/ostrium-labs/grafeo?rev=92bc59a28ed8b38dbb43659b4a90271770c58956#92bc59a28ed8b38dbb43659b4a90271770c58956"
+source = "git+https://github.com/ostrium-labs/grafeo?rev=bc6091e35953935f8221c3f0631d5aae77858e8f#bc6091e35953935f8221c3f0631d5aae77858e8f"
 dependencies = [
  "bincode 2.0.1",
  "grafeo-common",
@@ -5903,7 +5903,7 @@ dependencies = [
 [[package]]
 name = "grafeo-common"
 version = "0.5.43"
-source = "git+https://github.com/ostrium-labs/grafeo?rev=92bc59a28ed8b38dbb43659b4a90271770c58956#92bc59a28ed8b38dbb43659b4a90271770c58956"
+source = "git+https://github.com/ostrium-labs/grafeo?rev=bc6091e35953935f8221c3f0631d5aae77858e8f#bc6091e35953935f8221c3f0631d5aae77858e8f"
 dependencies = [
  "arcstr",
  "bincode 2.0.1",
@@ -5924,7 +5924,7 @@ dependencies = [
 [[package]]
 name = "grafeo-core"
 version = "0.5.43"
-source = "git+https://github.com/ostrium-labs/grafeo?rev=92bc59a28ed8b38dbb43659b4a90271770c58956#92bc59a28ed8b38dbb43659b4a90271770c58956"
+source = "git+https://github.com/ostrium-labs/grafeo?rev=bc6091e35953935f8221c3f0631d5aae77858e8f#bc6091e35953935f8221c3f0631d5aae77858e8f"
 dependencies = [
  "arcstr",
  "bincode 2.0.1",
@@ -5949,7 +5949,7 @@ dependencies = [
 [[package]]
 name = "grafeo-engine"
 version = "0.5.43"
-source = "git+https://github.com/ostrium-labs/grafeo?rev=92bc59a28ed8b38dbb43659b4a90271770c58956#92bc59a28ed8b38dbb43659b4a90271770c58956"
+source = "git+https://github.com/ostrium-labs/grafeo?rev=bc6091e35953935f8221c3f0631d5aae77858e8f#bc6091e35953935f8221c3f0631d5aae77858e8f"
 dependencies = [
  "arcstr",
  "bincode 2.0.1",
@@ -5974,7 +5974,7 @@ dependencies = [
 [[package]]
 name = "grafeo-storage"
 version = "0.5.43"
-source = "git+https://github.com/ostrium-labs/grafeo?rev=92bc59a28ed8b38dbb43659b4a90271770c58956#92bc59a28ed8b38dbb43659b4a90271770c58956"
+source = "git+https://github.com/ostrium-labs/grafeo?rev=bc6091e35953935f8221c3f0631d5aae77858e8f#bc6091e35953935f8221c3f0631d5aae77858e8f"
 dependencies = [
  "bincode 2.0.1",
  "byteorder",
@@ -5992,7 +5992,7 @@ dependencies = [
 
 [[package]]
 name = "graph-qps-bench"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "clap",
  "grafeo",
@@ -6061,6 +6061,34 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+]
+
+[[package]]
+name = "h3"
+version = "0.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10872b55cfb02a821b69dc7cf8dc6a71d6af25eb9a79662bec4a9d016056b3be"
+dependencies = [
+ "bytes",
+ "fastrand",
+ "futures-util",
+ "http",
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
+name = "h3-quinn"
+version = "0.0.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b2e732c8d91a74731663ac8479ab505042fbf547b9a207213ab7fbcbfc4f8b4"
+dependencies = [
+ "bytes",
+ "futures",
+ "h3",
+ "quinn",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -7545,7 +7573,7 @@ dependencies = [
 
 [[package]]
 name = "kv-loadgen"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "clap",
  "serde_json",
@@ -7554,7 +7582,7 @@ dependencies = [
 
 [[package]]
 name = "kv-native"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "clap",
  "futures",
@@ -8443,9 +8471,9 @@ dependencies = [
 
 [[package]]
 name = "libz-sys"
-version = "1.1.29"
+version = "1.1.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85bc9657773828b90eeb625adff10eeac83cc21bbfd8e23a03eaa8a33c9e28d9"
+checksum = "ff20308ecabd635a2dc1dd5834a86c462cca20efba1d5d3ddab1f8aea3455cb2"
 dependencies = [
  "cc",
  "pkg-config",
@@ -8472,7 +8500,7 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
 name = "loams"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "argon2",
  "arrow-array",
@@ -8501,12 +8529,14 @@ dependencies = [
  "loams-agentd-cli",
  "loams-apps-mock",
  "loams-authz",
+ "loams-ca",
  "loams-cache",
  "loams-cloud-admin",
  "loams-cloudevents",
  "loams-collection",
  "loams-common",
  "loams-confluent",
+ "loams-cost",
  "loams-durable",
  "loams-es",
  "loams-flink",
@@ -8526,6 +8556,7 @@ dependencies = [
  "loams-meta-tikv",
  "loams-meter",
  "loams-meter-core",
+ "loams-meter-gate",
  "loams-migrate",
  "loams-pg-control",
  "loams-postgres",
@@ -8538,6 +8569,8 @@ dependencies = [
  "loams-store",
  "loams-stream-grpc",
  "loams-tikv",
+ "loams-transfer",
+ "loams-transport",
  "loams-upgrade",
  "loams-worker",
  "loams-zitadel",
@@ -8553,7 +8586,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "subtle",
  "sync_wrapper",
  "tempfile",
@@ -8576,7 +8609,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8598,7 +8631,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_path_to_error",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -8610,7 +8643,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-cli"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8628,7 +8661,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-connect"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -8667,7 +8700,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-doc"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "chrono",
  "loams-agentd-proto",
@@ -8681,7 +8714,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-factory"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -8700,7 +8733,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-harness"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8716,7 +8749,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml_ng",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tar",
  "tempfile",
  "thiserror 2.0.21",
@@ -8730,7 +8763,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-link"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8746,7 +8779,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -8757,7 +8790,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-marketplace"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -8775,7 +8808,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "sigstore-verify",
  "tempfile",
  "thiserror 2.0.21",
@@ -8787,7 +8820,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-mcp"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8811,7 +8844,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-preview"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8827,7 +8860,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
  "tokio",
  "tokio-tungstenite",
@@ -8839,7 +8872,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-proto"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "chrono",
  "pulldown-cmark",
@@ -8852,7 +8885,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-rpc"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -8872,7 +8905,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-sessions"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8901,7 +8934,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -8916,7 +8949,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-store"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "chrono",
  "loams-agentd-doc",
@@ -8931,7 +8964,7 @@ dependencies = [
 
 [[package]]
 name = "loams-apps-mock"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "axum 0.8.9",
@@ -8948,7 +8981,7 @@ dependencies = [
  "reqwest 0.13.5",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tokio",
  "tower-http 0.7.1",
  "tracing",
@@ -8959,7 +8992,7 @@ dependencies = [
 
 [[package]]
 name = "loams-authz"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -8978,8 +9011,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-ca"
+version = "0.1.4"
+dependencies = [
+ "age",
+ "async-trait",
+ "axum 0.8.9",
+ "base64 0.23.1",
+ "connectrpc",
+ "hex",
+ "loams-proto",
+ "loams-transport",
+ "rustls",
+ "rustls-pki-types",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tower 0.5.3",
+ "tracing",
+]
+
+[[package]]
 name = "loams-cache"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "bytes",
@@ -8996,7 +9051,7 @@ dependencies = [
 
 [[package]]
 name = "loams-cloud-admin"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "axum 0.8.9",
  "base64 0.23.1",
@@ -9013,7 +9068,7 @@ dependencies = [
 
 [[package]]
 name = "loams-cloudevents"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -9025,14 +9080,14 @@ dependencies = [
  "prost-types",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
  "time",
 ]
 
 [[package]]
 name = "loams-collection"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "arrow-array",
  "arrow-schema",
@@ -9080,7 +9135,7 @@ dependencies = [
 
 [[package]]
 name = "loams-common"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "postcard",
@@ -9091,7 +9146,7 @@ dependencies = [
 
 [[package]]
 name = "loams-compat"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -9102,7 +9157,7 @@ dependencies = [
  "mysql_async",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
  "tokio",
  "tokio-postgres",
@@ -9110,7 +9165,7 @@ dependencies = [
 
 [[package]]
 name = "loams-confluent"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "axum 0.8.9",
  "base64 0.23.1",
@@ -9127,7 +9182,7 @@ dependencies = [
 
 [[package]]
 name = "loams-console-mock"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "httpmock",
@@ -9138,8 +9193,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-cost"
+version = "0.1.4"
+dependencies = [
+ "clap",
+ "csv",
+ "flate2",
+ "hex",
+ "loams-meter-core",
+ "proptest",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "sha2 0.11.1",
+ "thiserror 2.0.21",
+ "time",
+]
+
+[[package]]
 name = "loams-cql"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "cassandra-protocol",
@@ -9152,7 +9225,7 @@ dependencies = [
 
 [[package]]
 name = "loams-durable"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "loams-tikv",
@@ -9178,7 +9251,7 @@ dependencies = [
 
 [[package]]
 name = "loams-engines"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -9196,7 +9269,7 @@ dependencies = [
 
 [[package]]
 name = "loams-es"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "axum 0.8.9",
  "base64 0.23.1",
@@ -9217,14 +9290,14 @@ dependencies = [
 
 [[package]]
 name = "loams-facade-gen"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "loams-flink"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -9242,7 +9315,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "sqlx 0.9.0",
  "thiserror 2.0.21",
  "time",
@@ -9257,7 +9330,7 @@ dependencies = [
 
 [[package]]
 name = "loams-fs"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "bytes",
@@ -9271,7 +9344,7 @@ dependencies = [
 
 [[package]]
 name = "loams-gateway"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "clap",
@@ -9289,7 +9362,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "socket2 0.6.5",
  "tempfile",
  "thiserror 2.0.21",
@@ -9302,7 +9375,7 @@ dependencies = [
 
 [[package]]
 name = "loams-git"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "bytes",
@@ -9338,7 +9411,7 @@ dependencies = [
  "rand 0.9.5",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -9348,7 +9421,7 @@ dependencies = [
 
 [[package]]
 name = "loams-git-remote"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "bytes",
  "futures",
@@ -9356,7 +9429,7 @@ dependencies = [
  "loams-git",
  "loams-store",
  "rand 0.9.5",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -9365,7 +9438,7 @@ dependencies = [
 
 [[package]]
 name = "loams-graph"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "arrow-array",
  "arrow-schema",
@@ -9406,7 +9479,7 @@ dependencies = [
  "reqwest 0.13.5",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -9419,7 +9492,7 @@ dependencies = [
 
 [[package]]
 name = "loams-gw-test"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "futures",
  "loams-kv",
@@ -9428,7 +9501,7 @@ dependencies = [
 
 [[package]]
 name = "loams-hnsw"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "crc32c",
  "loams-common",
@@ -9445,7 +9518,7 @@ dependencies = [
 
 [[package]]
 name = "loams-hot"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "arrow-array",
  "async-trait",
@@ -9485,12 +9558,12 @@ dependencies = [
  "tracing",
  "ulid 3.0.0",
  "xxhash-rust",
- "zstd 0.14.0",
+ "zstd 0.14.3",
 ]
 
 [[package]]
 name = "loams-identity-sync"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -9501,7 +9574,7 @@ dependencies = [
  "reqwest 0.13.5",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
  "time",
  "tokio",
@@ -9510,7 +9583,7 @@ dependencies = [
 
 [[package]]
 name = "loams-iggy-sink"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -9527,7 +9600,7 @@ dependencies = [
 
 [[package]]
 name = "loams-imperial"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "loams-kv",
  "serde",
@@ -9537,7 +9610,7 @@ dependencies = [
 
 [[package]]
 name = "loams-knowledge"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -9550,7 +9623,7 @@ dependencies = [
  "loams-walrus",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
  "thiserror 2.0.21",
  "time",
@@ -9562,7 +9635,7 @@ dependencies = [
 
 [[package]]
 name = "loams-kv"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "futures",
  "loams-kv",
@@ -9579,7 +9652,7 @@ dependencies = [
 
 [[package]]
 name = "loams-link"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "bytes",
@@ -9605,7 +9678,7 @@ dependencies = [
 
 [[package]]
 name = "loams-live"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "axum 0.8.9",
  "buffa",
@@ -9633,7 +9706,7 @@ dependencies = [
  "ring",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
@@ -9644,7 +9717,7 @@ dependencies = [
 
 [[package]]
 name = "loams-live-js"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "buffa",
  "futures",
@@ -9663,21 +9736,21 @@ dependencies = [
  "rustix 1.1.5",
  "seccompiler",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tokio",
  "tracing",
 ]
 
 [[package]]
 name = "loams-live-js-alloc"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "rquickjs",
 ]
 
 [[package]]
 name = "loams-live-proto"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "buffa",
  "connectrpc",
@@ -9688,7 +9761,7 @@ dependencies = [
 
 [[package]]
 name = "loams-llm"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -9698,7 +9771,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
@@ -9709,7 +9782,7 @@ dependencies = [
 
 [[package]]
 name = "loams-log"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "bytes",
@@ -9737,7 +9810,7 @@ dependencies = [
 
 [[package]]
 name = "loams-meta"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -9757,7 +9830,7 @@ dependencies = [
  "redb",
  "reqwest 0.13.5",
  "serde",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -9766,7 +9839,7 @@ dependencies = [
 
 [[package]]
 name = "loams-meta-conformance"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "loams-common",
@@ -9777,7 +9850,7 @@ dependencies = [
 
 [[package]]
 name = "loams-meta-tikv"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "fail",
@@ -9793,7 +9866,7 @@ dependencies = [
 
 [[package]]
 name = "loams-meter"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "age",
  "async-trait",
@@ -9806,15 +9879,19 @@ dependencies = [
  "loams-authz",
  "loams-cloudevents",
  "loams-common",
+ "loams-cost",
  "loams-meter-core",
+ "loams-meter-export",
+ "loams-meter-gate",
  "loams-meter-house",
  "loams-proto",
  "proptest",
  "reqwest 0.13.5",
+ "rustls",
  "serde",
  "serde_json",
  "serde_yaml_ng",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
  "tokio",
  "tower 0.5.3",
@@ -9824,7 +9901,7 @@ dependencies = [
 
 [[package]]
 name = "loams-meter-agent"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -9843,7 +9920,7 @@ dependencies = [
  "reqwest 0.13.5",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
  "thiserror 2.0.21",
  "time",
@@ -9854,21 +9931,21 @@ dependencies = [
 
 [[package]]
 name = "loams-meter-core"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "bytes",
  "loams-cloudevents",
  "proptest",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
  "time",
 ]
 
 [[package]]
 name = "loams-meter-export"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -9877,7 +9954,7 @@ dependencies = [
  "reqwest 0.13.5",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
  "time",
  "tokio",
@@ -9888,14 +9965,14 @@ dependencies = [
 
 [[package]]
 name = "loams-meter-gate"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "loams-meter-house"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "axum 0.8.9",
  "loams-meter-core",
@@ -9908,7 +9985,7 @@ dependencies = [
 
 [[package]]
 name = "loams-migrate"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -9928,7 +10005,7 @@ dependencies = [
  "rustix 1.1.5",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -9940,7 +10017,7 @@ dependencies = [
 
 [[package]]
 name = "loams-pg-control"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "age",
  "async-trait",
@@ -9972,7 +10049,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "subtle",
  "tempfile",
  "thiserror 2.0.21",
@@ -9992,7 +10069,7 @@ dependencies = [
 
 [[package]]
 name = "loams-pgdog-sync"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "bytes",
  "clap",
@@ -10013,7 +10090,7 @@ dependencies = [
 
 [[package]]
 name = "loams-pk"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "bytes",
@@ -10027,7 +10104,7 @@ dependencies = [
 
 [[package]]
 name = "loams-postgres"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "axum 0.8.9",
  "hex",
@@ -10045,7 +10122,7 @@ dependencies = [
 
 [[package]]
 name = "loams-proto"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "buffa",
  "buffa-types",
@@ -10058,7 +10135,7 @@ dependencies = [
 
 [[package]]
 name = "loams-qdrant"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "axum 0.8.9",
  "bytes",
@@ -10088,7 +10165,7 @@ dependencies = [
 
 [[package]]
 name = "loams-query"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "arrow-flight",
@@ -10142,7 +10219,7 @@ dependencies = [
 
 [[package]]
 name = "loams-quickwit"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -10180,7 +10257,7 @@ dependencies = [
 
 [[package]]
 name = "loams-resp"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "bytes",
  "loams-kv",
@@ -10193,7 +10270,7 @@ dependencies = [
 
 [[package]]
 name = "loams-risingwave"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -10219,7 +10296,7 @@ dependencies = [
 
 [[package]]
 name = "loams-safekeeper"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -10236,7 +10313,7 @@ dependencies = [
  "rustix 1.1.5",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -10250,7 +10327,7 @@ dependencies = [
 
 [[package]]
 name = "loams-sidebar-browser"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "base64 0.23.1",
  "flate2",
@@ -10267,7 +10344,7 @@ dependencies = [
 
 [[package]]
 name = "loams-sim"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "bytes",
  "loams-cache",
@@ -10291,7 +10368,7 @@ dependencies = [
 
 [[package]]
 name = "loams-spark"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -10309,7 +10386,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "subtle",
  "tempfile",
  "thiserror 2.0.21",
@@ -10330,7 +10407,7 @@ dependencies = [
 
 [[package]]
 name = "loams-specview"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "axum 0.8.9",
@@ -10351,7 +10428,7 @@ dependencies = [
 
 [[package]]
 name = "loams-sqldb"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "loams-sqlrouter",
@@ -10368,7 +10445,7 @@ dependencies = [
 
 [[package]]
 name = "loams-sqlgate"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "argon2",
  "async-trait",
@@ -10381,7 +10458,7 @@ dependencies = [
  "rcgen",
  "rustls",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "subtle",
  "thiserror 2.0.21",
  "tokio",
@@ -10391,7 +10468,7 @@ dependencies = [
 
 [[package]]
 name = "loams-sqlrouter"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "des",
  "hex",
@@ -10408,7 +10485,7 @@ dependencies = [
 
 [[package]]
 name = "loams-store"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "bytes",
@@ -10425,7 +10502,7 @@ dependencies = [
 
 [[package]]
 name = "loams-stream-grpc"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "bytes",
@@ -10445,7 +10522,7 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-frontend"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "bytes",
@@ -10466,7 +10543,7 @@ dependencies = [
  "prost-types",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tokio",
  "tokio-stream",
  "toml 0.8.23",
@@ -10480,7 +10557,7 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-history"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "loams-temporal-proto",
  "prost 0.14.4",
@@ -10491,11 +10568,11 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-matching"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "hex",
  "loams-temporal-resonate",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
@@ -10503,13 +10580,13 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-proto"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "bytes",
  "hex",
  "prost 0.14.4",
  "prost-types",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tonic 0.14.6",
  "tonic-prost",
  "tonic-prost-build",
@@ -10517,7 +10594,7 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-resonate"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -10528,7 +10605,7 @@ dependencies = [
  "resonate-client",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
@@ -10536,7 +10613,7 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-schedule"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "chrono",
@@ -10546,7 +10623,7 @@ dependencies = [
  "prost-types",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "sqlx 0.9.0",
  "thiserror 2.0.21",
  "tokio",
@@ -10555,7 +10632,7 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-statemachine"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "loams-temporal-history",
  "loams-temporal-proto",
@@ -10569,13 +10646,13 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-store"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "loams-temporal-store",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "sqlx 0.9.0",
  "thiserror 2.0.21",
  "tokio",
@@ -10584,7 +10661,7 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-testkit"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "base64 0.23.1",
  "hex",
@@ -10593,13 +10670,13 @@ dependencies = [
  "prost-reflect",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "loams-temporal-visibility"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "chrono",
@@ -10613,7 +10690,7 @@ dependencies = [
 
 [[package]]
 name = "loams-text"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -10636,7 +10713,7 @@ dependencies = [
 
 [[package]]
 name = "loams-tikv"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "axum 0.8.9",
  "fail",
@@ -10656,8 +10733,64 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-transfer"
+version = "0.1.4"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum 0.8.9",
+ "bytes",
+ "clap",
+ "futures",
+ "glob",
+ "h3",
+ "h3-quinn",
+ "hex",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "loams-common",
+ "loams-meta",
+ "loams-store",
+ "object_store 0.14.2",
+ "quinn",
+ "rand 0.9.5",
+ "rcgen",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-pki-types",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-rustls",
+ "tokio-stream",
+ "toml 0.8.23",
+ "tower 0.5.3",
+ "tracing",
+ "tracing-subscriber",
+ "ulid 3.0.0",
+]
+
+[[package]]
+name = "loams-transport"
+version = "0.1.4"
+dependencies = [
+ "aws-lc-rs",
+ "base64 0.23.1",
+ "rcgen",
+ "rustls",
+ "rustls-pki-types",
+ "thiserror 2.0.21",
+ "x509-parser",
+]
+
+[[package]]
 name = "loams-tuple"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "proptest",
  "thiserror 2.0.21",
@@ -10665,13 +10798,13 @@ dependencies = [
 
 [[package]]
 name = "loams-upgrade"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "clap",
  "schemars 0.8.22",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
  "thiserror 2.0.21",
  "toml 0.8.23",
@@ -10680,7 +10813,7 @@ dependencies = [
 
 [[package]]
 name = "loams-walrus"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "axum 0.8.9",
  "base64 0.23.1",
@@ -10691,7 +10824,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -10702,7 +10835,7 @@ dependencies = [
 
 [[package]]
 name = "loams-web-bridge"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -10712,7 +10845,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -10724,7 +10857,7 @@ dependencies = [
 
 [[package]]
 name = "loams-worker"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "loams-common",
@@ -10740,7 +10873,7 @@ dependencies = [
 
 [[package]]
 name = "loams-zitadel"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -11634,7 +11767,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -12857,7 +12990,7 @@ dependencies = [
  "md-5 0.11.0",
  "memchr",
  "rand 0.10.3",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "stringprep",
 ]
 
@@ -13306,9 +13439,9 @@ dependencies = [
 
 [[package]]
 name = "pulldown-cmark"
-version = "0.13.4"
+version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e"
+checksum = "278e9268c93b9e498a2da46c34d90ba93a3255eb99009646398f34bc73ab36eb"
 dependencies = [
  "bitflags 2.13.2",
  "getopts",
@@ -13406,7 +13539,7 @@ dependencies = [
  "serde_cbor",
  "serde_json",
  "serde_variant",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "siphasher",
  "slab",
  "smallvec",
@@ -13485,6 +13618,7 @@ checksum = "4051e23e9185c255a7e33ef59cdbca87a22d359052eecd22fc6b901fb37d9d11"
 dependencies = [
  "bytes",
  "cfg_aliases 0.2.2",
+ "futures-io",
  "pin-project-lite",
  "quinn-proto",
  "quinn-udp",
@@ -13533,7 +13667,7 @@ dependencies = [
  "once_cell",
  "socket2 0.6.5",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -13798,6 +13932,7 @@ version = "0.14.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8774e05a7d0de114588e6a28fe7e71694b82614ed569d86d8b389dfbc98b8ad8"
 dependencies = [
+ "aws-lc-rs",
  "pem 4.0.0",
  "ring",
  "rustls-pki-types",
@@ -14604,7 +14739,7 @@ version = "8.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d84e8ba78bd384263e5922f084cbe1b081c3b7e69add59c8fb097b879ba968a"
 dependencies = [
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "walkdir",
 ]
 
@@ -14695,7 +14830,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -14763,7 +14898,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -14963,7 +15098,7 @@ dependencies = [
  "num",
  "once_cell",
  "serde",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "zbus",
 ]
 
@@ -15007,7 +15142,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b55fb86dfd3a2f5f76ea78310a88f96c4ea21a3031f8d212443d56123fd0521"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -15425,9 +15560,9 @@ dependencies = [
 
 [[package]]
 name = "sha2"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4"
+checksum = "47d7069beb7d6ac7b9acd1039986e73443f24234f41074da099d6f994ac9ad19"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.3.1",
@@ -15870,7 +16005,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -16166,7 +16301,7 @@ dependencies = [
  "percent-encoding",
  "serde",
  "sha1 0.11.0",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "sqlx-core 0.9.0",
  "thiserror 2.0.21",
  "tracing",
@@ -16235,7 +16370,7 @@ dependencies = [
  "rand 0.10.3",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "smallvec",
  "sqlx-core 0.9.0",
  "stringprep",
@@ -16307,7 +16442,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "psm",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -16757,10 +16892,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.5",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -16779,7 +16914,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix 1.1.5",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -17589,9 +17724,9 @@ dependencies = [
 
 [[package]]
 name = "typed-path"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e28f89b80c87b8fb0cf04ab448d5dd0dd0ade2f8891bae878de66a75a28600e"
+checksum = "54ec2755506471f54baf5e4bb5499d8e510cc1caf271270e778a736bd2d7336c"
 
 [[package]]
 name = "typeid"
@@ -17643,7 +17778,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -18334,7 +18469,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -18938,6 +19073,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d43b0f71ce057da06bc0851b23ee24f3f86190b07203dd8f567d0b706a185202"
 dependencies = [
  "asn1-rs",
+ "aws-lc-rs",
  "data-encoding",
  "der-parser",
  "lazy_static",
@@ -19183,14 +19319,15 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "7.2.0"
+version = "9.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c42e33efc22a0650c311c2ef19115ce232583abbe80850bc8b66509ebef02de0"
+checksum = "6e04976da629d3b04204ba8105b396a193af8ad2583b2c79bfb3ab8af580a11e"
 dependencies = [
  "crc32fast",
  "flate2",
  "indexmap 2.14.2",
  "memchr",
+ "nix 0.31.3",
  "typed-path",
 ]
 
@@ -19217,11 +19354,11 @@ dependencies = [
 
 [[package]]
 name = "zstd"
-version = "0.14.0"
+version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf06bd8162af0734b344780deb55b42a2429ae430870d13fcc12f238e880fe6e"
+checksum = "db3ae9bf90af6e40197bef767eeefc46ad6397420fe873830bd85e5fbbfb3c70"
 dependencies = [
- "zstd-safe 8.0.0",
+ "zstd-safe 8.2.0",
 ]
 
 [[package]]
@@ -19235,18 +19372,18 @@ dependencies = [
 
 [[package]]
 name = "zstd-safe"
-version = "8.0.0"
+version = "8.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae42c0555055784c70058d19ba8e275528e8a99a706684868ace5da4e716a4ab"
+checksum = "ded520f16b29e1a9b771c722221b2b0a0398c2316d9bb3c42b458a5414d7434b"
 dependencies = [
  "zstd-sys",
 ]
 
 [[package]]
 name = "zstd-sys"
-version = "2.1.0+zstd.1.5.7"
+version = "2.1.2+zstd.1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ef0a8027ec3ee71300ab3bcbcd0393f434aa72b91ca6d635a39941deae8eea0"
+checksum = "481ada9c543b2323cbb7bbdbb5249177fbf0188ed959ed2c15e4b22421c84ed3"
 dependencies = [
  "cc",
  "pkg-config",

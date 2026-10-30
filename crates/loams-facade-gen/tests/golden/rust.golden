@@ -132,6 +132,10 @@ pub const REASONS: &[Reason] = &[
     "lsn_out_of_retention",
     "endpoint_exists_for_branch",
     "compute_start_failed",
+    "unsupported_pg_version",
+    "beta_major_requires_opt_in",
+    "compute_major_mismatch_refused",
+    "import_checksums_enabled",
     "quota_exceeded",
     "storage_unavailable",
     "secret_already_issued",
@@ -218,6 +222,12 @@ pub const REASONS: &[Reason] = &[
     "principal_not_allowed",
     "cors_origin_not_allowed",
     "auth_unavailable",
+    "join_token_unknown",
+    "join_token_spent",
+    "join_token_expired",
+    "identity_not_granted",
+    "identity_revoked",
+    "ca_not_initialized",
     "invalid_argument",
     "not_found",
     "already_exists",
@@ -269,6 +279,10 @@ pub const REASON_CODES: &[(Reason, &str)] = &[
     ("lsn_out_of_retention", "failed_precondition"),
     ("endpoint_exists_for_branch", "already_exists"),
     ("compute_start_failed", "unavailable"),
+    ("unsupported_pg_version", "invalid_argument"),
+    ("beta_major_requires_opt_in", "failed_precondition"),
+    ("compute_major_mismatch_refused", "failed_precondition"),
+    ("import_checksums_enabled", "failed_precondition"),
     ("quota_exceeded", "resource_exhausted"),
     ("storage_unavailable", "unavailable"),
     ("secret_already_issued", "failed_precondition"),
@@ -355,6 +369,12 @@ pub const REASON_CODES: &[(Reason, &str)] = &[
     ("principal_not_allowed", "permission_denied"),
     ("cors_origin_not_allowed", "permission_denied"),
     ("auth_unavailable", "unavailable"),
+    ("join_token_unknown", "unauthenticated"),
+    ("join_token_spent", "unauthenticated"),
+    ("join_token_expired", "unauthenticated"),
+    ("identity_not_granted", "permission_denied"),
+    ("identity_revoked", "permission_denied"),
+    ("ca_not_initialized", "failed_precondition"),
     ("invalid_argument", "invalid_argument"),
     ("not_found", "not_found"),
     ("already_exists", "already_exists"),
@@ -742,6 +762,7 @@ pub static MODULES: &[ModuleBinding] = &[
         calls: &[
             CallBinding { module: "meter.notifications", name: "create_rule", proto_name: "createRule", method: "CreateRule", rpc: "loams.meter.v1.NotificationService/CreateRule", service: "loams.meter.v1.NotificationService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
             CallBinding { module: "meter.notifications", name: "create_webhook", proto_name: "createWebhook", method: "CreateWebhook", rpc: "loams.meter.v1.NotificationService/CreateWebhook", service: "loams.meter.v1.NotificationService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "meter.notifications", name: "list_console_notifications", proto_name: "listConsoleNotifications", method: "ListConsoleNotifications", rpc: "loams.meter.v1.NotificationService/ListConsoleNotifications", service: "loams.meter.v1.NotificationService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
             CallBinding { module: "meter.notifications", name: "list_deliveries", proto_name: "listDeliveries", method: "ListDeliveries", rpc: "loams.meter.v1.NotificationService/ListDeliveries", service: "loams.meter.v1.NotificationService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
             CallBinding { module: "meter.notifications", name: "list_rules", proto_name: "listRules", method: "ListRules", rpc: "loams.meter.v1.NotificationService/ListRules", service: "loams.meter.v1.NotificationService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
             CallBinding { module: "meter.notifications", name: "rotate_webhook_secret", proto_name: "rotateWebhookSecret", method: "RotateWebhookSecret", rpc: "loams.meter.v1.NotificationService/RotateWebhookSecret", service: "loams.meter.v1.NotificationService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
@@ -1758,6 +1779,13 @@ pub trait MeterNotificationsModule {
         request: loams_proto::loams::meter::v1::CreateWebhookRequest,
         options: Option<&CallOptions>,
     ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::CreateWebhookResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.NotificationService/ListConsoleNotifications`, retried: safe.
+    fn list_console_notifications(
+        &self,
+        request: loams_proto::loams::meter::v1::ListConsoleNotificationsRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::ListConsoleNotificationsResponse, LoamsError>> + Send;
 
     /// `loams.meter.v1.NotificationService/ListDeliveries`, retried: safe.
     fn list_deliveries(

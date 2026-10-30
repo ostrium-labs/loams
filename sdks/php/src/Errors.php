@@ -66,6 +66,10 @@ class BranchProtectedException extends LoamsException {}
 class LsnOutOfRetentionException extends LoamsException {}
 class EndpointExistsForBranchException extends LoamsException {}
 class ComputeStartFailedException extends LoamsException {}
+class UnsupportedPgVersionException extends LoamsException {}
+class BetaMajorRequiresOptInException extends LoamsException {}
+class ComputeMajorMismatchRefusedException extends LoamsException {}
+class ImportChecksumsEnabledException extends LoamsException {}
 class QuotaExceededException extends LoamsException {}
 class StorageUnavailableException extends LoamsException {}
 class SecretAlreadyIssuedException extends LoamsException {}
@@ -152,6 +156,12 @@ class CsrfTokenInvalidException extends LoamsException {}
 class PrincipalNotAllowedException extends LoamsException {}
 class CorsOriginNotAllowedException extends LoamsException {}
 class AuthUnavailableException extends LoamsException {}
+class JoinTokenUnknownException extends LoamsException {}
+class JoinTokenSpentException extends LoamsException {}
+class JoinTokenExpiredException extends LoamsException {}
+class IdentityNotGrantedException extends LoamsException {}
+class IdentityRevokedException extends LoamsException {}
+class CaNotInitializedException extends LoamsException {}
 class TokenExpiredException extends LoamsException {}
 class UnauthenticatedException extends LoamsException {}
 class DecisionProofInvalidException extends LoamsException {}
@@ -222,6 +232,10 @@ class ErrorParser
         'lsn_out_of_retention' => LsnOutOfRetentionException::class,
         'endpoint_exists_for_branch' => EndpointExistsForBranchException::class,
         'compute_start_failed' => ComputeStartFailedException::class,
+        'unsupported_pg_version' => UnsupportedPgVersionException::class,
+        'beta_major_requires_opt_in' => BetaMajorRequiresOptInException::class,
+        'compute_major_mismatch_refused' => ComputeMajorMismatchRefusedException::class,
+        'import_checksums_enabled' => ImportChecksumsEnabledException::class,
         'quota_exceeded' => QuotaExceededException::class,
         'storage_unavailable' => StorageUnavailableException::class,
         'secret_already_issued' => SecretAlreadyIssuedException::class,
@@ -308,6 +322,12 @@ class ErrorParser
         'principal_not_allowed' => PrincipalNotAllowedException::class,
         'cors_origin_not_allowed' => CorsOriginNotAllowedException::class,
         'auth_unavailable' => AuthUnavailableException::class,
+        'join_token_unknown' => JoinTokenUnknownException::class,
+        'join_token_spent' => JoinTokenSpentException::class,
+        'join_token_expired' => JoinTokenExpiredException::class,
+        'identity_not_granted' => IdentityNotGrantedException::class,
+        'identity_revoked' => IdentityRevokedException::class,
+        'ca_not_initialized' => CaNotInitializedException::class,
         'invalid_argument' => InvalidArgumentException::class,
         'not_found' => NotFoundException::class,
         'already_exists' => AlreadyExistsException::class,

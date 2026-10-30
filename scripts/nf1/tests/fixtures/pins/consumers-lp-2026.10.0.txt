@@ -35,7 +35,9 @@ deploy/loams-postgres-dev/README.md: +Pinned in [`deploy/pins/loams-postgres-ima
 deploy/loams-postgres-dev/README.md: -| `storage` | `ghcr.io/neondatabase/neon@sha256:7a4f124917bb929964b2d696d710f19584f80bb9bd51b2af4a6e2425434c761f` | `mirror:ghcr.io/neondatabase/neon@sha256:7a4f124917bb929964b2d696d710f19584f80bb9bd51b2af4a6e2425434c761f` | 16.9, 17.5 |
 deploy/loams-postgres-dev/README.md: -| `compute-v16` | `ghcr.io/neondatabase/compute-node-v16@sha256:b3e151661bd2ee11eb2843c8926001966cb23969227e9673c5f42fc3fbe14249` | `mirror:ghcr.io/neondatabase/compute-node-v16@sha256:b3e151661bd2ee11eb2843c8926001966cb23969227e9673c5f42fc3fbe14249` | 16.9 |
 deploy/loams-postgres-dev/README.md: -| `compute-v17` | `ghcr.io/neondatabase/compute-node-v17@sha256:13ab146d3e7bbabb25a8532f315ac443e7512351d1ede0bab586def5c70e26c3` | `mirror:ghcr.io/neondatabase/compute-node-v17@sha256:13ab146d3e7bbabb25a8532f315ac443e7512351d1ede0bab586def5c70e26c3` | 17.5 |
+deploy/loams-postgres-dev/README.md: -
+deploy/loams-postgres-dev/README.md: -Postgres majors: supported 17; beta none; maintenance 16; default 17.
 deploy/loams-postgres-dev/README.md: +| `storage` | `ghcr.io/ostrium-labs/loams-postgres-storage@sha256:1111111111111111111111111111111111111111111111111111111111111111` | `ostrium-labs/loams-postgres@0123456789abcdef0123456789abcdef01234567` | 17.5 |
 deploy/loams-postgres-dev/README.md: +| `compute-v17` | `ghcr.io/ostrium-labs/loams-postgres-compute-v17@sha256:2222222222222222222222222222222222222222222222222222222222222222` | `ostrium-labs/loams-postgres@0123456789abcdef0123456789abcdef01234567` | 17.5 |
-deploy/loams-postgres-dev/README.md: -Postgres majors: supported 17; beta none; maintenance 16; default 17.
+deploy/loams-postgres-dev/README.md: +
 deploy/loams-postgres-dev/README.md: +Postgres majors: supported 17; beta none; maintenance none; default 17.

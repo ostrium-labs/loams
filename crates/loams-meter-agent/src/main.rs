@@ -57,12 +57,11 @@ struct Cli {
     /// The Loams engine's HTTP base URL. Without it, events stay spooled.
     #[arg(long)]
     stream_url: Option<String>,
-    /// The meter stream's namespace.
-    #[arg(long, default_value = "_system")]
-    stream_namespace: String,
-    /// The meter stream.
-    #[arg(long, default_value = "_meter")]
-    stream: String,
+    /// A file holding an operator API key, for a single node's main port
+    /// (the meter's service ingest admits the operator there). Not needed
+    /// on a cluster listener.
+    #[arg(long, env = "LOAMS_METER_AGENT_API_KEY_FILE")]
+    api_key_file: Option<PathBuf>,
     /// The meter stream's partition count (§63 §7.1: 32).
     #[arg(long, default_value_t = 32)]
     partitions: u32,
@@ -135,9 +134,13 @@ async fn run(cli: Cli) -> Result<(), MeterError> {
     let mut sink = match cli.stream_url {
         Some(url) => {
             let mut config = StreamSinkConfig::new(url, cli.partitions);
-            config.namespace = cli.stream_namespace;
-            config.stream = cli.stream;
             config.cluster = cli.cluster;
+            if let Some(path) = &cli.api_key_file {
+                let key = std::fs::read_to_string(path).map_err(|e| {
+                    MeterError::Config(format!("--api-key-file {}: {e}", path.display()))
+                })?;
+                config.api_key = Some(key.trim().to_string());
+            }
             Some(StreamSink::new(config)?)
         }
         None => None,

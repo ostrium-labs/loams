@@ -120,6 +120,12 @@ pub struct ServiceConfig {
     /// The majors a new project may have: the pin file's `[majors]
     /// supported` (`loams_postgres::majors::SUPPORTED`, D1114).
     pub pg_versions: Vec<u32>,
+    /// Majors a new project may have only with `allow_beta_major`: the pin
+    /// file's `[majors] beta` (design 62 §7.1, D1108).
+    pub beta_pg_versions: Vec<u32>,
+    /// Majors kept for existing projects only (minors, exports, upgrades):
+    /// the pin file's `[majors] maintenance`; refused for new projects.
+    pub maintenance_pg_versions: Vec<u32>,
     pub default_region: String,
     /// The `loams-wal` pool a create without one gets.
     pub default_wal_pool: String,
@@ -145,6 +151,8 @@ impl fmt::Debug for ServiceConfig {
         f.debug_struct("ServiceConfig")
             .field("default_pg_version", &self.default_pg_version)
             .field("pg_versions", &self.pg_versions)
+            .field("beta_pg_versions", &self.beta_pg_versions)
+            .field("maintenance_pg_versions", &self.maintenance_pg_versions)
             .field("default_region", &self.default_region)
             .field("default_wal_pool", &self.default_wal_pool)
             .field("default_history_retention", &self.default_history_retention)
@@ -160,6 +168,8 @@ impl Default for ServiceConfig {
         ServiceConfig {
             default_pg_version: loams_postgres::majors::DEFAULT,
             pg_versions: loams_postgres::majors::SUPPORTED.to_vec(),
+            beta_pg_versions: loams_postgres::majors::BETA.to_vec(),
+            maintenance_pg_versions: loams_postgres::majors::MAINTENANCE.to_vec(),
             default_region: "local".into(),
             default_wal_pool: "default".into(),
             default_history_retention: Duration::from_secs(7 * 24 * 3600),
@@ -183,6 +193,12 @@ pub enum Reason {
     SecretAlreadyIssued,
     EndpointExistsForBranch,
     ComputeStartFailed,
+    /// A Postgres major new projects may not use (design 62 §9.2).
+    UnsupportedPgVersion,
+    /// A beta major without `allow_beta_major`.
+    BetaMajorRequiresOptIn,
+    /// A compute image of another major than its timeline's.
+    ComputeMajorMismatchRefused,
     InvalidArgument,
     NotFound,
     AlreadyExists,
@@ -207,6 +223,9 @@ impl Reason {
             Reason::SecretAlreadyIssued => "secret_already_issued",
             Reason::EndpointExistsForBranch => "endpoint_exists_for_branch",
             Reason::ComputeStartFailed => "compute_start_failed",
+            Reason::UnsupportedPgVersion => "unsupported_pg_version",
+            Reason::BetaMajorRequiresOptIn => "beta_major_requires_opt_in",
+            Reason::ComputeMajorMismatchRefused => "compute_major_mismatch_refused",
             Reason::InvalidArgument => "invalid_argument",
             Reason::NotFound => "not_found",
             Reason::AlreadyExists => "already_exists",
@@ -228,11 +247,13 @@ impl Reason {
             | Reason::BranchProtected
             | Reason::LsnOutOfRetention
             | Reason::SecretAlreadyIssued
+            | Reason::BetaMajorRequiresOptIn
+            | Reason::ComputeMajorMismatchRefused
             | Reason::FailedPrecondition => "failed_precondition",
             Reason::StorageUnavailable | Reason::Unavailable | Reason::ComputeStartFailed => {
                 "unavailable"
             }
-            Reason::InvalidArgument => "invalid_argument",
+            Reason::InvalidArgument | Reason::UnsupportedPgVersion => "invalid_argument",
             Reason::AlreadyExists | Reason::EndpointExistsForBranch => "already_exists",
             Reason::PermissionDenied => "permission_denied",
             Reason::Unauthenticated => "unauthenticated",
@@ -254,6 +275,9 @@ impl Reason {
             Reason::SecretAlreadyIssued,
             Reason::EndpointExistsForBranch,
             Reason::ComputeStartFailed,
+            Reason::UnsupportedPgVersion,
+            Reason::BetaMajorRequiresOptIn,
+            Reason::ComputeMajorMismatchRefused,
             Reason::InvalidArgument,
             Reason::NotFound,
             Reason::AlreadyExists,

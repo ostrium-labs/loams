@@ -30,7 +30,7 @@ import type { GetInstanceRequestSchema, GetInstanceResponse, WhoAmIRequestSchema
 import { LiveAdminService, LiveService } from '@loams/live/live';
 import type { ActivateDeploymentRequestSchema, ActivateDeploymentResponse, AuthenticateRequestSchema, AuthenticateResponse, CreateAppRequestSchema, CreateAppResponse, DeleteAppRequestSchema, DeleteAppResponse, DeployRequestSchema, DeployResponse, GetAppRequestSchema, GetAppResponse, GetDeploymentRequestSchema, GetDeploymentResponse, GetIndexStatusRequestSchema, GetIndexStatusResponse, ListAppsRequestSchema, ListAppsResponse, ListDeploymentsRequestSchema, ListDeploymentsResponse, ModifyQuerySetRequestSchema, ModifyQuerySetResponse, MutateRequestSchema, MutateResponse, QueryRequestSchema, QueryResponse, TailLogsRequestSchema, TailLogsResponse, Transition, UpdateAppRequestSchema, UpdateAppResponse, WatchRequestSchema } from '@loams/live/live';
 import { CustomerService, EntitlementService, MeterService, NotificationService, PlanService } from '@loams/proto/meter';
-import type { ApplyPlanRequestSchema, ApplyPlanResponse, AssignPlanRequestSchema, AssignPlanResponse, CheckAccessRequestSchema, CheckAccessResponse, CreateCustomerRequestSchema, CreateCustomerResponse, CreateEntitlementRequestSchema, CreateEntitlementResponse, CreateGrantRequestSchema, CreateGrantResponse, CreateRuleRequestSchema, CreateRuleResponse, CreateWebhookRequestSchema, CreateWebhookResponse, GetBalanceHistoryRequestSchema, GetBalanceHistoryResponse, GetCustomerRequestSchema, GetCustomerResponse, GetEntitlementValueRequestSchema, GetEntitlementValueResponse, ListCustomersRequestSchema, ListCustomersResponse, ListDeliveriesRequestSchema, ListDeliveriesResponse, ListEntitlementsRequestSchema, ListEntitlementsResponse, ListGrantsRequestSchema, ListGrantsResponse, ListPlansRequestSchema, ListPlansResponse, ListRulesRequestSchema, ListRulesResponse, QueryMeterRequestSchema, QueryMeterResponse, ResetEntitlementRequestSchema, ResetEntitlementResponse, RotateWebhookSecretRequestSchema, RotateWebhookSecretResponse, SetPaymentStateRequestSchema, SetPaymentStateResponse, SetSpendControlsRequestSchema, SetSpendControlsResponse, UnassignPlanRequestSchema, UnassignPlanResponse, UpdateCustomerRequestSchema, UpdateCustomerResponse, VoidGrantRequestSchema, VoidGrantResponse } from '@loams/proto/meter';
+import type { ApplyPlanRequestSchema, ApplyPlanResponse, AssignPlanRequestSchema, AssignPlanResponse, CheckAccessRequestSchema, CheckAccessResponse, CreateCustomerRequestSchema, CreateCustomerResponse, CreateEntitlementRequestSchema, CreateEntitlementResponse, CreateGrantRequestSchema, CreateGrantResponse, CreateRuleRequestSchema, CreateRuleResponse, CreateWebhookRequestSchema, CreateWebhookResponse, GetBalanceHistoryRequestSchema, GetBalanceHistoryResponse, GetCustomerRequestSchema, GetCustomerResponse, GetEntitlementValueRequestSchema, GetEntitlementValueResponse, ListConsoleNotificationsRequestSchema, ListConsoleNotificationsResponse, ListCustomersRequestSchema, ListCustomersResponse, ListDeliveriesRequestSchema, ListDeliveriesResponse, ListEntitlementsRequestSchema, ListEntitlementsResponse, ListGrantsRequestSchema, ListGrantsResponse, ListPlansRequestSchema, ListPlansResponse, ListRulesRequestSchema, ListRulesResponse, QueryMeterRequestSchema, QueryMeterResponse, ResetEntitlementRequestSchema, ResetEntitlementResponse, RotateWebhookSecretRequestSchema, RotateWebhookSecretResponse, SetPaymentStateRequestSchema, SetPaymentStateResponse, SetSpendControlsRequestSchema, SetSpendControlsResponse, UnassignPlanRequestSchema, UnassignPlanResponse, UpdateCustomerRequestSchema, UpdateCustomerResponse, VoidGrantRequestSchema, VoidGrantResponse } from '@loams/proto/meter';
 import { SqlService } from '@loams/proto/sql';
 import type { QueryArrowRequestSchema, QueryArrowResponse, QueryRequestSchema as SqlV1QueryRequestSchema, QueryResponse as SqlV1QueryResponse } from '@loams/proto/sql';
 import { StreamService } from '@loams/proto/stream';
@@ -973,6 +973,13 @@ export interface MeterNotificationsModule {
     options?: CallOptions,
   ): Promise<CreateWebhookResponse>;
   /**
+   *  `loams.meter.v1.NotificationService/ListConsoleNotifications`, retried: safe.
+   */
+  listConsoleNotifications(
+    request: MessageInitShape<typeof ListConsoleNotificationsRequestSchema>,
+    options?: CallOptions,
+  ): Promise<ListConsoleNotificationsResponse>;
+  /**
    *  `loams.meter.v1.NotificationService/ListDeliveries`, retried: safe.
    */
   listDeliveries(
@@ -1520,6 +1527,7 @@ export const MODULES: readonly ModuleBinding[] = [
     calls: [
       { module: 'meter.notifications', name: 'createRule', protoName: 'createRule', method: 'CreateRule', rpc: 'loams.meter.v1.NotificationService/CreateRule', service: 'loams.meter.v1.NotificationService', package: 'loams.meter.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
       { module: 'meter.notifications', name: 'createWebhook', protoName: 'createWebhook', method: 'CreateWebhook', rpc: 'loams.meter.v1.NotificationService/CreateWebhook', service: 'loams.meter.v1.NotificationService', package: 'loams.meter.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
+      { module: 'meter.notifications', name: 'listConsoleNotifications', protoName: 'listConsoleNotifications', method: 'ListConsoleNotifications', rpc: 'loams.meter.v1.NotificationService/ListConsoleNotifications', service: 'loams.meter.v1.NotificationService', package: 'loams.meter.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
       { module: 'meter.notifications', name: 'listDeliveries', protoName: 'listDeliveries', method: 'ListDeliveries', rpc: 'loams.meter.v1.NotificationService/ListDeliveries', service: 'loams.meter.v1.NotificationService', package: 'loams.meter.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
       { module: 'meter.notifications', name: 'listRules', protoName: 'listRules', method: 'ListRules', rpc: 'loams.meter.v1.NotificationService/ListRules', service: 'loams.meter.v1.NotificationService', package: 'loams.meter.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
       { module: 'meter.notifications', name: 'rotateWebhookSecret', protoName: 'rotateWebhookSecret', method: 'RotateWebhookSecret', rpc: 'loams.meter.v1.NotificationService/RotateWebhookSecret', service: 'loams.meter.v1.NotificationService', package: 'loams.meter.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
@@ -1712,6 +1720,10 @@ export const REASONS = [
   'lsn_out_of_retention',
   'endpoint_exists_for_branch',
   'compute_start_failed',
+  'unsupported_pg_version',
+  'beta_major_requires_opt_in',
+  'compute_major_mismatch_refused',
+  'import_checksums_enabled',
   'quota_exceeded',
   'storage_unavailable',
   'secret_already_issued',
@@ -1798,6 +1810,12 @@ export const REASONS = [
   'principal_not_allowed',
   'cors_origin_not_allowed',
   'auth_unavailable',
+  'join_token_unknown',
+  'join_token_spent',
+  'join_token_expired',
+  'identity_not_granted',
+  'identity_revoked',
+  'ca_not_initialized',
   'invalid_argument',
   'not_found',
   'already_exists',
@@ -1851,6 +1869,10 @@ export const REASON_CODES: Readonly<Record<Reason, string>> = {
   lsn_out_of_retention: 'failed_precondition',
   endpoint_exists_for_branch: 'already_exists',
   compute_start_failed: 'unavailable',
+  unsupported_pg_version: 'invalid_argument',
+  beta_major_requires_opt_in: 'failed_precondition',
+  compute_major_mismatch_refused: 'failed_precondition',
+  import_checksums_enabled: 'failed_precondition',
   quota_exceeded: 'resource_exhausted',
   storage_unavailable: 'unavailable',
   secret_already_issued: 'failed_precondition',
@@ -1937,6 +1959,12 @@ export const REASON_CODES: Readonly<Record<Reason, string>> = {
   principal_not_allowed: 'permission_denied',
   cors_origin_not_allowed: 'permission_denied',
   auth_unavailable: 'unavailable',
+  join_token_unknown: 'unauthenticated',
+  join_token_spent: 'unauthenticated',
+  join_token_expired: 'unauthenticated',
+  identity_not_granted: 'permission_denied',
+  identity_revoked: 'permission_denied',
+  ca_not_initialized: 'failed_precondition',
   invalid_argument: 'invalid_argument',
   not_found: 'not_found',
   already_exists: 'already_exists',

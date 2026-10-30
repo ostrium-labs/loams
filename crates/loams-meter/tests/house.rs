@@ -142,7 +142,11 @@ fn period_specs_cover_every_metered_entitlement() {
     assert_eq!(daily[0].feature.key, "house_cpu");
     assert_eq!(daily[0].periods.len(), 3, "the current day and two before");
     let hourly = period_specs(&records(Interval::Hour), now);
-    assert_eq!(hourly[0].periods.len(), 5, "the current hour and four before");
+    assert_eq!(
+        hourly[0].periods.len(),
+        5,
+        "the current hour and four before"
+    );
 }
 
 #[tokio::test]
@@ -180,4 +184,97 @@ async fn the_openmeter_query_route_needs_a_caller() {
         .await
         .expect("a response");
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[test]
+fn usage_so_far_reads_raw_events_final_in_the_period() {
+    let r = records(Interval::Month);
+    let feature = loams_meter_house::period::feature_def(&r.features[0], &r.meters[0]);
+    let sql = loams_meter::house::usage_sql("org_a", &feature, 100, 200);
+    assert!(sql.contains("_meter.events FINAL"), "{sql}");
+    assert!(sql.contains("subject = 'org_a'"), "{sql}");
+    assert!(sql.contains(TYPE), "{sql}");
+    assert!(sql.contains("time >= ") && sql.contains("time < "), "{sql}");
+}
+
+/// A House that answers the pipe cursor and the pinned totals.
+#[derive(Debug, Default)]
+struct PipeHouse {
+    seen: Mutex<Vec<String>>,
+    cursor: String,
+}
+
+impl HouseSql for PipeHouse {
+    async fn query(&self, sql: &str) -> Result<String, HouseError> {
+        self.seen.lock().expect("lock").push(sql.to_string());
+        if sql.contains("system.loams_pipe_cursors") {
+            return Ok(self.cursor.clone());
+        }
+        Ok(String::new())
+    }
+
+    async fn query_with(
+        &self,
+        sql: &str,
+        settings: &[(&str, String)],
+    ) -> Result<String, HouseError> {
+        self.seen.lock().expect("lock").push(sql.to_string());
+        // Pinned through the request, never through a SETTINGS clause.
+        assert!(!sql.contains("SETTINGS"), "{sql}");
+        if settings == [("loams_snapshot_id", "9001".to_string())] {
+            return Ok("org_a\t120.500000000\n".into());
+        }
+        Ok(String::new())
+    }
+}
+
+#[tokio::test]
+async fn house_totals_split_at_the_pipe_cursor_and_its_snapshot() {
+    use loams_meter::owner::HouseTotals;
+    let counters = loams_meter::run::Counters::new(1);
+    counters.set_catalog(loams_meter::run::Catalog::new(records(Interval::Month)));
+    let now = UtcNanos(40 * UtcNanos::DAY);
+    let house = Arc::new(PipeHouse {
+        cursor: "41\t9001\n".into(),
+        ..PipeHouse::default()
+    });
+    let totals = loams_meter::house::HousePipeTotals {
+        house: house.clone(),
+        counters: counters.clone(),
+        partitions: 1,
+        clock: Arc::new(move || now),
+    };
+    // The cursor is the next offset: 41 means 0..=40 are in the snapshot.
+    assert_eq!(totals.committed(0).await.expect("cursor"), Some((40, 9001)));
+    let got = totals.totals(0, 40, 9001).await.expect("totals");
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].0.subject.as_str(), "org_a");
+    assert_eq!(got[0].0.feature.as_str(), "house_cpu");
+    assert_eq!(
+        got[0].1,
+        loams_meter_core::Amount::parse("120.5").expect("amount")
+    );
+    let pinned = house
+        .seen
+        .lock()
+        .expect("lock")
+        .last()
+        .cloned()
+        .expect("a query");
+    assert!(pinned.contains("_meter.events FINAL"), "{pinned}");
+    assert!(pinned.contains("subject IN ('org_a')"), "{pinned}");
+
+    // No cursor yet, or a cursor at 0: nothing is committed.
+    for cursor in ["", "0\t5\n"] {
+        let empty = loams_meter::house::HousePipeTotals {
+            house: Arc::new(PipeHouse {
+                cursor: cursor.into(),
+                ..PipeHouse::default()
+            }),
+            counters: counters.clone(),
+            partitions: 1,
+            clock: Arc::new(move || now),
+        };
+        assert_eq!(empty.committed(0).await.expect("cursor"), None);
+    }
 }

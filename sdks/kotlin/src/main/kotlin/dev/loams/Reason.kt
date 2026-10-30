@@ -152,6 +152,18 @@ enum class Reason {
     /** `compute_start_failed` (docs/api/reasons.md). */
     COMPUTE_START_FAILED,
 
+    /** `unsupported_pg_version` (docs/api/reasons.md). */
+    UNSUPPORTED_PG_VERSION,
+
+    /** `beta_major_requires_opt_in` (docs/api/reasons.md). */
+    BETA_MAJOR_REQUIRES_OPT_IN,
+
+    /** `compute_major_mismatch_refused` (docs/api/reasons.md). */
+    COMPUTE_MAJOR_MISMATCH_REFUSED,
+
+    /** `import_checksums_enabled` (docs/api/reasons.md). */
+    IMPORT_CHECKSUMS_ENABLED,
+
     /** `quota_exceeded` (docs/api/reasons.md). */
     QUOTA_EXCEEDED,
 
@@ -400,6 +412,24 @@ enum class Reason {
     /** The credential cannot be checked now: the issuer's JWKS or the principal store is unreachable. */
     AUTH_UNAVAILABLE,
 
+    /** No join token with that id, or its secret does not match. */
+    JOIN_TOKEN_UNKNOWN,
+
+    /** The join token was already used; join tokens work once. */
+    JOIN_TOKEN_SPENT,
+
+    /** The join token is past its hour. */
+    JOIN_TOKEN_EXPIRED,
+
+    /** The CSR asks for an identity the join token or the current certificate does not hold. */
+    IDENTITY_NOT_GRANTED,
+
+    /** The certificate, or an identity asked for, is on the CA's deny list. */
+    IDENTITY_REVOKED,
+
+    /** The deployment has no CA yet, or this node cannot open its intermediate key. */
+    CA_NOT_INITIALIZED,
+
     /** A malformed field or an unparseable value. */
     INVALID_ARGUMENT,
 
@@ -496,6 +526,10 @@ object ReasonRegistry {
         Reason.LSN_OUT_OF_RETENTION,
         Reason.ENDPOINT_EXISTS_FOR_BRANCH,
         Reason.COMPUTE_START_FAILED,
+        Reason.UNSUPPORTED_PG_VERSION,
+        Reason.BETA_MAJOR_REQUIRES_OPT_IN,
+        Reason.COMPUTE_MAJOR_MISMATCH_REFUSED,
+        Reason.IMPORT_CHECKSUMS_ENABLED,
         Reason.QUOTA_EXCEEDED,
         Reason.STORAGE_UNAVAILABLE,
         Reason.SECRET_ALREADY_ISSUED,
@@ -582,6 +616,12 @@ object ReasonRegistry {
         Reason.PRINCIPAL_NOT_ALLOWED,
         Reason.CORS_ORIGIN_NOT_ALLOWED,
         Reason.AUTH_UNAVAILABLE,
+        Reason.JOIN_TOKEN_UNKNOWN,
+        Reason.JOIN_TOKEN_SPENT,
+        Reason.JOIN_TOKEN_EXPIRED,
+        Reason.IDENTITY_NOT_GRANTED,
+        Reason.IDENTITY_REVOKED,
+        Reason.CA_NOT_INITIALIZED,
         Reason.INVALID_ARGUMENT,
         Reason.NOT_FOUND,
         Reason.ALREADY_EXISTS,
@@ -631,6 +671,10 @@ object ReasonRegistry {
         Reason.LSN_OUT_OF_RETENTION to "lsn_out_of_retention",
         Reason.ENDPOINT_EXISTS_FOR_BRANCH to "endpoint_exists_for_branch",
         Reason.COMPUTE_START_FAILED to "compute_start_failed",
+        Reason.UNSUPPORTED_PG_VERSION to "unsupported_pg_version",
+        Reason.BETA_MAJOR_REQUIRES_OPT_IN to "beta_major_requires_opt_in",
+        Reason.COMPUTE_MAJOR_MISMATCH_REFUSED to "compute_major_mismatch_refused",
+        Reason.IMPORT_CHECKSUMS_ENABLED to "import_checksums_enabled",
         Reason.QUOTA_EXCEEDED to "quota_exceeded",
         Reason.STORAGE_UNAVAILABLE to "storage_unavailable",
         Reason.SECRET_ALREADY_ISSUED to "secret_already_issued",
@@ -717,6 +761,12 @@ object ReasonRegistry {
         Reason.PRINCIPAL_NOT_ALLOWED to "principal_not_allowed",
         Reason.CORS_ORIGIN_NOT_ALLOWED to "cors_origin_not_allowed",
         Reason.AUTH_UNAVAILABLE to "auth_unavailable",
+        Reason.JOIN_TOKEN_UNKNOWN to "join_token_unknown",
+        Reason.JOIN_TOKEN_SPENT to "join_token_spent",
+        Reason.JOIN_TOKEN_EXPIRED to "join_token_expired",
+        Reason.IDENTITY_NOT_GRANTED to "identity_not_granted",
+        Reason.IDENTITY_REVOKED to "identity_revoked",
+        Reason.CA_NOT_INITIALIZED to "ca_not_initialized",
         Reason.INVALID_ARGUMENT to "invalid_argument",
         Reason.NOT_FOUND to "not_found",
         Reason.ALREADY_EXISTS to "already_exists",
@@ -770,6 +820,9 @@ object ReasonRegistry {
         Reason.PROJECT_NOT_FOUND to Code.NOT_FOUND,
         Reason.BRANCH_HAS_CHILDREN to Code.FAILED_PRECONDITION,
         Reason.BRANCH_PROTECTED to Code.FAILED_PRECONDITION,
+        Reason.BETA_MAJOR_REQUIRES_OPT_IN to Code.FAILED_PRECONDITION,
+        Reason.COMPUTE_MAJOR_MISMATCH_REFUSED to Code.FAILED_PRECONDITION,
+        Reason.IMPORT_CHECKSUMS_ENABLED to Code.FAILED_PRECONDITION,
         Reason.LSN_OUT_OF_RETENTION to Code.FAILED_PRECONDITION,
         Reason.ENDPOINT_EXISTS_FOR_BRANCH to Code.ALREADY_EXISTS,
         Reason.COMPUTE_START_FAILED to Code.UNAVAILABLE,
@@ -827,6 +880,7 @@ object ReasonRegistry {
         Reason.INVALID_CONSISTENCY_TOKEN to Code.INVALID_ARGUMENT,
         Reason.NAMESPACE_REQUIRED to Code.INVALID_ARGUMENT,
         Reason.SQL_PARAM_COUNT to Code.INVALID_ARGUMENT,
+        Reason.UNSUPPORTED_PG_VERSION to Code.INVALID_ARGUMENT,
         Reason.LIVE_INDEX_NOT_READY to Code.FAILED_PRECONDITION,
         Reason.LIVE_APP_DISABLED to Code.FAILED_PRECONDITION,
         Reason.LIVE_APP_EXISTS to Code.FAILED_PRECONDITION,
@@ -859,6 +913,12 @@ object ReasonRegistry {
         Reason.PRINCIPAL_NOT_ALLOWED to Code.PERMISSION_DENIED,
         Reason.CORS_ORIGIN_NOT_ALLOWED to Code.PERMISSION_DENIED,
         Reason.AUTH_UNAVAILABLE to Code.UNAVAILABLE,
+        Reason.JOIN_TOKEN_UNKNOWN to Code.UNAUTHENTICATED,
+        Reason.JOIN_TOKEN_SPENT to Code.UNAUTHENTICATED,
+        Reason.JOIN_TOKEN_EXPIRED to Code.UNAUTHENTICATED,
+        Reason.IDENTITY_NOT_GRANTED to Code.PERMISSION_DENIED,
+        Reason.IDENTITY_REVOKED to Code.PERMISSION_DENIED,
+        Reason.CA_NOT_INITIALIZED to Code.FAILED_PRECONDITION,
         Reason.INVALID_ARGUMENT to Code.INVALID_ARGUMENT,
         Reason.NOT_FOUND to Code.NOT_FOUND,
         Reason.ALREADY_EXISTS to Code.ALREADY_EXISTS,

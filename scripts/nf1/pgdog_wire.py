@@ -55,6 +55,7 @@ def _open(host: str, port: int, ca: str | None) -> socket.socket:
         raw.close()
         raise WireError(f"SSLRequest refused ({answer!r})")
     ctx = ssl.create_default_context(cafile=ca)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     ctx.check_hostname = False
     ctx.verify_flags &= ~ssl.VERIFY_X509_STRICT
     return ctx.wrap_socket(raw)

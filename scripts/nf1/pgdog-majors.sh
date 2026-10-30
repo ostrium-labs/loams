@@ -14,7 +14,7 @@
 # outcome differs), `error` (PgDog fails where the reference does not). The
 # checker scripts/nf1/check_pgdog_majors.py gates the committed files in CI.
 #
-#   scripts/nf1/pgdog-majors.sh            # 17 and 18
+#   scripts/nf1/pgdog-majors.sh            # 16, 17 and 18
 #   scripts/nf1/pgdog-majors.sh 18         # one major
 #   PGDOG_MAJORS_OUT=dir scripts/nf1/pgdog-majors.sh   # write elsewhere
 #
@@ -34,6 +34,7 @@ PGDOG_IMAGE=$(sed -n 's/^PGDOG_IMAGE=//p' "$repo/conformance/compute/pins.env")
 # are not 14 days old). 18 runs against vanilla 18.6 until NF2 Task 8
 # publishes loams-postgres-compute-v18; then it is re-run against that image.
 declare -A PG_IMAGE=(
+  [16]=docker.io/library/postgres:16.15@sha256:65b16a8b326e0cfbdf33fa7e783f2a0cb352a61448616ccccfd616ef42aa0f65
   [17]=docker.io/library/postgres:17.11@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
   [18]=docker.io/library/postgres:18.6@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
 )
@@ -41,7 +42,7 @@ declare -A PG_IMAGE=(
 CLIENT_IMAGE=${PG_IMAGE[18]}
 
 majors=("$@")
-[ ${#majors[@]} -gt 0 ] || majors=(17 18)
+[ ${#majors[@]} -gt 0 ] || majors=(16 17 18)
 for m in "${majors[@]}"; do
   [ -n "${PG_IMAGE[$m]:-}" ] || { echo "pgdog-majors: no image for major $m" >&2; exit 1; }
 done

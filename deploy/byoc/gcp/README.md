@@ -2,7 +2,7 @@
 
 Status: **new, tested without a cloud account** (cloud-init schema, the secrets fetcher against a local mock of the metadata server and Secret Manager, role checks). A real-project run is still to be done.
 
-Creates, in your project: one VM (Ubuntu 24.04) running as a dedicated service account, on a custom network with **no ingress firewall rule**. The bucket, its Cloud KMS key and the secrets are yours and are created by you first. Loams 0.1.3's light default stack runs on the VM (single node: back up the disk, keep bucket versioning on). The engine is reached over your tailnet only.
+Creates, in your project: one VM (Ubuntu 24.04) running as a dedicated service account, on a custom network with **no ingress firewall rule**. The bucket, its Cloud KMS key and the secrets are yours and are created by you first. Loams 0.1.4's light default stack runs on the VM (single node: back up the disk, keep bucket versioning on). The engine is reached over your tailnet only.
 
 No key is created: the engine and the secrets fetch use the VM service account's token from the metadata server. See [roles.md](roles.md) for the roles.
 

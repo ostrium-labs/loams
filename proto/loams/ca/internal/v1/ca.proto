@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+// The deployment's certificate authority (design §83 §6.3, D2310; CT1 Task 3).
+//
+// Served by `meta` nodes. `Issue` is the one method a caller may reach before
+// it holds a certificate: it is served on the listener's server-authenticated
+// TLS path, and the join token in the request is the caller's credential
+// (D2311). `Renew` requires mTLS: the caller's current certificate names the
+// identities it may renew. `TrustBundle` is public.
+//
+// The package is internal (design §44 §7.2): no SDK speaks it, so its methods
+// carry no `loams.options.v1` facade annotations and the package is in
+// `NOT_SDK_PACKAGES` (`crates/loams-facade-gen`).
+package loams.ca.internal.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service CertificateService {
+  // A first certificate for a joining process, in exchange for a join token
+  // that works once and expires after an hour. The caller generated its key
+  // itself and sends only a CSR; the leaf carries only the identities the
+  // token grants.
+  rpc Issue(IssueRequest) returns (IssueResponse);
+  // A fresh certificate for the identities the caller's current one holds
+  // (never more). Refused for anything on the deny list.
+  rpc Renew(RenewRequest) returns (RenewResponse);
+  // What peers verify against (§83 §6.2): the root, and the intermediates
+  // in service, which during a rotation are the new one and the old one for
+  // 30 days (§83 §6.6).
+  rpc TrustBundle(TrustBundleRequest) returns (TrustBundleResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+message IssueRequest {
+  // `loamsjt1.<id>.<secret>`.
+  string join_token = 1;
+  // A PKCS#10 CSR, DER.
+  bytes csr = 2;
+}
+
+message IssueResponse {
+  Certificate certificate = 1;
+}
+
+message RenewRequest {
+  // A PKCS#10 CSR, DER, for the same identities as the caller's certificate.
+  bytes csr = 1;
+}
+
+message RenewResponse {
+  Certificate certificate = 1;
+}
+
+message TrustBundleRequest {}
+
+message TrustBundleResponse {
+  // The root certificates, DER.
+  repeated bytes roots = 1;
+  // The intermediates in service, the one that issues first; DER.
+  repeated bytes intermediates = 2;
+}
+
+message Certificate {
+  // Leaf first, then the intermediate; DER.
+  repeated bytes chain = 1;
+  // The leaf's serial as encoded in it (the deny list's key).
+  bytes serial = 2;
+  google.protobuf.Timestamp not_after = 3;
+  // When to renew: two-thirds of the leaf's life.
+  google.protobuf.Timestamp renew_at = 4;
+}

@@ -15,11 +15,11 @@ Maven:
 <dependency>
   <groupId>dev.loams</groupId>
   <artifactId>loams</artifactId>
-  <version>0.1.3</version>
+  <version>0.1.4</version>
 </dependency>
 ```
 
-Gradle: `implementation("dev.loams:loams:0.1.3")`. Java 17 or newer; the only
+Gradle: `implementation("dev.loams:loams:0.1.4")`. Java 17 or newer; the only
 runtime dependency is `com.google.protobuf:protobuf-java`. `./build.sh package OUT_DIR`
 builds the jars and POM that sdk-release.yml publishes.
 

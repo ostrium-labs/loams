@@ -73,6 +73,10 @@ pub const MAIN_PUBLIC_PATHS: &[&str] = &[
     "/loams.auth.v1.AuthService/CompleteSetup",
     "/loams.auth.v1.AuthService/CreateSession",
     "/loams.auth.v1.AuthService/DeleteSession",
+    // Stripe's payment-state webhooks (D2207): Stripe has no Loams
+    // credential; the route verifies `Stripe-Signature` itself.
+    #[cfg(feature = "meter-export-stripe")]
+    "/v1/meter/webhooks/stripe",
 ];
 
 /// The connect socket's unauthenticated path: its health probe.
@@ -858,6 +862,8 @@ mod tests {
     fn main_public_paths_are_the_public_rpcs_and_the_probes() {
         let mut expected: Vec<&str> = super::super::PUBLIC_RPCS.to_vec();
         expected.extend(["/health", "/ready"]);
+        #[cfg(feature = "meter-export-stripe")]
+        expected.push("/v1/meter/webhooks/stripe");
         expected.sort_unstable();
         let mut actual = MAIN_PUBLIC_PATHS.to_vec();
         actual.sort_unstable();

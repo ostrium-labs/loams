@@ -312,7 +312,12 @@ async fn webhook_secrets_are_sealed_at_rest_and_still_sign() {
         .await
         .expect("webhook");
     // The record holds no plaintext.
-    let stored = w.notes.endpoint(&ep.id).await.expect("read").expect("stored");
+    let stored = w
+        .notes
+        .endpoint(&ep.id)
+        .await
+        .expect("read")
+        .expect("stored");
     assert!(stored.secret.starts_with("age:"), "{}", stored.secret);
     assert!(!stored.secret.contains(&secret));
 
@@ -324,7 +329,14 @@ async fn webhook_secrets_are_sealed_at_rest_and_still_sign() {
         Amount::from_units(100),
         UtcNanos(T0),
     );
-    assert_eq!(w.notifier.handle(&events[0]).await.expect("handle").delivered, 1);
+    assert_eq!(
+        w.notifier
+            .handle(&events[0])
+            .await
+            .expect("handle")
+            .delivered,
+        1
+    );
     let (_, headers, body) = w.transport.sent.lock().expect("lock")[0].clone();
     let get = |k: &str| {
         headers
@@ -334,10 +346,21 @@ async fn webhook_secrets_are_sealed_at_rest_and_still_sign() {
             .expect(k)
     };
     let ts: i64 = get("webhook-timestamp").parse().expect("timestamp");
-    assert!(verify(&secret, &events[0].id, ts, &body, &get("webhook-signature"), ts));
+    assert!(verify(
+        &secret,
+        &events[0].id,
+        ts,
+        &body,
+        &get("webhook-signature"),
+        ts
+    ));
 
     // A rotation seals the new secret too, and keeps the old one sealed.
-    let (rotated, _) = w.notifier.rotate_secret(&bea, &ep.id).await.expect("rotate");
+    let (rotated, _) = w
+        .notifier
+        .rotate_secret(&bea, &ep.id)
+        .await
+        .expect("rotate");
     assert!(rotated.secret.starts_with("age:"));
     assert!(rotated.previous.expect("previous").0.starts_with("age:"));
 }

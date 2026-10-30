@@ -4,6 +4,202 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-30
+
+Everything new in 0.1.4 is **preview**: it runs and has tests, but its interfaces can still
+change. Nothing new changes the default stack, which is 0.1.3's. 74 pull requests have merged
+since 0.1.3 was cut (#1556 to #1643, not counting the release PRs and the three 0.1.3 fixes that
+reached the v0.1.3 tag after it was tagged).
+
+Highlights:
+
+- **Cost attribution (design 84, preview).** Loams can now show what each engine, tenant,
+  project and query class costs, and where each number comes from.
+  - Costs come from three inputs: amortised hardware, imported bills (FOCUS 1.0 to 1.4, AWS CUR
+    and generic CSV) and a price table. A `costs.yaml` file maps them onto Loams Meter usage.
+  - The allocation is exact: shares are split by largest remainder in nano-units, and nothing is
+    lost or counted twice.
+  - Every number carries its basis (measured, billed, declared or estimated) and a trace. Usage
+    that no pool claims, and unknown event types, are reported, never allocated.
+  - **`loams cost`, offline, from files:** `report` (unit costs: $ per 1M ops, $ per GB-month,
+    $ per job), `import` (a dry run of a bill), and `export` (FOCUS 1.3 CSV, or OpenMeter
+    CloudEvents). `report --from-bench` gives an *example* from a benchmark's measured CPU time
+    and a price you type in.
+  - In the meter role, versioned cost inputs and bill imports are kept in the metastore. That
+    role is not in the release images (see Known gaps).
+  - [What a million operations cost](docs/benchmarks/2026-10-29-cost-per-op/README.md): the
+    throughput is measured on one laptop. Every dollar figure is **projected** and names its
+    price source.
+- **Resumable transfers and job runs over QUIC in Loams Desktop (design 85, preview).**
+  - `loams-transfer` moves files of 10 GiB and more in fixed chunks. Each chunk is checked with
+    SHA-256, and the checkpoint is committed through the engine's metastore. A transfer resumes
+    after a crash, a restart or a lost network, and memory stays bounded however large the file.
+  - It speaks HTTP/3 over QUIC, falling back to HTTP/2 with TLS.
+  - The same journal runs named jobs on a remote runner (`loams-transfer runner`), with logs you
+    can tail and resume.
+  - **The engine** serves the transfer and run routes on its main port, behind its
+    authentication. When it has a TLS certificate, it serves HTTP/3 on UDP at the same port.
+  - **Loams Desktop** has a Transfers page, and bundles the `loams-transfer` sidecar on Linux,
+    macOS and Windows.
+  - **`loams-transfer.exe` is not signed by SignPath yet.** The owner still has to add it to the
+    SignPath artifact configuration (D2449). The app's other binaries and the installer are
+    signed as in 0.1.3.
+- **Loams Meter follow-ups (preview, all opt-in by configuration).**
+  - The lease gate now checks the produce paths: HTTP produce, CloudEvents ingest, and the Flight
+    and gRPC producers. Namespaces whose names start with `_` are never gated.
+  - Reconciliation runs against the House pipe's cursor, read through a pinned snapshot.
+  - Nodes that don't own a partition answer balances from its owner, or else from the House.
+  - Email (through Resend) and console notification channels, with retries.
+  - Stripe period, Lago and OpenMeter exports run on a schedule, with a per-customer mapping file.
+- **Cluster transport (design 83).** The `loams-transport` crate holds SPIFFE identities,
+  TLS 1.3 mTLS configs and peer identity. The deployment CA (`loams-ca`) adds join tokens, a deny
+  list, a CA service on meta nodes, and `loams ca init|status|token|revoke|rotate`.
+  - All of this is behind the `loams` feature `transport`. It is **off by default** and not in
+    any release image, and **no cluster traffic uses it yet**.
+- **Postgres 18 is still beta, and still only gates.** New projects stay on 16 or 17 (the default
+  is 17).
+  - pg-control has a majors API: `ListPgVersions`, opt-in beta majors with `allow_beta_major`,
+    and four new reasons.
+  - The `postgres-control` profile now carries the pageserver's upcalls to pg-control, for
+    generation validation and import status. These are the first parts of a major upgrade by
+    import; the upgrade itself is not built.
+  - 18 is not offered: the beta list is empty.
+- **RisingWave is locked to the free tier (D1901).** Every meta node reads an empty licence key
+  file, so the trial key built into the image no longer turns Premium features on. This closes a
+  0.1.3 known gap.
+- **The Kafka gateway in Ostrium's Iggy fork consumes about 4× faster** (ostrium-labs/iggy#28).
+  A Java consumer went from about 0.5M to about 2M msg/s. Partitions and pages are now read
+  concurrently, sized by bytes.
+  - The fork also gains configurable limits and commit metadata (iggy#24).
+  - **The `kafka` profile's pinned image does not have these changes yet.** It moves when the
+    fork's image is rebuilt and re-pinned.
+- **A Flink-compatible stream engine (design 82) is in development** in the fork
+  ostrium-labs/streamfusion (plan FC1). This release has only its rulings and spike reports:
+  Nexmark 18 of 22, and 106 of the 180 in-scope test programs. **Nothing of it ships in 0.1.4.**
+- **Benchmarks.** Every engine ran at once through its native API on one 14-core laptop:
+  - 732,127 QPS at depth 1, and **1,231,462 QPS** at depth 16 (two gated runs);
+  - **The 1B QPS figure is projected, not measured:** about 812 such nodes at this mix
+    ([combined report](docs/benchmarks/2026-10-28-1b-qps/combined.md)).
+
+  Fixes found along the way:
+  - Grafeo's indexed label lookups (LG-0007): graph point lookups went from 96/s to 24,268/s.
+  - The House serves waiting statements in turn, so under contention it no longer answers
+    `202 TOO_MANY_SIMULTANEOUS_QUERIES`.
+- **A Redis-gateway data bug is fixed (preview `--module resp`).** Before the fix, a collection
+  emptied and re-created in the same transaction reused the old version. It then shared the old
+  members, and GC could later drop its data (#1643). Only `MULTI` could reach this, because
+  every other command is its own transaction.
+- **Security.** Dependabot alerts are fixed across Rust, Go, npm and pip:
+  - zip 9.0.5 (critical), russh 0.64.1, libz-sys 1.1.31, pgx, x/crypto, grpc, undici, qs and
+    setuptools;
+  - electron 44.9.1, happy-dom, fast-uri and wrangler, which v0.1.3 shipped from main (#1569) and
+    dev now has too (#1638);
+  - ten CodeQL findings are fixed: ReDoS, URL escaping, a TLS floor and plaintext credentials;
+  - two secret-scanner alerts on test fixtures are closed.
+
+### Upgrading
+
+**No migrations and no `.env` changes.** PD, TiKV and TiDB stay on v8.5.8. The Loams Postgres and
+chDB pins are unchanged. Grafeo stays at 0.5.43, on a newer fork rev (v0.5.43-loams.2).
+
+- **A stack with the `tikv` profile:** run `loams upgrade --to 0.1.4`. It takes a snapshot first,
+  and `loams upgrade rollback` restores it.
+- **The light default stack:** upgrade by hand, as for 0.1.3.
+  1. Back up the volumes.
+  2. Run `docker compose stop`.
+  3. Set `LOAMS_VERSION=0.1.4` in `.env`.
+  4. Run `docker compose up -d`.
+- **The `postgres-control` profile:** take `compose.yaml` and the `loams-postgres-dev/` directory from
+  the 0.1.4 bundle. They add the one-shot `pg-upcall-token` service and its volume.
+- **The `risingwave` profile:** take `compose.risingwave.yaml` and `risingwave/license.key` (an
+  empty file) from the bundle. Keep the file empty.
+
+### Added
+- **Cost attribution (CA1, design 84):**
+  - design and plan (#1583, #1596);
+  - `loams-cost`:
+    - the model and exact allocation (#1586);
+    - inputs, amortisation and the price table (#1595);
+    - bill import for FOCUS, AWS CUR and CSV (#1600);
+    - reports, unit costs and trends (#1602);
+    - drivers from the House (#1609);
+    - FOCUS 1.3 and OpenMeter exports (#1623);
+  - the cost domain in the meter role (#1616);
+  - `loams cost` (#1633);
+  - the cost-per-operation report (#1584).
+- **Desktop transfers (DQ1, design 85):**
+  - design and plan (#1592);
+  - the journal (#1598);
+  - the HTTP API with HTTP/3 and HTTP/2 fallback (#1604);
+  - pipelines, the sidecar agent, `put` and `get` (#1608);
+  - the runner (#1613);
+  - the engine mount, with HTTP/3 on the TLS port (#1631);
+  - the desktop Transfers page and supervisor (#1618);
+  - the desktop bundling and guide (#1624);
+  - the rulings D2444–D2449 (#1634).
+- **Loams Meter (ME1 follow-ups):**
+  - the export role wiring (#1559);
+  - balances on nodes that don't own the partition (#1562);
+  - the lease client (#1568);
+  - the agent forwarding through the service ingest, with an end-to-end test (#1579);
+  - the products' gate (#1594);
+  - reconciliation (#1599, #1605);
+  - email and console notifications (#1629);
+  - scheduled exports (#1632).
+- **Cluster transport (CT1, design 83):**
+  - design and plan (#1570, #1571, #1573);
+  - the stack spike (#1580);
+  - `loams-transport` (#1591);
+  - the CA, tokens and deny list (#1603);
+  - the CA service and `loams ca` (#1630).
+- **Postgres majors (NF2):**
+  - the pg-control majors API (#1593), and its reasons in every SDK (#1601, #1607);
+  - the import status upcall (#1606);
+  - the pageserver's upcalls to pg-control (#1617).
+- **Benchmarks:** the BQ1 combined run (#1556, #1577, #1622).
+- **The Flink-compatible engine (FC1, docs only):** #1581, #1590 and #1610.
+- **SDKs:** the six CA reasons in every SDK's registry (#1636).
+
+### Changed
+- Graph pins Grafeo v0.5.43-loams.2, whose indexed lookups no longer scan the label (#1578, #1620).
+- RisingWave runs with an empty licence key file, so it stays on the free tier (#1585).
+- CI:
+  - `cargo check` runs on every release image's feature set (#1587);
+  - Windows is checked on Rust PRs, and `sdks/rust` has its own rustfmt job (#1619);
+  - dev-green fixes: #1561, #1625, #1626, #1635, #1637 and #1642 (clippy 1.97 across the
+    workspace, `GetInstance` announcing `transfer`, `transport`, `knowledge` and the meter
+    exporters, and the buf 1.74.0 pin).
+- Dependencies: #1563, #1572, #1574 and #1582.
+
+### Fixed
+- The House serves pool waiters, and statements waiting for memory, in turn (#1597, #1621).
+- `loams-resp`: a collection emptied and re-created in one transaction gets a new version, not
+  the GC-queued one. Two test expectations now match Valkey (#1643).
+- `migrate`: the preview.2 fingerprint accepts the reserved system streams in `_system` (#1566).
+  Only preview.2 stacks were affected.
+
+### Security
+- Rust: zip 9.0.5, russh 0.64.1, libz-sys 1.1.31, pulldown-cmark, ctutils and zstd, with the
+  `deny.toml` ignores they retire (#1626, #1627).
+- Go: pgx, x/crypto, compress, grpc, x/net and edwards25519 (#1612).
+- npm: undici, body-parser, qs and @modelcontextprotocol (#1614); electron 44.9.1, happy-dom
+  21.0.4, fast-uri 3.1.9 and wrangler 4.155.0 brought from main (#1638).
+- pip: setuptools 84.1.0 (#1615).
+- CodeQL findings: ReDoS, URL escaping, a TLS floor and plaintext credentials (#1628).
+- Secret-scanner test fixtures no longer match real key patterns (#1611).
+
+### Known gaps
+- **The meter role is not in the release images or packages.** The `loams` features `meter` and
+  `meter-export-*` are off in `Containerfile.loams` and `release-package.yml`, so the meter
+  follow-ups, the meter's cost domain and the gate need a source build. `loams cost` is in every
+  build.
+- `loams-transfer.exe` in the Windows desktop build is not signed by SignPath (D2449). There is
+  no loopback benchmark yet, and abandoned transfers are not garbage-collected yet (Q1513).
+- The cluster CA (`transport` feature) is not wired to any cluster traffic. Its next step is CT1
+  Task 4, route policy.
+- The `kafka` profile's Iggy image predates the 4× consume work.
+- The rest are unchanged from 0.1.3: see "Known gaps in 0.1.4" in `deploy/release/README.md`.
+
 ## [0.1.3] - 2026-10-29
 
 Everything new in 0.1.3 is **preview**: it runs and has tests, but its interfaces can still

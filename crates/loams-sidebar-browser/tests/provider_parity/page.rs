@@ -85,7 +85,7 @@ pub async fn wait_until(
     expression: &str,
 ) -> Result<Value, String> {
     let deadline = Instant::now() + within;
-    let mut last = Value::Null;
+    let mut last: Value;
     loop {
         match eval(client, page, expression).await {
             Ok(value) if done(&value) => return Ok(value),
