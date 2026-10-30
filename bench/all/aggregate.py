@@ -38,7 +38,7 @@ def read_samples(path):
         if not f:
             continue
         if not f[0].startswith("cpu"):
-            cur = (float(f[0]), float(f[1]), {})
+            cur = (float(f[0]), float(f[1]), {}, float(f[2]) if len(f) > 2 else None)
             samples.append(cur)
             continue
         v = list(map(int, f[1:9]))
@@ -63,7 +63,12 @@ def window_stats(samples, t0, t1):
     busy0, tot0, io0 = a[2]["cpu"]
     busy1, tot1, io1 = b[2]["cpu"]
     loads = [s[1] for s in inside]
-    return {
+    temps = [s[3] for s in inside if len(s) > 3 and s[3]]
+    thermal = {}
+    if temps:
+        thermal = {"cpu_temp_c_mean": round(sum(temps) / len(temps), 1),
+                   "cpu_temp_c_max": max(temps)}
+    return {**thermal,
         "seconds": round(secs, 1),
         "per_core_busy": {str(k): round(v, 3) for k, v in sorted(per_core.items())},
         "busy_pct": round(100 * (busy1 - busy0) / max(1, tot1 - tot0), 1),
@@ -101,6 +106,7 @@ def main():
     ap.add_argument("--depth", type=int, required=True)
     ap.add_argument("--commit", default="")
     ap.add_argument("--label", default="")
+    ap.add_argument("--start-temp", type=float, default=None)
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     t0, t1 = a.t0, a.t0 + a.duration
@@ -121,6 +127,11 @@ def main():
 
     samples = read_samples(os.path.join(a.dir, "samples.txt"))
     host = window_stats(samples, t0, t1) or {}
+    # A run that started at 70 C or more, or peaked at 95 C or more, ran
+    # throttled (or close to it): its numbers are not headline numbers.
+    host["cpu_temp_c_start"] = a.start_temp
+    hot = (a.start_temp is not None and a.start_temp >= 70) or (host.get("cpu_temp_c_max") or 0) >= 95
+    host["thermal"] = "throttled" if hot else ("ok" if host.get("cpu_temp_c_max") else "unknown")
     per_core = {int(k): v for k, v in host.get("per_core_busy", {}).items()}
 
     engines, missing, failed = [], [], []
@@ -208,6 +219,8 @@ def main():
           f"Commit `{a.commit}`. Window {a.duration:.0f} s. "
           f"Host load average over the window: {fmt(host.get('loadavg_1m_mean'), 2)} mean, "
           f"{fmt(host.get('loadavg_1m_max'), 2)} max; iowait {fmt(host.get('iowait_pct'), 1)} %; "
+          f"CPU {fmt(host.get('cpu_temp_c_start'), 0)} °C at the start, {fmt(host.get('cpu_temp_c_mean'), 0)} °C mean, "
+          f"{fmt(host.get('cpu_temp_c_max'), 0)} °C max (thermal: {host.get('thermal')}); "
           f"all 14 cores {fmt(host.get('busy_pct'), 1)} % busy.", "",
           "| Engine (slot) | Op | QPS | p50 ms | p99 ms | p99.9 ms | Errors | Budget cores | Busy cores | QPS per busy core | Window overlap |",
           "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]

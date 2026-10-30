@@ -33,6 +33,10 @@ shared=${SHARED:-$HOME/Documents/Ostriumlabs/loams-wt/.he0-shared}
 out="$root/bench/results/bq1/all"
 duration=60 depths=1,16 quiet=0 only="" skip="" label=""
 SETUP_S=${SETUP_S:-75}
+# Thermal gate (coordinator, 2026-10-30: the laptop's cooling is failing): a
+# round starts only below MAX_START_TEMP degrees C, waiting at most COOL_WAIT
+# seconds; a round that cannot start cool is skipped, not run hot.
+MAX_START_TEMP=${MAX_START_TEMP:-70} COOL_WAIT=${COOL_WAIT:-1200}
 while [ $# -gt 0 ]; do
   case $1 in
     --duration) duration=$2; shift 2 ;;
@@ -89,11 +93,22 @@ resolve() { # slot in-repo-path -> script path or ""
 
 # ---- host sampling -------------------------------------------------------
 sampler_pid=""
+# The package temperature in degrees C (the hottest TCPU zone), or 0: a hot
+# laptop throttles, so every sample carries it.
+cpu_temp() {
+  local best=0 z t
+  for z in /sys/class/thermal/thermal_zone*; do
+    [ "$(cat "$z/type" 2>/dev/null)" = TCPU ] || continue
+    t=$(( $(cat "$z/temp" 2>/dev/null || echo 0) / 1000 ))
+    [ "$t" -gt "$best" ] && best=$t
+  done
+  echo "$best"
+}
 start_sampler() { # file: "<epoch> <loadavg1> | per-cpu lines"
   local f=$1
   (
     while :; do
-      { printf '%s %s\n' "$(date +%s.%N)" "$(cut -d' ' -f1 /proc/loadavg)"; grep '^cpu' /proc/stat; } >> "$f"
+      { printf '%s %s %s\n' "$(date +%s.%N)" "$(cut -d' ' -f1 /proc/loadavg)" "$(cpu_temp)"; grep '^cpu' /proc/stat; } >> "$f"
       sleep 1
     done
   ) &
@@ -126,6 +141,16 @@ log "starting servers"
 commit=$(git -C "$root" rev-parse --short HEAD)
 IFS=, read -r -a depth_list <<< "$depths"
 for depth in "${depth_list[@]}"; do
+  waited=0
+  while [ "$(cpu_temp)" -ge "$MAX_START_TEMP" ] && [ "$waited" -lt "$COOL_WAIT" ]; do
+    sleep 15; waited=$(( waited + 15 ))
+  done
+  start_temp=$(cpu_temp)
+  if [ "$start_temp" -ge "$MAX_START_TEMP" ]; then
+    log "round depth=$depth skipped: CPU at ${start_temp} C after ${waited}s (gate ${MAX_START_TEMP} C)"
+    continue
+  fi
+  log "CPU at ${start_temp} C after ${waited}s of cooling"
   ts=$(date -u +%Y%m%dT%H%M%SZ)
   rdir="$DATA/logs/$ts-d$depth"; mkdir -p "$rdir"
   t0=$(( $(date +%s) + SETUP_S ))
@@ -151,9 +176,12 @@ for depth in "${depth_list[@]}"; do
       # A lane Iggy script (NATIVE_IGGY) wants BIN; the House's lib.sh
       # reads BIN too, for its own binaries, so only Iggy gets it.
       if [ "$slot" = iggy ]; then export BIN=$BQ1_ALL_BIN; fi
+      # Record the exit status even when the script fails (set -e would
+      # end this subshell first).
+      rc=0
       PERSONS=${PERSONS:-100000} timeout $(( SETUP_S + duration + 240 )) "$script" "${args[@]}" \
-        > "$rdir/$slot.jsonl" 2> "$rdir/$slot.log"
-      echo "$? $(date +%s.%N)" > "$rdir/$slot.ended"
+        > "$rdir/$slot.jsonl" 2> "$rdir/$slot.log" || rc=$?
+      echo "$rc $(date +%s.%N)" > "$rdir/$slot.ended"
     ) &
     pid=$!
     pids+=("$pid")
@@ -163,6 +191,6 @@ for depth in "${depth_list[@]}"; do
   for p in "${pids[@]}"; do wait "$p" || true; done
   stop_sampler
   python3 -I "$here/aggregate.py" --dir "$rdir" --t0 "$t0" --duration "$duration" --depth "$depth" \
-    --commit "$commit" --label "$label" --out "$out/$ts-d$depth"
+    --commit "$commit" --label "$label" --start-temp "$start_temp" --out "$out/$ts-d$depth"
   log "round depth=$depth done: $out/$ts-d$depth.{json,md}"
 done
