@@ -120,7 +120,7 @@ prost = { package = "prost", version = "=0.14.4", default-features = true, featu
 prost-build = { package = "prost-build", version = "=0.14.4", default-features = true, features = ["cleanup-markdown", "format"] }
 prost-reflect = { package = "prost-reflect", version = "=0.16.5", default-features = false, features = ["miette", "serde", "text-format"] }
 prost-types = { package = "prost-types", version = "=0.14.4", default-features = true, features = ["std"] }
-pulldown-cmark = { package = "pulldown-cmark", version = "=0.13.4", default-features = true, features = ["getopts", "html", "pulldown-cmark-escape"] }
+pulldown-cmark = { package = "pulldown-cmark", version = "=0.13.5", default-features = true, features = ["getopts", "html", "pulldown-cmark-escape"] }
 qdrant-edge = { package = "qdrant-edge", version = "=0.8.0", default-features = false }
 quinn = { package = "quinn", version = "=0.11.12", default-features = true, features = ["aws-lc-rs", "bloom", "futures-io", "log", "platform-verifier", "ring", "runtime-tokio", "rustls", "rustls-aws-lc-rs", "rustls-ring"] }
 rand-0_10 = { package = "rand", version = "=0.10.3", default-features = true, features = ["alloc", "chacha", "std", "std_rng", "sys_rng", "thread_rng"] }
@@ -200,8 +200,8 @@ wiremock = { package = "wiremock", version = "=0.6.5", default-features = false 
 x509-parser = { package = "x509-parser", version = "=0.18.1", default-features = true, features = ["aws-lc-rs", "ring", "verify", "verify-aws"] }
 xxhash-rust = { package = "xxhash-rust", version = "=0.8.19", default-features = false, features = ["xxh3", "xxh32", "xxh64"] }
 zeroize = { package = "zeroize", version = "=1.9.1", default-features = true, features = ["alloc", "derive", "zeroize_derive"] }
-zip = { package = "zip", version = "=7.2.0", default-features = false, features = ["_deflate-any", "deflate-flate2", "deflate-flate2-zlib-rs"] }
-zstd = { package = "zstd", version = "=0.14.2", default-features = true, features = ["arrays", "legacy", "zdict_builder"] }
+zip = { package = "zip", version = "=9.0.5", default-features = false, features = ["_deflate-any", "deflate-flate2", "deflate-flate2-zlib-rs"] }
+zstd = { package = "zstd", version = "=0.14.3", default-features = true, features = ["arrays", "legacy", "zdict_builder"] }
 
 [target.'cfg(any(all(target_os = "linux", target_arch = "aarch64"), all(target_os = "linux", target_arch = "x86_64")))'.dependencies]
 landlock = { package = "landlock", version = "=0.4.7", default-features = false }
