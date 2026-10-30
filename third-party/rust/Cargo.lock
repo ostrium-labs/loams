@@ -5128,7 +5128,7 @@ dependencies = [
 [[package]]
 name = "grafeo"
 version = "0.5.43"
-source = "git+https://github.com/ostrium-labs/grafeo?rev=09a495dd64ee621fe0bae5c479465f6c065cf781#09a495dd64ee621fe0bae5c479465f6c065cf781"
+source = "git+https://github.com/ostrium-labs/grafeo?rev=bc6091e35953935f8221c3f0631d5aae77858e8f#bc6091e35953935f8221c3f0631d5aae77858e8f"
 dependencies = [
  "grafeo-adapters",
  "grafeo-common",
@@ -5139,7 +5139,7 @@ dependencies = [
 [[package]]
 name = "grafeo-adapters"
 version = "0.5.43"
-source = "git+https://github.com/ostrium-labs/grafeo?rev=09a495dd64ee621fe0bae5c479465f6c065cf781#09a495dd64ee621fe0bae5c479465f6c065cf781"
+source = "git+https://github.com/ostrium-labs/grafeo?rev=bc6091e35953935f8221c3f0631d5aae77858e8f#bc6091e35953935f8221c3f0631d5aae77858e8f"
 dependencies = [
  "bincode 2.0.1",
  "grafeo-common",
@@ -5156,7 +5156,7 @@ dependencies = [
 [[package]]
 name = "grafeo-common"
 version = "0.5.43"
-source = "git+https://github.com/ostrium-labs/grafeo?rev=09a495dd64ee621fe0bae5c479465f6c065cf781#09a495dd64ee621fe0bae5c479465f6c065cf781"
+source = "git+https://github.com/ostrium-labs/grafeo?rev=bc6091e35953935f8221c3f0631d5aae77858e8f#bc6091e35953935f8221c3f0631d5aae77858e8f"
 dependencies = [
  "arcstr",
  "bincode 2.0.1",
@@ -5177,7 +5177,7 @@ dependencies = [
 [[package]]
 name = "grafeo-core"
 version = "0.5.43"
-source = "git+https://github.com/ostrium-labs/grafeo?rev=09a495dd64ee621fe0bae5c479465f6c065cf781#09a495dd64ee621fe0bae5c479465f6c065cf781"
+source = "git+https://github.com/ostrium-labs/grafeo?rev=bc6091e35953935f8221c3f0631d5aae77858e8f#bc6091e35953935f8221c3f0631d5aae77858e8f"
 dependencies = [
  "arcstr",
  "bincode 2.0.1",
@@ -5202,7 +5202,7 @@ dependencies = [
 [[package]]
 name = "grafeo-engine"
 version = "0.5.43"
-source = "git+https://github.com/ostrium-labs/grafeo?rev=09a495dd64ee621fe0bae5c479465f6c065cf781#09a495dd64ee621fe0bae5c479465f6c065cf781"
+source = "git+https://github.com/ostrium-labs/grafeo?rev=bc6091e35953935f8221c3f0631d5aae77858e8f#bc6091e35953935f8221c3f0631d5aae77858e8f"
 dependencies = [
  "arcstr",
  "bincode 2.0.1",
@@ -5227,7 +5227,7 @@ dependencies = [
 [[package]]
 name = "grafeo-storage"
 version = "0.5.43"
-source = "git+https://github.com/ostrium-labs/grafeo?rev=09a495dd64ee621fe0bae5c479465f6c065cf781#09a495dd64ee621fe0bae5c479465f6c065cf781"
+source = "git+https://github.com/ostrium-labs/grafeo?rev=bc6091e35953935f8221c3f0631d5aae77858e8f#bc6091e35953935f8221c3f0631d5aae77858e8f"
 dependencies = [
  "bincode 2.0.1",
  "byteorder",
