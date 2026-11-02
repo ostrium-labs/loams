@@ -22,11 +22,11 @@ catalog:
   react-dom: 19.3.1
   '@types/react': 19.3.0
   '@types/react-dom': 19.3.0
-  lucide-react: 1.57.0
+  lucide-react: 1.59.0
   '@base-ui/react': 1.9.0
-  '@tanstack/react-query': 5.104.3
+  '@tanstack/react-query': 5.104.4
   '@tanstack/react-table': 9.3.1
-  '@tanstack/react-virtual': 3.14.19
+  '@tanstack/react-virtual': 3.14.21
   '@connectrpc/connect-query': 2.3.1
   zod: 4.6.7
   echarts: 6.1.0
