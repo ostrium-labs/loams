@@ -67,7 +67,12 @@ jobs:
   sdk-legs:
     name: "Temporal gateway: Go and TypeScript SDK legs (temporal-gateway profile)"
     needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.gateway == 'true'
+    # Off since D2450 (2026-11-02): the profile's gateway runs on the engine's
+    # Resonate through HttpDurability, which was built on the dropped fork's
+    # resonate-client, so the gateway refuses `kind = "resonate"`. Set the
+    # repository variable TEMPORAL_GATEWAY_RESONATE=true once an adapter on the
+    # official Resonate protocol lands.
+    if: vars.TEMPORAL_GATEWAY_RESONATE == 'true' && (github.event_name == 'workflow_dispatch' || needs.changes.outputs.gateway == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -110,7 +115,12 @@ jobs:
   sdk-leg:
     name: "Temporal gateway: ${{ matrix.sdk }} SDK leg (temporal-gateway profile)"
     needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.gateway == 'true'
+    # Off since D2450 (2026-11-02): the profile's gateway runs on the engine's
+    # Resonate through HttpDurability, which was built on the dropped fork's
+    # resonate-client, so the gateway refuses `kind = "resonate"`. Set the
+    # repository variable TEMPORAL_GATEWAY_RESONATE=true once an adapter on the
+    # official Resonate protocol lands.
+    if: vars.TEMPORAL_GATEWAY_RESONATE == 'true' && (github.event_name == 'workflow_dispatch' || needs.changes.outputs.gateway == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:

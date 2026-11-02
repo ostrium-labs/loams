@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use loams_temporal_resonate::{Durability, FakeDurability, HttpDurability};
+use loams_temporal_resonate::{Durability, FakeDurability};
 use loams_temporal_schedule::PgScheduleStore;
 use loams_temporal_store::retention::{RetentionPolicy, spawn_sweeper};
 use loams_temporal_store::{
@@ -209,12 +209,20 @@ fn default_outbox_ttl_hours() -> u64 {
     24
 }
 
+/// Why `[durability] kind = "resonate"` no longer starts.
+pub const RESONATE_DROPPED: &str = "[durability] kind = \"resonate\" is not available: its adapter \
+     (HttpDurability) was built on resonate-client from the ostrium-labs/resonate fork, which \
+     D2450 dropped for the official resonatehq/resonate; until an adapter on the official \
+     protocol lands, the Temporal gateway runs only with kind = \"in_process\" (insecure_dev)";
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DurabilityConfig {
     /// The in-process fake, on the wall clock (development only).
     InProcess,
-    /// A Resonate server's protocol endpoint.
+    /// A Resonate server's protocol endpoint. Still parsed, and refused at
+    /// start: its adapter was built on the fork's `resonate-client`, which
+    /// D2450 dropped (see [`RESONATE_DROPPED`]).
     Resonate {
         url: String,
         #[serde(default)]
@@ -305,6 +313,9 @@ pub fn token_secret(name: &str, value: String) -> Result<Vec<u8>, String> {
 /// Checks that the development-only settings are on a loopback listener
 /// with `insecure_dev` (plan DX1 Task 9).
 pub fn check(c: &Config) -> Result<(), String> {
+    if matches!(c.durability, DurabilityConfig::Resonate { .. }) {
+        return Err(RESONATE_DROPPED.into());
+    }
     let dev_parts = matches!(c.store, StoreConfig::Memory)
         || matches!(c.durability, DurabilityConfig::InProcess)
         || c.keys.is_empty()
@@ -404,16 +415,8 @@ pub async fn run_on(
             });
             fake
         }
-        DurabilityConfig::Resonate { url, token_env } => {
-            let token = match token_env {
-                Some(name) => {
-                    let t = env(name)?;
-                    Some(Arc::new(move || Some(t.clone())) as loams_temporal_resonate::TokenFn)
-                }
-                None => None,
-            };
-            Arc::new(HttpDurability::new(url, &config.pid, token).map_err(|e| e.to_string())?)
-        }
+        // Refused by `check` above.
+        DurabilityConfig::Resonate { .. } => return Err(RESONATE_DROPPED.into()),
     };
     let auth: Arc<dyn Authenticator> = if config.keys.is_empty() {
         let ns = config
@@ -582,6 +585,20 @@ mod tests {
             token_secret("K", "x".repeat(MIN_TOKEN_KEY_BYTES)).unwrap(),
             vec![b'x'; MIN_TOKEN_KEY_BYTES]
         );
+    }
+
+    /// D2450: a Resonate server's endpoint still parses and is refused,
+    /// naming why.
+    #[test]
+    fn resonate_durability_is_refused() {
+        let mut c = dev_config();
+        c.durability = DurabilityConfig::Resonate {
+            url: "http://127.0.0.1:8001".into(),
+            token_env: None,
+        };
+        let err = check(&c).expect_err("dropped by D2450");
+        assert!(err.contains("D2450") && err.contains("in_process"), "{err}");
+        assert!(check(&dev_config()).is_ok());
     }
 
     #[test]

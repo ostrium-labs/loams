@@ -3,24 +3,25 @@
 use resonate_base::Registry;
 use resonate_plugin::WorkerPlugin;
 
-/// SQLite, native TiKV (feature `tikv`), MySQL (feature `mysql`), the poll and push transports, Loams's
-/// in-process worker and the HTTP gateway. Push is linked but configured off
-/// unless `--durable-push` is given.
+/// The local store ([`server_local`](crate::local)), MySQL (feature `mysql`),
+/// Postgres (feature `postgres`), the poll transport, the push transport
+/// (feature `push`), Loams's in-process worker and the HTTP gateway. Push is
+/// configured off unless `--durable-push` is given.
 pub fn registry() -> Registry {
     with_workers(&[])
 }
 
 /// [`registry`] plus `extra` workers (tests inject routes this way).
 pub(crate) fn with_workers(extra: &[&'static WorkerPlugin]) -> Registry {
-    let registry = Registry::new().server(&resonate_server_sqlite::PLUGIN);
+    let registry = Registry::new().server(&crate::local::PLUGIN);
     #[cfg(feature = "mysql")]
     let registry = registry.server(&resonate_server_mysql::PLUGIN);
-    #[cfg(feature = "tikv")]
-    let registry = registry.server(&resonate_server_blob::tikv::PLUGIN);
-    let mut registry = registry
-        .worker(&resonate_transport_http_poll::PLUGIN)
-        .worker(&resonate_transport_http_push::PLUGIN)
-        .worker(&crate::inproc::PLUGIN);
+    #[cfg(feature = "postgres")]
+    let registry = registry.server(&resonate_server_postgres::PLUGIN);
+    let registry = registry.worker(&resonate_transport_http_poll::PLUGIN);
+    #[cfg(feature = "push")]
+    let registry = registry.worker(&resonate_transport_http_push::PLUGIN);
+    let mut registry = registry.worker(&crate::inproc::PLUGIN);
     for plugin in extra {
         registry = registry.worker(plugin);
     }
@@ -54,9 +55,8 @@ mod tests {
         registry.check().expect("no duplicate ids or schemes");
         let carried = carried(&registry);
         for id in [
-            "servers.server_sqlite",
+            "servers.server_local",
             "workers.transport_http_poll",
-            "workers.transport_http_push",
             "workers.worker_inproc",
             "gateways.gateway_http",
         ] {
@@ -67,8 +67,13 @@ mod tests {
             cfg!(feature = "mysql")
         );
         assert_eq!(
-            carried.iter().any(|c| c == "servers.server_tikv"),
-            cfg!(feature = "tikv")
+            carried.iter().any(|c| c == "servers.server_postgres"),
+            cfg!(feature = "postgres")
         );
+        assert_eq!(
+            carried.iter().any(|c| c == "workers.transport_http_push"),
+            cfg!(feature = "push")
+        );
+        assert!(!carried.iter().any(|c| c == "servers.server_sqlite"));
     }
 }

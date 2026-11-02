@@ -19,10 +19,10 @@ fn free_addr() -> SocketAddr {
     probe.local_addr().expect("probe addr")
 }
 
-/// A SQLite store in `dir`, with a short retry timeout so an undelivered
+/// The local store in `dir`, with a short retry timeout so an undelivered
 /// task comes back within a test's patience.
 fn config(dir: &Path) -> DurableConfig {
-    let mut config = DurableConfig::sqlite(dir.join("durable").join("default.db"));
+    let mut config = DurableConfig::local(dir.join("durable").join("default.redb"));
     config.listen = free_addr();
     config.retry_timeout = Duration::from_secs(1);
     config

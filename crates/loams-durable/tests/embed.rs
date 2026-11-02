@@ -1,4 +1,4 @@
-//! The embedded Resonate server on SQLite (D1 Task 2): the listener, the
+//! The embedded Resonate server on its local store (D1 Task 2; D2450): the listener, the
 //! store, in-process calls and what the embed must not do to its host.
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener};
@@ -20,7 +20,7 @@ fn free_addr() -> SocketAddr {
 }
 
 fn config(dir: &Path) -> DurableConfig {
-    let mut config = DurableConfig::sqlite(dir.join("durable").join("default.db"));
+    let mut config = DurableConfig::local(dir.join("durable").join("default.redb"));
     config.listen = free_addr();
     config
 }
@@ -134,6 +134,7 @@ fn loopback_names_parse() {
 }
 
 /// A `resonate:target` over http:// is never delivered without `push`.
+#[cfg(feature = "push")]
 #[tokio::test(flavor = "multi_thread")]
 async fn push_is_off_by_default() {
     async fn deliveries(push: bool) -> bool {
@@ -221,7 +222,7 @@ async fn second_process_on_same_store_is_refused() {
     let err = DurableServer::start(config(dir.path()), "node-b")
         .await
         .expect_err("the store is locked");
-    let path = dir.path().join("durable").join("default.db");
+    let path = dir.path().join("durable").join("default.redb");
     assert_eq!(
         err.to_string(),
         format!(
@@ -306,8 +307,9 @@ async fn overrides_cannot_touch_bind_or_abort() {
         (" gateways . gateway_http . bind ", "\"0.0.0.0:1\""),
         ("gateways.\"gateway_http\".bind", "\"0.0.0.0:1\""),
         // Owned by other flags.
+        #[cfg(feature = "push")]
         ("workers.transport_http_push.enabled", "true"),
-        ("servers.server_sqlite.path", "\"/elsewhere.db\""),
+        ("servers.server_local.path", "\"/elsewhere.redb\""),
         // The process section is not read by the embed.
         ("debug", "true"),
     ] {
@@ -319,7 +321,7 @@ async fn overrides_cannot_touch_bind_or_abort() {
     // A key no plugin reads fails too, naming it.
     let mut bad = config(dir.path());
     bad.overrides = vec![(
-        "servers.server_sqlite.no_such_key".to_string(),
+        "servers.server_local.no_such_key".to_string(),
         "1".to_string(),
     )];
     let err = DurableServer::start(bad, "node-a")
@@ -329,7 +331,7 @@ async fn overrides_cannot_touch_bind_or_abort() {
     // A plugin setting that is not protected applies.
     let mut good = config(dir.path());
     good.overrides = vec![(
-        "servers.server_sqlite.preload_limit".to_string(),
+        "servers.server_local.preload_limit".to_string(),
         "5".to_string(),
     )];
     let server = DurableServer::start(good, "node-a").await.expect("start");

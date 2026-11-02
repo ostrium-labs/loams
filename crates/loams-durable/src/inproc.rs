@@ -442,7 +442,9 @@ mod tests {
     fn execute(id: &str) -> Message {
         Message::Execute(ExecuteMsg {
             kind: "execute".into(),
-            head: MessageHead::new("http://127.0.0.1:8001"),
+            head: MessageHead {
+                server_url: "http://127.0.0.1:8001".into(),
+            },
             data: ExecuteMsgData {
                 task: ExecuteMsgTask {
                     id: id.into(),

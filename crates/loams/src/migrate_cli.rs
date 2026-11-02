@@ -157,7 +157,8 @@ pub(crate) struct StoreArgs {
     /// The bucket [default: file://<data-dir>/bucket].
     #[arg(long)]
     bucket: Option<String>,
-    /// The engine's data directory (the embedded metastore, Durable's SQLite).
+    /// The engine's data directory (the embedded metastore, Durable's local
+    /// store).
     #[arg(long)]
     pub(crate) data_dir: PathBuf,
     /// Live's store, `tikv://<pd>[,<pd>]/<keyspace>` (Live migrations only).
@@ -327,22 +328,17 @@ fn print(output: Output, value: &serde_json::Value, text: impl FnOnce() -> Strin
     }
 }
 
-/// Runs Resonate's own migrations on the Durable SQLite store, if there is
-/// one (the `durable-resonate` step of §54 §6.1): serving never migrates it.
-#[cfg(feature = "durable")]
+/// The `durable-resonate` step of §54 §6.1. It ran Resonate's migrations on
+/// the Durable SQLite store; the local store that replaced it (D2450) has no
+/// schema, so nothing is migrated. An old SQLite file is reported, not read.
 async fn durable_resonate(data_dir: &Path) -> Result<bool, String> {
-    let path = data_dir.join("durable").join("default.db");
-    if !path.exists() {
-        return Ok(false);
+    let legacy = data_dir.join("durable").join("default.db");
+    if legacy.exists() {
+        tracing::warn!(
+            legacy = %legacy.display(),
+            "the SQLite durable store is no longer read (D2450); its promises are not migrated"
+        );
     }
-    loams_durable::DurableServer::migrate(loams_durable::DurableStore::Sqlite { path })
-        .await
-        .map(|()| true)
-        .map_err(|e| format!("the durable store's migrations: {e}"))
-}
-
-#[cfg(not(feature = "durable"))]
-async fn durable_resonate(_data_dir: &Path) -> Result<bool, String> {
     Ok(false)
 }
 

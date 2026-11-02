@@ -104,9 +104,7 @@ ignore = [
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-# tikv-client is pinned by rev to Loams's fork, branch `loam` (R1 plan rows R4
-# and F1). Resonate is pinned by rev to the fork's loam/0.10.1 (D1 plan Task
-# 1, D140).
+# tikv-client is the official tikv/client-rust pinned by rev (D2450).
 # iceberg-rust is pinned by rev to the official apache/iceberg-rust for the House
 # Rust engine (plan HE1 D1576, R11.8, R11.9; D2450: official dependencies first).
-allow-git = ["https://github.com/tikv/client-rust", "https://github.com/ostrium-labs/resonate", "https://github.com/apache/iceberg-rust"]
+allow-git = ["https://github.com/tikv/client-rust", "https://github.com/apache/iceberg-rust"]

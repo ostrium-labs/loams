@@ -48,9 +48,9 @@ pub struct DurableConfig {
 }
 
 impl DurableConfig {
-    /// The defaults, on a SQLite store at `path`.
-    pub fn sqlite(path: impl Into<PathBuf>) -> Self {
-        Self::new(DurableStore::Sqlite { path: path.into() })
+    /// The defaults, on the local store at `path` (a redb file).
+    pub fn local(path: impl Into<PathBuf>) -> Self {
+        Self::new(DurableStore::Local { path: path.into() })
     }
 
     /// The defaults, on `store`.
@@ -69,43 +69,42 @@ impl DurableConfig {
 
 /// Where durable state lives.
 ///
-/// `Debug` and `Display` hide a MySQL URL's password ([`redact_url`]), so a
-/// store (or a [`DurableConfig`], or `loams`'s `ServerConfig`) can be logged.
+/// `Debug` and `Display` hide a database URL's password ([`redact_url`]), so
+/// a store (or a [`DurableConfig`], or `loams`'s `ServerConfig`) can be
+/// logged.
 #[derive(Clone, PartialEq, Eq)]
 pub enum DurableStore {
-    /// A SQLite file (`loams dev` and `standalone`): single node.
-    Sqlite { path: PathBuf },
+    /// The local store (`loams dev` and `standalone`): upstream's blob server
+    /// on one redb file ([`crate::local`]), single node. It replaced the
+    /// SQLite store (D2450); an old `default.db` is not read.
+    Local { path: PathBuf },
     /// A MySQL-protocol database (TiDB) through Resonate's MySQL plugin. Needs
     /// the `mysql` feature (loams's `durable-mysql`). `tls` decides the
     /// connection's `ssl-mode`, whatever `url` says ([`DurableStore::mysql`]
     /// reads it from the URL).
     Mysql { url: String, tls: MysqlTls },
-    /// Native TiKV API v2 store, isolated by keyspace and root prefix.
-    Tikv {
-        pd: Vec<String>,
-        keyspace: String,
-        root: Vec<u8>,
-    },
+    /// A Postgres database through Resonate's Postgres plugin. Needs the
+    /// `postgres` feature (loams's `durable-postgres`). TLS is whatever the
+    /// URL's `sslmode` says.
+    Postgres { url: String },
 }
 
 impl DurableStore {
-    /// A native TiKV store. All durable servers in one deployment must use
-    /// the same keyspace and root; unrelated applications should use another
-    /// root within the keyspace.
-    pub fn tikv(pd: Vec<String>, keyspace: impl Into<String>) -> Result<Self, DurableError> {
-        if pd.is_empty() || pd.iter().any(|endpoint| endpoint.trim().is_empty()) {
-            return Err(DurableError::Config(
-                "TiKV needs at least one PD endpoint".into(),
-            ));
+    /// A Postgres store from `postgres://user:pass@host:port/db?sslmode=…`.
+    /// The URL is kept as given.
+    pub fn postgres(url: &str) -> Result<Self, DurableError> {
+        let bad = |why: &str| {
+            DurableError::Config(format!("--durable-store {}: {why}", redact_url(url)))
+        };
+        let parsed = Url::parse(url).map_err(|e| bad(&format!("not a URL ({e})")))?;
+        if parsed.scheme() != "postgres" && parsed.scheme() != "postgresql" {
+            return Err(bad("expected a postgres:// URL"));
         }
-        let keyspace = keyspace.into();
-        if keyspace.is_empty() {
-            return Err(DurableError::Config("TiKV needs an API v2 keyspace".into()));
+        if parsed.host_str().is_none_or(str::is_empty) {
+            return Err(bad("the URL names no host"));
         }
-        Ok(Self::Tikv {
-            pd,
-            keyspace,
-            root: b"resonate-durable/".to_vec(),
+        Ok(Self::Postgres {
+            url: url.to_string(),
         })
     }
 
@@ -184,17 +183,15 @@ impl DurableStore {
 impl fmt::Debug for DurableStore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Sqlite { path } => f.debug_struct("Sqlite").field("path", path).finish(),
+            Self::Local { path } => f.debug_struct("Local").field("path", path).finish(),
             Self::Mysql { url, tls } => f
                 .debug_struct("Mysql")
                 .field("url", &redact_url(url))
                 .field("tls", tls)
                 .finish(),
-            Self::Tikv { pd, keyspace, root } => f
-                .debug_struct("Tikv")
-                .field("pd", pd)
-                .field("keyspace", keyspace)
-                .field("root", root)
+            Self::Postgres { url } => f
+                .debug_struct("Postgres")
+                .field("url", &redact_url(url))
                 .finish(),
         }
     }
@@ -203,11 +200,8 @@ impl fmt::Debug for DurableStore {
 impl fmt::Display for DurableStore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Sqlite { path } => write!(f, "sqlite:{}", path.display()),
-            Self::Mysql { url, .. } => f.write_str(&redact_url(url)),
-            Self::Tikv { pd, keyspace, .. } => {
-                write!(f, "tikv://{}/{}", pd.join(","), keyspace)
-            }
+            Self::Local { path } => write!(f, "local:{}", path.display()),
+            Self::Mysql { url, .. } | Self::Postgres { url } => f.write_str(&redact_url(url)),
         }
     }
 }
@@ -390,16 +384,15 @@ pub const PROTECTED: &[(&str, &str)] = &[
         "authentication waits for the unified auth plan (D111, D142)",
     ),
     ("servers.active", "the backend is --durable-store"),
-    ("servers.server_sqlite.path", "the store is --durable-store"),
+    ("servers.server_local.path", "the store is --durable-store"),
     ("servers.server_mysql.url", "the store is --durable-store"),
-    ("servers.server_tikv.pd", "the store is --durable-store"),
-    (
-        "servers.server_tikv.keyspace",
-        "the store is --durable-store",
-    ),
-    ("servers.server_tikv.root", "the store is --durable-store"),
+    ("servers.server_postgres.url", "the store is --durable-store"),
     (
         "servers.server_mysql.migrate",
+        "only loams durable migrate changes the schema",
+    ),
+    (
+        "servers.server_postgres.migrate",
         "only loams durable migrate changes the schema",
     ),
     (
@@ -472,9 +465,9 @@ fn quote(value: &str) -> String {
 /// The server plugin id `store` selects.
 pub(crate) fn server_id(store: &DurableStore) -> &'static str {
     match store {
-        DurableStore::Sqlite { .. } => "server_sqlite",
+        DurableStore::Local { .. } => "server_local",
         DurableStore::Mysql { .. } => "server_mysql",
-        DurableStore::Tikv { .. } => "server_tikv",
+        DurableStore::Postgres { .. } => "server_postgres",
     }
 }
 
@@ -484,7 +477,7 @@ pub(crate) fn server_id(store: &DurableStore) -> &'static str {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Mode {
     /// `loams dev`, `standalone` and `cluster`: serve the durable API. A
-    /// MySQL store is never migrated (D1 Task 4).
+    /// MySQL or Postgres store is never migrated (D1 Task 4).
     Serve,
     /// `loams durable migrate`: open the store with `migrate = true`, with
     /// no listener, then stop.
@@ -512,35 +505,30 @@ pub(crate) fn configuration(
         .set("gateways.gateway_http.abort_on_panic", "false")
         .map_err(bad)?
         .set("servers.active", &quote(server))
-        .map_err(bad)?
-        .set(
-            "workers.transport_http_push.enabled",
-            if config.push { "true" } else { "false" },
-        )
         .map_err(bad)?;
+    // The push transport is linked only with the `push` feature (D2450:
+    // upstream's brings OpenSSL and google-cloud-auth).
+    #[cfg(feature = "push")]
+    {
+        loader = loader
+            .set(
+                "workers.transport_http_push.enabled",
+                if config.push { "true" } else { "false" },
+            )
+            .map_err(bad)?;
+    }
     match &config.store {
-        DurableStore::Sqlite { path } => {
+        DurableStore::Local { path } => {
             let path = path.to_str().ok_or_else(|| {
                 DurableError::Config(format!(
                     "the durable store path {} is not UTF-8",
                     path.display()
                 ))
             })?;
+            // The local store has no schema to migrate: upstream's blob
+            // documents carry their own format.
             loader = loader
-                .set("servers.server_sqlite.path", &quote(path))
-                .map_err(bad)?
-                // Serving never migrates an existing database (design §54
-                // §6.1, UP1 Task 6): Resonate still creates a new one, and
-                // refuses one that is behind; `loams migrate run` and
-                // `loams durable migrate` apply its migrations.
-                .set(
-                    "servers.server_sqlite.migrate",
-                    if mode == Mode::Migrate {
-                        "true"
-                    } else {
-                        "false"
-                    },
-                )
+                .set("servers.server_local.path", &quote(path))
                 .map_err(bad)?;
         }
         DurableStore::Mysql { url, tls } => {
@@ -557,24 +545,18 @@ pub(crate) fn configuration(
                 )
                 .map_err(bad)?;
         }
-        DurableStore::Tikv { pd, keyspace, root } => {
-            let pd = format!(
-                "[{}]",
-                pd.iter().map(|p| quote(p)).collect::<Vec<_>>().join(", ")
-            );
-            let root = format!(
-                "[{}]",
-                root.iter()
-                    .map(u8::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
+        DurableStore::Postgres { url } => {
             loader = loader
-                .set("servers.server_tikv.pd", &pd)
+                .set("servers.server_postgres.url", &quote(url))
                 .map_err(bad)?
-                .set("servers.server_tikv.keyspace", &quote(keyspace))
-                .map_err(bad)?
-                .set("servers.server_tikv.root", &root)
+                .set(
+                    "servers.server_postgres.migrate",
+                    if mode == Mode::Migrate {
+                        "true"
+                    } else {
+                        "false"
+                    },
+                )
                 .map_err(bad)?;
         }
     }
@@ -610,18 +592,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn native_tikv_store_selects_its_server() {
-        let store = DurableStore::tikv(vec!["127.0.0.1:2379".into()], "durable")
-            .expect("valid TiKV address");
-        assert_eq!(server_id(&store), "server_tikv");
-        assert!(matches!(store, DurableStore::Tikv { .. }));
-        assert!(DurableStore::tikv(Vec::new(), "durable").is_err());
-        assert!(DurableStore::tikv(vec!["127.0.0.1:2379".into()], "").is_err());
+    fn postgres_store_selects_its_server() {
+        let store = DurableStore::postgres("postgres://loams:pw@pg.internal:5432/durable")
+            .expect("valid Postgres URL");
+        assert_eq!(server_id(&store), "server_postgres");
+        assert_eq!(
+            store.to_string(),
+            "postgres://loams:***@pg.internal:5432/durable"
+        );
+        assert!(DurableStore::postgres("postgresql://u@127.0.0.1/d").is_ok());
+        assert!(DurableStore::postgres("mysql://u@127.0.0.1/d").is_err());
+        assert!(DurableStore::postgres("postgres:///d").is_err());
     }
 
     fn carried() -> Vec<String> {
         [
-            "servers.server_sqlite",
+            "servers.server_local",
             "workers.transport_http_push",
             "workers.transport_http_poll",
             "gateways.gateway_http",
@@ -692,10 +678,10 @@ mod tests {
             redact_url("mysql://u:p w@@bad host/x"),
             "mysql://***@bad host/x"
         );
-        let sqlite = DurableStore::Sqlite {
-            path: "/data/durable/default.db".into(),
+        let local = DurableStore::Local {
+            path: "/data/durable/default.redb".into(),
         };
-        assert_eq!(sqlite.to_string(), "sqlite:/data/durable/default.db");
+        assert_eq!(local.to_string(), "local:/data/durable/default.redb");
     }
 
     /// Task 4 semantics 1: `ssl-mode` on the URL, else TLS unless the host is
@@ -863,26 +849,23 @@ mod tests {
         assert_eq!(scrub("x mysql://u@h/d", "mysql://u@h/d"), "x mysql://u@h/d");
     }
 
-    /// UP1 Task 6: serving opens a SQLite store with `migrate = false`
-    /// (Resonate still creates a new database, and refuses one that is
-    /// behind); `loams durable migrate` and `loams migrate run` migrate it.
+    /// The local store is handed its file, and Loams owns that key.
     #[test]
-    fn engine_does_not_migrate_sqlite_on_open() {
-        let config = DurableConfig::sqlite("/data/durable/default.db");
-        let migrate_of = |mode| {
-            #[derive(serde::Deserialize)]
-            struct Sqlite {
-                migrate: bool,
-            }
-            configuration(&config, &carried(), mode, None)
+    fn the_local_store_gets_its_path() {
+        let config = DurableConfig::local("/data/durable/default.redb");
+        #[derive(serde::Deserialize)]
+        struct Local {
+            path: String,
+        }
+        for mode in [Mode::Serve, Mode::Migrate] {
+            let local = configuration(&config, &carried(), mode, None)
                 .expect("configuration")
-                .server("server_sqlite")
-                .extract::<Sqlite>()
-                .expect("server_sqlite settings")
-                .migrate
-        };
-        assert!(!migrate_of(Mode::Serve));
-        assert!(migrate_of(Mode::Migrate));
+                .server("server_local")
+                .extract::<Local>()
+                .expect("server_local settings");
+            assert_eq!(local.path, "/data/durable/default.redb");
+        }
+        assert!(check_override("servers.server_local.path", &carried()).is_err());
     }
 
     #[test]
@@ -896,7 +879,7 @@ mod tests {
     #[test]
     fn plugin_settings_are_allowed() {
         for key in [
-            "servers.server_sqlite.preload_limit",
+            "servers.server_local.preload_limit",
             "workers.transport_http_poll.enabled",
             "workers.transport_http_push.concurrency",
             "gateways.gateway_http.cors_allow_origins",

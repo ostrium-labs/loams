@@ -101,9 +101,8 @@ ignore = [
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-# tikv-client is pinned by rev to Loams's fork, branch `loam` (R1 plan rows R4
-# and F1). Resonate is pinned by rev to the fork's loam/0.10.1 (D1 plan Task
-# 1, D140). Grafeo is pinned by rev to Loams's fork, a release tag
+# Resonate is the official resonatehq/resonate, pinned by rev (D140, D2450).
+# Grafeo is pinned by rev to Loams's fork, a release tag
 # `v0.5.43-loams.<n>` on branch `loams/v0.5.43-patches` (patch queue in the
 # fork's PATCHES.md).
 # network_partitions (Leiden, MIT) is pinned by rev to Microsoft's
@@ -111,7 +110,5 @@ unknown-git = "deny"
 # The Neon fork is not allowed here: only crates/loams-wal-decoder, a
 # workspace of its own with its own deny.toml, may use it, and
 # scripts/pg2/check-decoder-deny.py fails if this lockfile names it.
-# tikv-client is the official tikv/client-rust pinned by rev (D2450). The
-# ostrium-labs/client-rust entry stays only while the Resonate fork's
-# resonate-server-blob still depends on it; the Resonate switch removes it.
-allow-git = ["https://github.com/tikv/client-rust", "https://github.com/ostrium-labs/client-rust", "https://github.com/ostrium-labs/resonate", "https://github.com/microsoft/graspologic-native"]
+# tikv-client is the official tikv/client-rust pinned by rev (D2450).
+allow-git = ["https://github.com/tikv/client-rust", "https://github.com/resonatehq/resonate", "https://github.com/microsoft/graspologic-native"]

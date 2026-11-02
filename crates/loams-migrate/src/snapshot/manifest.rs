@@ -16,7 +16,7 @@ pub const MANIFEST_FILE: &str = "snapshot.json";
 /// One store's copy in a snapshot.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Component {
-    /// `bucket`, `raft`, `durable`, `house`, `pg_control`, `agentd`, `tikv`,
+    /// `bucket`, `raft`, `durable`, `durable_local`, `house`, `pg_control`, `agentd`, `tikv`,
     /// `postgres`.
     pub store: String,
     /// `copy`, `sqlite_backup`, `br`, `cold`, `branch`.

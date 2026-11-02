@@ -510,7 +510,7 @@ jobs:
       # The product features (git, buildcache, registry, sqldb, postgres) are linted here too:
       # dev once stopped building with `--features git` and no fast-tier job noticed (GT1 T18.4).
       - name: clippy (loams with the tikv, graph, product, spark and optional listener features)
-        run: cargo clippy -p loams --all-targets --features tikv,live-tikv,durable-tikv,stream-grpc,pgwire,mysql-wire,graph,git,buildcache,registry,sqldb,postgres,spark --locked -- -D warnings
+        run: cargo clippy -p loams --all-targets --features tikv,live-tikv,durable-mysql,durable-postgres,stream-grpc,pgwire,mysql-wire,graph,git,buildcache,registry,sqldb,postgres,spark --locked -- -D warnings
       # loams-spark's Kubernetes runner (design 81 SP-b) is behind its own feature.
       - name: clippy (loams-spark kubernetes runner)
         run: cargo clippy -p loams-spark --features kubernetes --all-targets --locked -- -D warnings
@@ -534,8 +534,8 @@ jobs:
         run: cargo check --locked -p loams --bin loams --features postgres,tikv
       - name: clippy (loams-live without TiKV, as the default build has it)
         run: cargo clippy -p loams-live --lib --locked -- -D warnings
-      - name: clippy (loams-durable with the native TiKV store)
-        run: cargo clippy -p loams-durable --all-targets --features tikv --locked -- -D warnings
+      - name: clippy (loams-durable with the MySQL and Postgres stores)
+        run: cargo clippy -p loams-durable --all-targets --features mysql,postgres --locked -- -D warnings
       - name: clippy (loams-safekeeper with the service, the TiKV store and the NVMe store)
         run: cargo clippy -p loams-safekeeper --all-targets --features server,tikv,nvme --locked -- -D warnings
       # LV1 plan Task 23 (default_build_has_no_tikv_client): Live is in the
@@ -1119,7 +1119,6 @@ jobs:
           cargo test -p loams --features tikv --test meta_tikv --locked --no-run
           cargo test -p loams --features live-tikv --test live --locked --no-run
           cargo test -p loams --features live-tikv --bin loams live --locked --no-run
-          cargo test -p loams-durable --features tikv --lib --test tikv --locked --no-run
           cargo test -p loams-safekeeper --features tikv --test tikv --locked --no-run
           cargo test -p loams-pg-control --features tikv --test store_tikv --test service_tikv --test reconcile_tikv --test endpoints_tikv --locked --no-run
       - uses: actions/cache@v6
@@ -1147,7 +1146,6 @@ jobs:
           cargo test -p loams --features tikv --test meta_tikv --locked
           cargo test -p loams --features live-tikv --test live --locked
           cargo test -p loams --features live-tikv --bin loams live --locked
-          cargo test -p loams-durable --features tikv --lib --test tikv --locked
           cargo test -p loams-safekeeper --features tikv --test tikv --locked
           cargo test -p loams-pg-control --features tikv --test store_tikv --test service_tikv --test reconcile_tikv --test endpoints_tikv --locked
           cargo test -p loams-migrate --test adopt preview2_tikv_dump_is_recognised --locked
@@ -1322,7 +1320,7 @@ jobs:
   # scripts, the workflows, or the workspace manifests (the `durable` filter
   # in the changes job). `durable` is an opt-in feature (O1).
   durable:
-    name: "Durable: SQLite linearizability"
+    name: "Durable: local store linearizability"
     needs: changes
     if: ${{ !cancelled() && (inputs.nightly != true && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.durable == 'true')))) && needs.changes.outputs.heavy != 'false' }}
     runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || (vars.RUNNER_HEAVY || 'ubuntu-latest') }}
@@ -1355,13 +1353,13 @@ jobs:
         run: cargo test -p loams --features durable,stream-grpc --test durable --bin loams --locked
       - name: checker self-test
         run: scripts/durable/conformance.sh --self-test
-      - name: linearizability on SQLite (8 clients x 600 ops)
-        run: scripts/durable/conformance.sh --store sqlite --clients 8 --ops 600
+      - name: linearizability on the local store (8 clients x 600 ops)
+        run: scripts/durable/conformance.sh --store local --clients 8 --ops 600
       - name: conformance output
         if: failure()
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: durable-conformance-sqlite
+          name: durable-conformance-local
           path: target/durable-conformance/
           if-no-files-found: ignore
 
@@ -2781,7 +2779,7 @@ jobs:
       # aws-lc-sys's prebuilt NASM objects: no NASM install needed for a check.
       AWS_LC_SYS_PREBUILT_NASM: "1"
       # release-package.yml's LOAMS_PACKAGE_FEATURES; keep the two in step.
-      LOAMS_PACKAGE_FEATURES: live,live-tikv,durable,durable-tikv,graph,git,tikv,pgwire,mysql-wire,stream-grpc
+      LOAMS_PACKAGE_FEATURES: live,live-tikv,durable,durable-postgres,graph,git,tikv,pgwire,mysql-wire,stream-grpc
     steps:
       - uses: actions/checkout@v7
         with:

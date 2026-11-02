@@ -6,7 +6,8 @@
 //! |---|---|
 //! | `bucket` | the objects the metastore's pointers name, Git's mutable catalog objects and the embedded metastore's snapshot objects (small: the immutable rest is pinned, not copied) |
 //! | `raft` | the embedded metastore's directory, cold (`<data-dir>/meta`) |
-//! | `durable` | SQLite's backup API (`<data-dir>/durable/default.db`) |
+//! | `durable` | SQLite's backup API (`<data-dir>/durable/default.db`, the store before D2450) |
+//! | `durable_local` | a copy of the local durable store (`<data-dir>/durable/default.redb`, D2450) |
 //! | `house` | the House data directory |
 //! | `pg_control` | `pg-control`'s data directory |
 //! | `agentd` | agentd's data directory |
@@ -36,6 +37,16 @@ pub use manifest::{Component, MANIFEST_FILE, SnapshotListing, SnapshotManifest};
 use crate::cx::Cx;
 use crate::ledger::Ledger;
 use crate::migration::MigrationError;
+
+/// The local durable store's file name (D2450), in `<data-dir>/durable`.
+const DURABLE_LOCAL_FILE: &str = "default.redb";
+
+/// `<data-dir>/durable/default.redb`, when the context has a data directory.
+fn durable_local(cx: &Cx) -> Option<PathBuf> {
+    cx.durable_cx()
+        .ok()
+        .and_then(|d| d.path().parent().map(|p| p.join(DURABLE_LOCAL_FILE)))
+}
 
 /// Why a snapshot or a restore failed.
 #[derive(Debug, thiserror::Error)]
@@ -141,6 +152,20 @@ pub async fn snapshot(
             "sqlite_backup",
             &dir,
             "durable",
+        )?);
+    }
+    // The local durable store (D2450): one redb file, copied cold.
+    if let Some(local) = durable_local(cx).filter(|p| p.exists()) {
+        let target = dir.join("durable_local");
+        files::private_dir(&target)?;
+        let copy = target.join(DURABLE_LOCAL_FILE);
+        std::fs::copy(&local, &copy).map_err(|e| io(local.display(), e))?;
+        files::private_file(&copy)?;
+        components.push(files::describe(
+            "durable_local",
+            "copy",
+            &dir,
+            "durable_local",
         )?);
     }
     if let Ok(house) = cx.house_cx()
@@ -358,6 +383,9 @@ pub fn estimate_bytes(cx: &Cx, opts: &SnapshotOptions) -> u64 {
     if let Ok(durable) = cx.durable_cx() {
         total += files::size_of(durable.path());
     }
+    if let Some(local) = durable_local(cx) {
+        total += files::size_of(&local);
+    }
     if let Ok(house) = cx.house_cx() {
         total += files::size_of(house.dir());
     }
@@ -478,6 +506,20 @@ pub async fn restore(
                     let _ = std::fs::remove_file(PathBuf::from(stale));
                 }
                 std::fs::rename(&staged, db).map_err(|e| io(db.display(), e))?;
+            }
+            "durable_local" => {
+                let target = durable_local(cx).ok_or_else(|| {
+                    SnapshotError::Io("restoring the durable store needs --data-dir".into())
+                })?;
+                if let Some(parent) = target.parent() {
+                    std::fs::create_dir_all(parent).map_err(|e| io(parent.display(), e))?;
+                }
+                let mut staged = target.as_os_str().to_owned();
+                staged.push(".restore-new");
+                let staged = PathBuf::from(staged);
+                std::fs::copy(source.join(DURABLE_LOCAL_FILE), &staged)
+                    .map_err(|e| io(staged.display(), e))?;
+                std::fs::rename(&staged, &target).map_err(|e| io(target.display(), e))?;
             }
             "house" => files::replace_dir(&source, cx.house_cx()?.dir())?,
             "pg_control" => files::replace_dir(&source, cx.pg_control_cx()?.dir())?,

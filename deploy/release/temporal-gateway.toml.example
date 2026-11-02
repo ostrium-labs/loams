@@ -44,6 +44,10 @@ url_env = "LOAMS_TEMPORAL_DATABASE_URL"
 
 # Resonate: the engine's durable listener in the engine's network namespace
 # (compose profile `temporal-gateway`), or any Resonate server.
+# NOT AVAILABLE since D2450 (2026-11-02): the adapter was built on the
+# ostrium-labs/resonate fork's resonate-client, and the gateway refuses
+# kind = "resonate" at start until an adapter on the official protocol lands.
+# Until then only kind = "in_process" (insecure_dev, loopback) runs.
 [durability]
 kind = "resonate"
 url = "http://127.0.0.1:8001"
