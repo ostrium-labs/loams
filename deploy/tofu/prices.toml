@@ -1,0 +1,226 @@
+# Dated cloud list prices for the deploy cost estimate (design 86, plan OP2-C D2615, D2370).
+# Embedded by crates/loams-deploy. SKU = <cloud>/<service>/<name>.
+#
+# Prices are public list prices, pay-as-you-go, for us-east-1, us-central1 and eastus, read
+# from each entry's pricing page. `verified = false` until a billed amount confirms the
+# entry (bench/cloud/ledger.py). `source = "estimate"` where the page gives no direct
+# per-unit price. `usd` is a decimal string. Units: hour, gib-month, gib, month (month =
+# one resource, for example one key or one managed disk). `free.quantity` is per month in
+# the entry's unit.
+# Azure Key Vault: a software-protected key has no per-key fee (operations are $0.03 per
+# 10,000, negligible here), so the entry is an estimate of 0. Azure disks are per disk
+# (P6 = 64 GiB, P10 = 128 GiB, P3 = 16 GiB). The VM entries match the `*-vm` modules'
+# hourly estimates of 2026-10-21. GCP egress is the Premium Tier 0-1 TiB internet rate.
+
+read = 2026-11-02
+
+[prices."aws/ec2/t3.large"]
+unit = "hour"
+usd = "0.0832"
+regions = ["us-east-1"]
+source = "list"
+url = "https://aws.amazon.com/ec2/pricing/on-demand/"
+verified = false
+
+[prices."aws/ec2/t3.xlarge"]
+unit = "hour"
+usd = "0.1664"
+regions = ["us-east-1"]
+source = "list"
+url = "https://aws.amazon.com/ec2/pricing/on-demand/"
+verified = false
+
+[prices."aws/ebs/gp3"]
+unit = "gib-month"
+usd = "0.08"
+regions = ["us-east-1"]
+source = "list"
+url = "https://aws.amazon.com/ebs/pricing/"
+verified = false
+
+[prices."aws/vpc/public-ipv4"]
+unit = "hour"
+usd = "0.005"
+regions = ["us-east-1"]
+source = "list"
+url = "https://aws.amazon.com/vpc/pricing/"
+verified = false
+
+[prices."aws/kms/key"]
+unit = "month"
+usd = "1.00"
+regions = ["us-east-1"]
+source = "list"
+url = "https://aws.amazon.com/kms/pricing/"
+verified = false
+
+[prices."aws/secretsmanager/secret"]
+unit = "month"
+usd = "0.40"
+regions = ["us-east-1"]
+source = "list"
+url = "https://aws.amazon.com/secrets-manager/pricing/"
+verified = false
+
+[prices."aws/eks/control-plane"]
+unit = "hour"
+usd = "0.10"
+regions = ["us-east-1"]
+source = "list"
+url = "https://aws.amazon.com/eks/pricing/"
+verified = false
+
+[prices."aws/network/egress-internet"]
+unit = "gib"
+usd = "0.09"
+regions = ["us-east-1"]
+source = "list"
+url = "https://aws.amazon.com/ec2/pricing/on-demand/#Data_Transfer"
+verified = false
+free = { quantity = 100, note = "the first 100 GiB per month out to the internet, across services" }
+
+[prices."gcp/gce/e2-standard-2"]
+unit = "hour"
+usd = "0.06701"
+regions = ["us-central1"]
+source = "list"
+url = "https://cloud.google.com/compute/vm-instance-pricing"
+verified = false
+
+[prices."gcp/gce/e2-standard-4"]
+unit = "hour"
+usd = "0.13402"
+regions = ["us-central1"]
+source = "list"
+url = "https://cloud.google.com/compute/vm-instance-pricing"
+verified = false
+
+[prices."gcp/pd/balanced"]
+unit = "gib-month"
+usd = "0.10"
+regions = ["us-central1"]
+source = "list"
+url = "https://cloud.google.com/compute/disks-image-pricing"
+verified = false
+
+[prices."gcp/network/external-ipv4"]
+unit = "hour"
+usd = "0.005"
+regions = ["us-central1"]
+source = "list"
+url = "https://cloud.google.com/vpc/network-pricing"
+verified = false
+
+[prices."gcp/kms/key-version"]
+unit = "month"
+usd = "0.06"
+regions = ["us-central1"]
+source = "list"
+url = "https://cloud.google.com/kms/pricing"
+verified = false
+
+[prices."gcp/secretmanager/secret-version"]
+unit = "month"
+usd = "0.06"
+regions = ["us-central1"]
+source = "list"
+url = "https://cloud.google.com/secret-manager/pricing"
+verified = false
+
+[prices."gcp/gke/zonal-management"]
+unit = "hour"
+usd = "0.10"
+regions = ["us-central1"]
+source = "list"
+url = "https://cloud.google.com/kubernetes-engine/pricing"
+verified = false
+free = { quantity = 730, note = "one zonal or Autopilot cluster per billing account" }
+
+[prices."gcp/network/egress-internet"]
+unit = "gib"
+usd = "0.12"
+regions = ["us-central1"]
+source = "list"
+url = "https://cloud.google.com/vpc/network-pricing"
+verified = false
+
+[prices."azure/vm/Standard_D2s_v5"]
+unit = "hour"
+usd = "0.096"
+regions = ["eastus"]
+source = "list"
+url = "https://azure.microsoft.com/pricing/details/virtual-machines/linux/"
+verified = false
+
+[prices."azure/vm/Standard_D4s_v5"]
+unit = "hour"
+usd = "0.192"
+regions = ["eastus"]
+source = "list"
+url = "https://azure.microsoft.com/pricing/details/virtual-machines/linux/"
+verified = false
+
+[prices."azure/disk/premium-ssd-p6"]
+unit = "month"
+usd = "10.207"
+regions = ["eastus"]
+source = "list"
+url = "https://azure.microsoft.com/pricing/details/managed-disks/"
+verified = false
+
+[prices."azure/disk/premium-ssd-p10"]
+unit = "month"
+usd = "19.71"
+regions = ["eastus"]
+source = "list"
+url = "https://azure.microsoft.com/pricing/details/managed-disks/"
+verified = false
+
+[prices."azure/disk/premium-ssd-p3"]
+unit = "month"
+usd = "2.40"
+regions = ["eastus"]
+source = "list"
+url = "https://azure.microsoft.com/pricing/details/managed-disks/"
+verified = false
+
+[prices."azure/network/public-ipv4"]
+unit = "hour"
+usd = "0.005"
+regions = ["eastus"]
+source = "list"
+url = "https://azure.microsoft.com/pricing/details/ip-addresses/"
+verified = false
+
+[prices."azure/keyvault/key"]
+unit = "month"
+usd = "0"
+regions = ["eastus"]
+source = "estimate"
+url = "https://azure.microsoft.com/pricing/details/key-vault/"
+verified = false
+
+[prices."azure/aks/control-plane-free"]
+unit = "hour"
+usd = "0"
+regions = ["eastus"]
+source = "list"
+url = "https://azure.microsoft.com/pricing/details/kubernetes-service/"
+verified = false
+
+[prices."azure/lb/standard"]
+unit = "hour"
+usd = "0.025"
+regions = ["eastus"]
+source = "list"
+url = "https://azure.microsoft.com/pricing/details/load-balancer/"
+verified = false
+
+[prices."azure/network/egress-internet"]
+unit = "gib"
+usd = "0.087"
+regions = ["eastus"]
+source = "list"
+url = "https://azure.microsoft.com/pricing/details/bandwidth/"
+verified = false
+free = { quantity = 100, note = "the first 100 GiB per month out to the internet" }

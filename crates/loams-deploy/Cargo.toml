@@ -1,0 +1,20 @@
+[package]
+name = "loams-deploy"
+description = "Loams one-click deploy (design 86, plan OP2-C): the deploy target registry, the dated cloud price table and, in later tasks, the `loams deploy` CLI that puts an operator and an app on a cloud account the user owns."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+loams-meter-core = { path = "../loams-meter-core", version = "0.1.4" }
+serde.workspace = true
+time.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+regex.workspace = true
+
+[lints]
+workspace = true

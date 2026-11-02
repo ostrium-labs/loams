@@ -9224,6 +9224,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-deploy"
+version = "0.1.4"
+dependencies = [
+ "loams-meter-core",
+ "regex",
+ "serde",
+ "time",
+ "toml 0.8.23",
+]
+
+[[package]]
 name = "loams-durable"
 version = "0.1.4"
 dependencies = [
