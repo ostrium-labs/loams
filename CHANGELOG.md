@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- **Official Apache Iggy (D2450).** Loams runs the official Apache Iggy server image
+  (`docker.io/apache/iggy:0.9.0`, pinned by digest) and the official `iggy` crate (0.11.0) in
+  place of Ostrium's fork. The compose profile `kafka` is now `iggy`, and its variables
+  `IGGY_KAFKA_IMAGE`, `KAFKA_IGGY_USER` and `KAFKA_IGGY_PASSWORD` are `IGGY_IMAGE`, `IGGY_USER`
+  and `IGGY_PASSWORD`.
+
+### Removed
+
+- **Kafka-compatible access through Iggy.** The Kafka wire gateway only existed in the fork: the
+  `kafka-gateway` compose service, its `KAFKA_BIND`, `KAFKA_PORT`, `KAFKA_ADVERTISED_HOST`,
+  `KAFKA_SASL_ENABLED` and `KAFKA_AUTO_CREATE_TOPICS` settings and the Iggy Kafka gateway
+  benchmarks no longer run. Use Confluent Cloud, Redpanda or Apache Kafka for Kafka clients.
+
 ## [0.1.4] - 2026-10-30
 
 Everything new in 0.1.4 is **preview**: it runs and has tests, but its interfaces can still

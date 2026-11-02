@@ -1,6 +1,6 @@
 # Confluent Cloud benchmark harness (lane CFB)
 
-This harness measures Confluent Cloud clusters on AWS, Google Cloud and Azure. It compares them with Apache Kafka 4.3.1 and the Loams Iggy Kafka gateway, both run locally. The report is
+This harness measures Confluent Cloud clusters on AWS, Google Cloud and Azure. It compares them with Apache Kafka 4.3.1 run locally. (The Loams Iggy Kafka gateway baseline of the first run is history: D2450 dropped the gateway, so `run-local.sh iggy` now refuses.) The report is
 [docs/benchmarks/confluent-cloud-2026-10.md](../../docs/benchmarks/confluent-cloud-2026-10.md), and the
 results are in `results/<day>/`.
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+echo "needs the Iggy Kafka gateway, dropped by D2450 (official Apache Iggy has no Kafka wire protocol); this script is kept for the record" >&2; exit 78
 # Kafka gateway A/B (footnote path): baseline vs Fetch page-size fix; in-flight 1 vs 5; compression. Run under benchslot.
 # usage: ab_kafka.sh <label> <gateway-binary>
 set -u

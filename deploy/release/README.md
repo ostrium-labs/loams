@@ -496,8 +496,9 @@ secret stores; not yet run on a real cloud account.
   yet (Q1513).
 - The cluster CA and `loams ca` are behind the off-by-default `transport`
   feature, in no release image, and no cluster traffic uses them yet.
-- The `kafka` profile's pinned Iggy image predates the fork's faster Kafka
-  consume path (ostrium-labs/iggy#28).
+- Kafka-compatible access through Iggy is gone (D2450): the `iggy` profile runs
+  the official Apache Iggy server, which has no Kafka wire gateway. The profile
+  and variables were renamed from `kafka`, `KAFKA_IGGY_*` and `IGGY_KAFKA_IMAGE`.
 - Loams Meter seals webhook secrets with `LOAMS_METER_SECRETS_KEY_FILE` (default
   `<data_dir>/meter/secrets.key`, made on first use). On a cluster of several
   gateway nodes, every node must mount the same file.

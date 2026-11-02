@@ -52,7 +52,6 @@ dependencies = [
  "cipher 0.5.2",
  "cpubits",
  "cpufeatures 0.3.1",
- "zeroize",
 ]
 
 [[package]]
@@ -67,22 +66,6 @@ dependencies = [
  "ctr",
  "ctutils",
  "ghash",
- "zeroize",
-]
-
-[[package]]
-name = "aes-gcm-siv"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c32325128cb24de2a2d14d92da7569dae7073f9e47334521d494747fa94d902"
-dependencies = [
- "aead 0.6.1",
- "aes",
- "cipher 0.5.2",
- "ctr",
- "ctutils",
- "polyval",
- "zeroize",
 ]
 
 [[package]]
@@ -5331,7 +5314,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2eecf2d5dc9b66b732b97707a0210906b1d30523eb773193ab777c0c84b3e8d5"
 dependencies = [
  "polyval",
- "zeroize",
 ]
 
 [[package]]
@@ -6816,9 +6798,9 @@ dependencies = [
 
 [[package]]
 name = "iggy"
-version = "0.11.1-edge.2"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df187b330ecc195c3983dbadb1405f5f428cb7403aeab0fc19ca8663d1ccc247"
+checksum = "13d604e5573ec5f6bed2fcc3103f7d7ec2d42207312012b7d96487008a0c8d24"
 dependencies = [
  "async-broadcast",
  "async-dropper",
@@ -6832,14 +6814,11 @@ dependencies = [
  "futures-util",
  "iggy_binary_protocol",
  "iggy_common",
- "percent-encoding",
  "quinn",
- "rand 0.10.3",
  "reqwest 0.13.5",
  "reqwest-middleware",
  "reqwest-retry",
  "reqwest-tracing",
- "ring",
  "rustls",
  "secrecy",
  "serde",
@@ -6854,28 +6833,25 @@ dependencies = [
 
 [[package]]
 name = "iggy_binary_protocol"
-version = "0.11.1-edge.2"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "444fd1b1c0511103654a8c0325bf5cc92824c105b7cbe667a4c29f51f1354dfd"
+checksum = "dc1dfab100ec08e587dc5348c6cbfa52353d93e7cc03f63655e2251ac3adc230"
 dependencies = [
  "bytemuck",
  "bytes",
  "enumset",
- "ring",
  "secrecy",
- "serde",
  "thiserror 2.0.21",
  "twox-hash",
 ]
 
 [[package]]
 name = "iggy_common"
-version = "0.11.1-edge.2"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fed4fc43bbc44cd2ba59f32bcc2e8854423269d6e6a338ca916670c432980bba"
+checksum = "15e5cd528c3222e3e785148f1a888e736fa83a0bf429aec6f5a95a67fa7103a3"
 dependencies = [
  "aes-gcm",
- "aes-gcm-siv",
  "async-broadcast",
  "async-trait",
  "base64 0.23.1",
@@ -12924,7 +12900,6 @@ dependencies = [
  "cpubits",
  "cpufeatures 0.3.1",
  "universal-hash 0.6.1",
- "zeroize",
 ]
 
 [[package]]

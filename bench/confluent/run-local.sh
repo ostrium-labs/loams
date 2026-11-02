@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # LOCAL comparison baseline (not cloud): the same driver and scenarios against
-# Apache Kafka 4.3.1 (container, KRaft, one node) and the Loams Iggy Kafka gateway
-# (release build of ostrium-labs/iggy `loams`), both on this laptop over loopback.
+# Apache Kafka 4.3.1 (container, KRaft, one node) on this laptop over loopback. The
+# `iggy` baseline (the Loams Iggy Kafka gateway of the dropped fork) is gone: D2450.
 #
 #   run-local.sh kafka|iggy [latency|txn|tput|all]
 #
@@ -14,7 +14,7 @@ day="${CFB_DAY:-2026-10-28}"
 export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://127.0.0.1:4318}"
 case "${1:?kafka|iggy}" in
   kafka) target=apache-kafka-4.3.1-local kind=apache-kafka-local bs="${CFB_KAFKA_BOOTSTRAP:-127.0.0.1:39092}" ;;
-  iggy)  target=iggy-kafka-gateway-local kind=iggy-kafka-local  bs="${CFB_IGGY_BOOTSTRAP:-127.0.0.1:39093}" ;;
+  iggy)  echo "the Iggy Kafka gateway baseline is gone: dropped by D2450 (official Apache Iggy has no Kafka wire protocol)" >&2; exit 78 ;;
   *) echo "kafka|iggy" >&2; exit 2 ;;
 esac
 what="${2:-all}"

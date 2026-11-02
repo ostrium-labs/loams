@@ -141,7 +141,7 @@ spec:
       - env:
         - name: LOAMS_IGGY_CONNECTORS_DIR
           value: /etc/loams-iggy/connectors
-        image: ghcr.io/ostrium-labs/iggy-connectors@sha256:3333333333333333333333333333333333333333333333333333333333333333
+        image: docker.io/apache/iggy-connect@sha256:3333333333333333333333333333333333333333333333333333333333333333
         imagePullPolicy: IfNotPresent
         name: iggy-connectors
         ports:

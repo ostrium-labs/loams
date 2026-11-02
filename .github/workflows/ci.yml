@@ -223,7 +223,7 @@ jobs:
               - "deploy/tikv/**"
               - "scripts/tikv/**"
               - "proto/loams/**"
-            # loams_sink (FL1 Task 10): the crate, and the `kafka` profile whose
+            # loams_sink (FL1 Task 10): the crate, and the `iggy` profile whose
             # image its integration tests run against.
             iggy-sink:
               - *toolchain
@@ -231,7 +231,7 @@ jobs:
               - "crates/loams-cloudevents/**"
               - "deploy/release/compose.yaml"
               - "deploy/release/.env.example"
-              - "deploy/release/config/kafka-guard.sh"
+              - "deploy/release/config/iggy-guard.sh"
               - "deploy/release/ci/iggy-sink-it.sh"
               - "deploy/release/ci/compose.iggy-it.yaml"
             # LV1 plan Task 22: the store seam and the Live suites, which run
@@ -1195,9 +1195,9 @@ jobs:
           LOAMS_CHECKER_OPS: "2000"
         run: cargo test -p loams-kv -p loams-live -p loams-live-js -p loams-live-js-alloc --locked
 
-  # loams_sink (FL1 Task 10, design 32 5.10): its tests against the Iggy
-  # fork's image the `kafka` profile pins, with kcat records through the Kafka
-  # gateway and a restart of the Iggy container (deploy/release/ci/iggy-sink-it.sh).
+  # loams_sink (FL1 Task 10, design 32 5.10): its tests against the official
+  # Apache Iggy image the `iggy` profile pins (D2450), with a restart of the
+  # Iggy container (deploy/release/ci/iggy-sink-it.sh).
   iggy-sink:
     name: "loams_sink: Iggy integration"
     needs: changes
@@ -1213,7 +1213,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: unit and runner tests
         run: cargo test -p loams-iggy-sink --locked --lib --test runner
-      - name: against the fork's Iggy image
+      - name: against the official Iggy image
         run: deploy/release/ci/iggy-sink-it.sh --locked
 
   # The same suites every night, plus the nightly-only TiKV suites later R1
