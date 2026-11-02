@@ -7,8 +7,10 @@ Build `loams-trigger-edge:dev` from the repository root with
 then set the image to one available in your cluster and apply this directory
 with `kubectl apply -k deploy/dapr` after installing Dapr, TiKV, and Kafka.
 The `loams-stream` Deployment is a one-replica integration topology using
-`loams dev`, with an image built using `--features tikv,stream-grpc,durable-tikv`,
-and a persistent volume.
+`loams dev`, with an image built using `--features tikv,stream-grpc,durable`,
+and a persistent volume. Durable runs on its local store in that volume
+(`/data/durable/default.redb`); the native TiKV durable store went with the
+Resonate fork (D2450).
 Set the Loams image and PD service name for your cluster. Create the
 `workflow-triggers` stream before sending events. Do not scale this Deployment:
 the dev process has a fixed node ID. A production multi-replica layout needs

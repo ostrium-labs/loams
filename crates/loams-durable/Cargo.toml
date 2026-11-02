@@ -17,8 +17,9 @@ mysql = ["dep:resonate-server-mysql", "dep:rustls", "dep:sqlx"]
 # durable-postgres).
 postgres = ["dep:resonate-server-postgres"]
 # Push delivery to http(s):// targets (loams's durable-push). Off by default:
-# upstream's push transport brings reqwest 0.12's default TLS (OpenSSL through
-# native-tls) and google-cloud-auth into the whole build (D2450).
+# upstream's push transport links google-cloud-auth unconditionally (D2450).
+# (OpenSSL comes in either way: resonate-auth, under the HTTP gateway, uses
+# reqwest 0.12 with its default native-tls; release builds link it statically.)
 push = ["dep:resonate-transport-http-push"]
 
 [dependencies]

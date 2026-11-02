@@ -20,7 +20,8 @@
 #
 # Environment:
 #   LOAMS_TEMPORAL_BIN  loopback: the gateway binary (default: cargo's target/debug/loams-temporal)
-#   LOAMS_RESONATE_BIN  loopback: a Resonate server binary (the fork's `resonate`); unset = in-process
+#   LOAMS_RESONATE_BIN  loopback: a Resonate server binary (upstream's `resonate`); unset = in-process.
+#                       Refused by the gateway since D2450 (no Resonate adapter; see temporal-gateway.md)
 #   GW_PORT, RS_PORT    loopback: ports (default 27233, 28001)
 #   GW_BUILD=1          profile: rebuild the gateway's image even when it exists
 #   OC_PROJECT          profile: a compose project other than `loams` (lib.sh)

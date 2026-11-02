@@ -141,7 +141,6 @@ resonate-plugin = { package = "resonate-plugin", version = "=0.10.1", git = "htt
 resonate-sdk = { package = "resonate-sdk", version = "=0.6.0", git = "https://github.com/resonatehq/resonate", rev = "9c72d818721b1776edd6b1b2939a83b3c0b248a6", default-features = false }
 resonate-server-blob = { package = "resonate-server-blob", version = "=0.10.1", git = "https://github.com/resonatehq/resonate", rev = "9c72d818721b1776edd6b1b2939a83b3c0b248a6", default-features = false }
 resonate-transport-http-poll = { package = "resonate-transport-http-poll", version = "=0.10.1", git = "https://github.com/resonatehq/resonate", rev = "9c72d818721b1776edd6b1b2939a83b3c0b248a6", default-features = false }
-resonate-transport-http-push = { package = "resonate-transport-http-push", version = "=0.10.1", git = "https://github.com/resonatehq/resonate", rev = "9c72d818721b1776edd6b1b2939a83b3c0b248a6", default-features = false }
 ring = { package = "ring", version = "=0.17.14", default-features = true, features = ["alloc", "dev_urandom_fallback", "std", "wasm32_unknown_unknown_js"] }
 roaring = { package = "roaring", version = "=0.11.5", default-features = true, features = ["std"] }
 rpassword = { package = "rpassword", version = "=7.5.4", default-features = false }

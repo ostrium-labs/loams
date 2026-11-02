@@ -46,7 +46,7 @@ spec:
               value: loams-stream
       containers:
         - name: loams
-          image: loams:tikv-stream-grpc-durable-tikv
+          image: loams:tikv-stream-grpc-durable
           args:
             - dev
             - --data-dir
@@ -57,8 +57,6 @@ spec:
             - 127.0.0.1:8091
             - --meta
             - tikv://pd.loams.svc.cluster.local:2379/loams-meta
-            - --durable-store
-            - tikv://pd.loams.svc.cluster.local:2379/loams-durable
           ports:
             - name: native-http
               containerPort: 8080

@@ -507,7 +507,7 @@ pub(crate) fn configuration(
         .set("servers.active", &quote(server))
         .map_err(bad)?;
     // The push transport is linked only with the `push` feature (D2450:
-    // upstream's brings OpenSSL and google-cloud-auth).
+    // upstream's links google-cloud-auth unconditionally).
     #[cfg(feature = "push")]
     {
         loader = loader

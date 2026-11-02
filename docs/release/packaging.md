@@ -182,7 +182,7 @@ The list this short is a consequence of the server's `reqwest` being
 ### The feature set, and what is not in the package
 
 Packages are built with the release image's features (#925):
-`live,live-tikv,durable,durable-tikv,graph,tikv,pgwire,mysql-wire,stream-grpc`
+`live,live-tikv,durable,durable-postgres,graph,tikv,pgwire,mysql-wire,stream-grpc`
 on top of the default set (`es`, `flight`, `hnsw`, `live`, `qdrant`). The list is
 `LOAMS_PACKAGE_FEATURES` in `.github/workflows/release-package.yml`, and the
 Linux job fails if it differs from `ARG FEATURES` in
@@ -196,9 +196,11 @@ The 0.1.0 packages were built from the default set alone, so they had no
 Durable: `loams dev` logged "this build has no durable execution" and nothing
 listened on 8001.
 
-The `depends` list above still holds. Resonate's SQLite comes from `rusqlite`
-with `bundled`, which compiles it into the binary, and the image's runtime stage
-installs no libraries beyond `ca-certificates`, `curl` and `tini`.
+The `depends` list above still holds. Durable's local store is redb (pure
+Rust). The official Resonate brings OpenSSL (`resonate-auth` uses reqwest 0.12
+with native-tls, D2450); the release builds set `OPENSSL_STATIC=1`, so it is
+linked into the binary, and the image's runtime stage installs no libraries
+beyond `ca-certificates`, `curl` and `tini`.
 
 Not in the package:
 

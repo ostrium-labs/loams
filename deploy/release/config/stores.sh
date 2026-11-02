@@ -5,11 +5,11 @@
 #
 # - without `tikv` (the default): the embedded metastore (openraft + redb,
 #   one node, in /var/lib/loams/meta), Live on its embedded redb store and
-#   Durable on SQLite, all in the loams-data volume;
+#   Durable on its local redb store, all in the loams-data volume;
 # - with `tikv`: the metastore on TiKV (keyspace loams_meta) and Live on TiKV
-#   (loams_live_dev). Durable stays on SQLite unless LOAMS_DURABLE_STORE names
-#   another store (tikv://pd:2379/loams_durable: a fresh keyspace, nothing is
-#   copied from SQLite).
+#   (loams_live_dev). Durable stays on its local store unless
+#   LOAMS_DURABLE_STORE names another (postgres://…; tikv:// went with the
+#   Resonate fork, D2450).
 #
 # A flag already given (`migrate status --meta=…`) is not added again. The
 # data directory records which store it was first started with

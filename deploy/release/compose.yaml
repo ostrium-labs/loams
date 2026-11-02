@@ -206,8 +206,8 @@ services:
     <<: *restart
     image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams:${LOAMS_VERSION:-0.1.4}
     # The stores come from the profiles (config/stores.sh): embedded by
-    # default, the metastore and Live on TiKV with `tikv`, Durable on SQLite
-    # unless LOAMS_DURABLE_STORE says otherwise.
+    # default, the metastore and Live on TiKV with `tikv`, Durable on its local
+    # store unless LOAMS_DURABLE_STORE says otherwise.
     entrypoint: ["/usr/bin/tini", "--", "/bin/sh", "/etc/loams/stores.sh"]
     command:
       - standalone

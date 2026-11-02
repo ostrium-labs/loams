@@ -270,7 +270,7 @@ flowchart LR
 | Pinned scans | Read a collection's pinned Lance version directly with pylance, Ray, Polars or PyTorch | Available |
 | Cluster mode | `loams cluster` with roles, rendezvous placement, read forwarding and write backpressure | Available |
 | TiKV metastore | The catalog, leases and timestamp oracle on TiKV (`--meta tikv://…`, cargo feature `tikv`) | Available |
-| Loams Durable | An embedded Resonate server: durable promises and tasks on SQLite (cargo feature `durable`) | Available |
+| Loams Durable | An embedded Resonate server: durable promises and tasks on its local redb store (cargo feature `durable`; SQLite until D2450) | Available |
 | Durable store on TiKV | Durable execution state on TiKV for clusters | In progress |
 | Loams Live | A reactive document database: transactions, indexes, live queries and a TypeScript SDK, on an embedded store or on TiKV (`live-tikv`) | Available. Deploys, rollback, validators and online index changes through `LiveAdminService` on the main port, over the tailnet; many apps per engine, per-app and per-table authorization, end users from any OIDC provider; a deploy reaches every node at once |
 | Loams Graph | `loams.graph.v1` on the main port, GQL on Grafeo (cargo feature `graph`) | Available. Writes reach the Loams log before they are acknowledged, with a fenced single owner per graph, snapshots in the bucket and crash recovery (GR1 Tasks 11 to 14), on Loams' Grafeo fork |
@@ -305,7 +305,7 @@ rest (see [the profiles](#profiles-tikv-rustfs-and-iggy)).
 
 | Service | Image | Role |
 |---|---|---|
-| `loams` | `ghcr.io/ostrium-labs/loams` | The engine, built with `live,live-tikv,durable,durable-tikv,graph,git,tikv,pgwire,mysql-wire,stream-grpc`. By default on its embedded stores in the `loams-data` volume: the metastore on openraft + redb, Live on redb, Durable on SQLite, the bucket a local folder; Loams Git and Graph on the bucket |
+| `loams` | `ghcr.io/ostrium-labs/loams` | The engine, built with `live,live-tikv,durable,durable-postgres,graph,git,tikv,pgwire,mysql-wire,stream-grpc`. By default on its embedded stores in the `loams-data` volume: the metastore on openraft + redb, Live on redb, Durable on its local redb store, the bucket a local folder; Loams Git and Graph on the bucket |
 | `migrate` | `ghcr.io/ostrium-labs/loams` | One-shot, before the engine: the release's migrations |
 | `house` | `ghcr.io/ostrium-labs/loams-fabric` | Loams House (the front, with `loams-house-worker` inside), on a network of its own and a private TLS link to the engine (`LOAMS_HOUSE_ENDPOINT`, on by default) |
 | Postgres stack | pinned in `deploy/pins/loams-postgres-images.toml` | Included from [`deploy/loams-postgres-dev`](../../deploy/loams-postgres-dev/README.md): `storage_broker`, `pageserver`, `safekeeper1`, the one-shot `pg-bootstrap` and `compute1`, with their remote storage in local folders |
@@ -433,7 +433,7 @@ COMPOSE_PROFILES=tikv,rustfs
 - **`tikv`**: PD, TiKV and TiDB. Loams SQL (MySQL compatible, on `tidb:4000` inside the
   stack) needs it. The engine's metastore and Live move onto TiKV (keyspaces `loams_meta` and
   `loams_live_dev`), for more than one engine and for data larger than one machine's disk.
-  Durable stays on SQLite unless `LOAMS_DURABLE_STORE=tikv://pd:2379/loams_durable`.
+  Durable stays on its local store unless `LOAMS_DURABLE_STORE` names a Postgres database (`tikv://` went with the Resonate fork, D2450).
 - **`rustfs`**: RustFS, an S3 bucket (`neon`) for Loams Postgres's pageserver, safekeeper and
   endpoint storage, instead of local folders in their volumes. For the engine's own bucket,
   point `LOAMS_BUCKET` at any S3 store ([the bucket](#the-bucket-a-local-directory-or-s3)).
@@ -458,7 +458,7 @@ The default stack is one node on one disk, and it is honest about it:
 - **The embedded metastore** (openraft with one voter, its log and state in redb) fsyncs every
   commit and keeps its snapshots in the bucket. It has no replica: losing the disk loses the
   catalog. There is no failover.
-- **Live** (redb) and **Durable** (SQLite) commit to the same disk, with the same limits.
+- **Live** (redb) and **Durable** (redb) commit to the same disk, with the same limits.
 - **The bucket** is a folder in the `loams-data` volume, and **Loams Postgres's remote
   storage** is a folder in the pageserver's and the safekeeper's volumes (Neon's `LocalFs`): one
   copy, beside the data it backs.
@@ -826,8 +826,8 @@ Report anything you find through [SECURITY.md](../../SECURITY.md), not in a publ
   remote storage are on one disk with no replica ([durability](#durability-of-the-default-stack)).
   `loams upgrade` upgrades stacks with the `tikv` profile; a stack on the embedded stores is
   upgraded by hand for now ([upgrading](../../deploy/release/README.md#upgrading)).
-- **Durable on TiKV** (`LOAMS_DURABLE_STORE=tikv://…`, with the `tikv` profile) starts from an
-  empty keyspace: SQLite state does not carry over
+- **Durable's store changed (D2450):** the SQLite file and the TiKV keyspace (`tikv://…`) went
+  with the Resonate fork, and nothing carries over to the local store or Postgres
   ([drain first](../../deploy/release/README.md#durable-executions-store)).
 - **Not in this release:** first-party connectors (built and tested, but no image
   hosts their runtime yet), Loams Jobs, the Loams SQL gate; Headscale networks; the console on

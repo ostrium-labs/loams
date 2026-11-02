@@ -11,7 +11,7 @@ its state on **Loams Postgres** and never on Loams SQL. Its results are in the
 | Use | When |
 |---|---|
 | **Airflow** | Data pipelines, backfills, lineage, asset-driven schedules and human-in-the-loop on data jobs; teams that already have Dags |
-| **Temporal** | Long-running business workflows; teams with existing Temporal code or skills; strict event history and replay semantics. Today that means the Temporal server itself on Loams Postgres (compat mode). The Temporal gateway on Resonate (DX1) is in development |
+| **Temporal** | Long-running business workflows; teams with existing Temporal code or skills; strict event history and replay semantics. Today that means the Temporal server itself on Loams Postgres (compat mode). The Temporal gateway on Resonate (DX1) is in development, and runs in development mode only since D2450 dropped its Resonate adapter with the fork |
 | **DBOS** | Durable functions inside an application, whose steps are database transactions in the same Postgres; no extra server |
 | **Resonate (native)** | Lightweight durable promises and functions, agent runtimes, and cross-language RPC with durable callbacks; Loams' own long operations |
 

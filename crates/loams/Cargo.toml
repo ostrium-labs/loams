@@ -226,7 +226,7 @@ durable-mysql = ["durable", "loams-durable/mysql"]
 # (`--durable-store postgres://…`, D2450).
 durable-postgres = ["durable", "loams-durable/postgres"]
 # `--durable-push`: delivery to http(s):// targets. Off in release builds:
-# upstream's push transport brings OpenSSL and google-cloud-auth (D2450).
+# upstream's push transport links google-cloud-auth unconditionally (D2450).
 durable-push = ["durable", "loams-durable/push"]
 # The MySQL wire listener over collections (`--mysql-listen`).
 mysql-wire = ["dep:opensrv-mysql", "dep:datafusion"]

@@ -52,7 +52,6 @@ cargo_package(
         "//third-party/rust:resonate-sdk",
         "//third-party/rust:resonate-server-blob",
         "//third-party/rust:resonate-transport-http-poll",
-        "//third-party/rust:resonate-transport-http-push",
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",
         "//third-party/rust:tokio",

@@ -74,7 +74,7 @@ Live and no `tikv-client`.
 | `qdrant` | yes | The Qdrant REST and gRPC APIs (`--qdrant-listen`). |
 | `live-tikv` | no | Live on TiKV as well: `--live-store tikv://<pd>[,<pd>]/<keyspace>` (and the deprecated `--live-pd`/`--live-keyspace`). Implies `live` and `tikv`, and pulls the git-pinned `tikv-client`. |
 | `tikv` | no | The TiKV metastore (`--meta tikv://…`), with its cluster GC loop. Pulls `tikv-client`. |
-| `durable`, `durable-mysql`, `durable-tikv` | no | Durable execution (`--durable-*`). |
+| `durable`, `durable-mysql`, `durable-postgres`, `durable-push` | no | Durable execution (`--durable-*`). `durable` links OpenSSL on Linux (the official Resonate's `resonate-auth`, D2450): install `libssl-dev`. |
 | `mysql-wire`, `pgwire`, `stream-grpc` | no | Optional listeners. |
 | `failpoints`, `cluster-tests` | no | Test-only. |
 
