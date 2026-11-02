@@ -15,10 +15,11 @@ scripts/buck/bootstrap.sh          # buck2 + reindeer into .tools/bin (once per 
 export PATH="$PWD/.tools/bin:$PATH"
 ```
 
-The pins are in `scripts/buck/versions.env`: an upstream Buck2 release (checksummed) with the
-prelude bundled in it, and reindeer at a fixed commit, built with `cargo install --locked`. The
-canonical copy is `pins/buck2.env` in [ostrium-labs/loams-build](https://github.com/ostrium-labs/loams-build)
-(branch `loams/main`).
+The pins are in `scripts/buck/versions.env`, which is the canonical copy: an official
+[facebook/buck2](https://github.com/facebook/buck2) release (checksummed) with the prelude bundled
+in it, and reindeer at a fixed commit of
+[facebookincubator/reindeer](https://github.com/facebookincubator/reindeer), built with
+`cargo install --locked`. Nothing is fetched from the former `ostrium-labs/loams-build` fork (D2450).
 
 Buck2 writes to `buck-out/` at the repository root, and it must be a real directory: Buck2 links
 sources into it with relative symlinks, which break if `buck-out` is a symlink to another disk. To
