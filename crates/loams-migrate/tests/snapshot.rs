@@ -153,7 +153,14 @@ async fn snapshot_manifest_written_last() {
         .collect();
     assert_eq!(
         stores,
-        ["bucket", "raft", "durable", "durable_local", "house", "pg_control"]
+        [
+            "bucket",
+            "raft",
+            "durable",
+            "durable_local",
+            "house",
+            "pg_control"
+        ]
     );
     assert_eq!(manifest.release.as_deref(), Some("0.1.0-preview.2"));
     // Recorded as a GC root once complete.

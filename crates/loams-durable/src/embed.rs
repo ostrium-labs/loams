@@ -286,8 +286,7 @@ fn prepare(
     #[cfg(not(feature = "postgres"))]
     if let DurableStore::Postgres { .. } = config.store {
         return Err(DurableError::Config(
-            "this build has no Postgres durable store (the durable-postgres feature is off)"
-                .into(),
+            "this build has no Postgres durable store (the durable-postgres feature is off)".into(),
         ));
     }
     let configuration = config::configuration(config, &registry::carried(&registry), mode, inproc)

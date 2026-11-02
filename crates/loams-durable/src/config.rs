@@ -93,9 +93,8 @@ impl DurableStore {
     /// A Postgres store from `postgres://user:pass@host:port/db?sslmode=…`.
     /// The URL is kept as given.
     pub fn postgres(url: &str) -> Result<Self, DurableError> {
-        let bad = |why: &str| {
-            DurableError::Config(format!("--durable-store {}: {why}", redact_url(url)))
-        };
+        let bad =
+            |why: &str| DurableError::Config(format!("--durable-store {}: {why}", redact_url(url)));
         let parsed = Url::parse(url).map_err(|e| bad(&format!("not a URL ({e})")))?;
         if parsed.scheme() != "postgres" && parsed.scheme() != "postgresql" {
             return Err(bad("expected a postgres:// URL"));
@@ -386,7 +385,10 @@ pub const PROTECTED: &[(&str, &str)] = &[
     ("servers.active", "the backend is --durable-store"),
     ("servers.server_local.path", "the store is --durable-store"),
     ("servers.server_mysql.url", "the store is --durable-store"),
-    ("servers.server_postgres.url", "the store is --durable-store"),
+    (
+        "servers.server_postgres.url",
+        "the store is --durable-store",
+    ),
     (
         "servers.server_mysql.migrate",
         "only loams durable migrate changes the schema",

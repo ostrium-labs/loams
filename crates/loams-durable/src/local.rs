@@ -296,7 +296,12 @@ impl RedbStore {
             .map_err(unavailable)?
     }
 
-    fn write(db: &Database, key: &str, body: &[u8], expect: Expect<'_>) -> Result<Etag, StoreError> {
+    fn write(
+        db: &Database,
+        key: &str,
+        body: &[u8],
+        expect: Expect<'_>,
+    ) -> Result<Etag, StoreError> {
         let txn = db.begin_write().map_err(unavailable)?;
         let version = {
             let mut objects = txn.open_table(OBJECTS).map_err(unavailable)?;
@@ -443,7 +448,10 @@ mod tests {
             s.put_if_match("wf/a", b"x".to_vec(), &v2).await,
             Err(StoreError::PreconditionFailed)
         );
-        let v3 = s.put_if_none_match("wf/a", b"three".to_vec()).await.unwrap();
+        let v3 = s
+            .put_if_none_match("wf/a", b"three".to_vec())
+            .await
+            .unwrap();
         assert!(v3 != v1 && v3 != v2);
     }
 
