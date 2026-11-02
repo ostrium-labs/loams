@@ -1,6 +1,11 @@
 //! Loams streams in and out of RisingWave through the Iggy Kafka gateway
 //! (design 02 §7.3, design 32 §5.10; design 81 R11, and R5).
 //!
+//! **D2450:** that gateway only existed in Ostrium's Iggy fork and is gone. These
+//! builders are plain Kafka connector settings and work against any Kafka broker,
+//! but `LOAMS_KAFKA_GATEWAY` points at a service that no longer exists: set the
+//! bootstrap explicitly.
+//!
 //! A Loams stream is an Iggy topic; Kafka clients reach it through the
 //! fork's `iggy-gateway-kafka` (compose service `kafka-gateway`, port 9093).
 //! RisingWave's built-in `kafka` connector talks to that gateway as it would

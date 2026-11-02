@@ -17,6 +17,8 @@ faults = []
 [dependencies]
 futures.workspace = true
 loams-tuple.workspace = true
+# The PD GC client generated from the vendored kvproto protos (build.rs, D2450).
+prost.workspace = true
 rand.workspace = true
 reqwest.workspace = true
 serde.workspace = true
@@ -25,7 +27,12 @@ thiserror.workspace = true
 tikv-client.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
+tonic.workspace = true
+tonic-prost.workspace = true
 tracing.workspace = true
+
+[build-dependencies]
+tonic-prost-build.workspace = true
 
 [dev-dependencies]
 axum.workspace = true

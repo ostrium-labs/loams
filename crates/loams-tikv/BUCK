@@ -62,6 +62,7 @@ cargo_package(
     deps = [
         "//crates/loams-tuple:loams-tuple",
         "//third-party/rust:futures",
+        "//third-party/rust:prost",
         "//third-party/rust:rand-0_9",
         "//third-party/rust:reqwest-0_13",
         "//third-party/rust:serde",
@@ -70,6 +71,8 @@ cargo_package(
         "//third-party/rust:tikv-client",
         "//third-party/rust:tokio",
         "//third-party/rust:tokio-util",
+        "//third-party/rust:tonic",
+        "//third-party/rust:tonic-prost",
         "//third-party/rust:tracing",
     ],
     dev_deps = [
@@ -77,6 +80,10 @@ cargo_package(
         "//third-party/rust:fail",
         "//third-party/rust:proptest",
     ],
+    build_deps = [
+        "//third-party/rust:tonic-prost-build",
+    ],
+    build_script = "build.rs",
     rustc_flags = [
         "-Funsafe_code",
         "-Wmissing_debug_implementations",

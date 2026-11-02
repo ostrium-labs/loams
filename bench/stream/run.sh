@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+echo "needs the Iggy Kafka gateway, dropped by D2450 (official Apache Iggy has no Kafka wire protocol); this script is kept for the record" >&2; exit 78
 # BQ1-stream benchmark driver (docs/benchmarks/2026-10-28-1b-qps/stream.md).
 # Every measuring command must run under the bench lock:
 #

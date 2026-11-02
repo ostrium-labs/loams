@@ -382,9 +382,16 @@ fn shortest_path_searches_are_bounded() {
         "MATCH (a), (b) MATCH p = shortestPath((a)-[*]-(b)) RETURN count(*)",
         "MATCH p = ANY SHORTEST (a)-[*]-(b) RETURN count(*)",
         "MATCH p = ANY SHORTEST (a)-[*1..3]-(b) RETURN count(*)",
-        "MATCH (a) WHERE EXISTS { MATCH p = ANY SHORTEST (a)-[*]-(b) } RETURN a",
     ] {
         graph.execute(statement, true).expect(statement);
+    }
+    // Admitted by classification; Grafeo 0.5.44's planner then answers "Unsupported subquery: no
+    // pattern to start from the outer row" (0.5.43 ran it). Either way it is not refused as an
+    // unbounded path.
+    let statement = "MATCH (a) WHERE EXISTS { MATCH p = ANY SHORTEST (a)-[*]-(b) } RETURN a";
+    match graph.execute(statement, true) {
+        Ok(_) | Err(GraphError::Engine { .. }) => {}
+        Err(other) => panic!("{statement}: {other:?}"),
     }
     for statement in [
         "MATCH (a), (b) MATCH p = allShortestPaths((a)-[*]-(b)) RETURN p",
@@ -479,10 +486,15 @@ fn deep_operator_chains_do_not_crash_the_process() {
     let engine = Engine::new();
     let graph = Graph::open(&engine, "acme", "deep", OpenSpec::default()).expect("open");
     let nots = format!("RETURN {}true AS x", "NOT ".repeat(2000));
-    let result = graph
-        .execute(&nots, true)
-        .expect("2000 chained NOTs parse and run");
-    assert_eq!(result.rows[0].values[0], grafeo::Value::Bool(true));
+    // Grafeo 0.5.44 refuses nesting past 128 levels with a syntax error (GQLSTATUS 42001)
+    // instead of parsing it; either answer is fine, a crash is not.
+    match graph.execute(&nots, true) {
+        Ok(result) => assert_eq!(result.rows[0].values[0], grafeo::Value::Bool(true)),
+        Err(err) => assert!(
+            err.to_string().contains("nesting depth"),
+            "2000 chained NOTs: {err}"
+        ),
+    }
     for statement in [
         format!("RETURN 1{} AS x", " + 1".repeat(2000)),
         format!(

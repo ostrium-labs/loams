@@ -1,5 +1,7 @@
 # FC0 exit report — Loams Stream (design 82), 2026-10-29
 
+> **D2450 (2026-11-02): this plan's fork `ostrium-labs/streamfusion` is replaced by official `datafusion-contrib/StreamFusion`, used as a dependency.** In-tree patches to StreamFusion are no longer possible; FC1 work lands in Loams' own crates. The fork's FC1 work is dropped (see the D2450 PR). The rest of this document is historical.
+
 Track FC, plan [FC1](2026-10-29-fc1-flink-compat-engine.md). The work is in the hard fork `ostrium-labs/streamfusion` (PRs #1–#15). Everything is **preview**.
 
 ## The gate (design 82 §16.1)

@@ -28,7 +28,7 @@ kafka-gateway:9093 ──► CREATE SOURCE clicks (connector = 'kafka')
                        Lakekeeper (warehouse loams) ──► bucket loams-lake ──► House, Spark, Flink read it
 ```
 
-- **In:** Loams streams through the Iggy Kafka gateway (the `kafka` profile), and
+- **In:** Loams streams through the Iggy Kafka gateway (the former `kafka` profile; **gone, D2450**: official Apache Iggy has no Kafka wire protocol, so point the Kafka connector at a real Kafka-protocol broker), and
   Loams Postgres tables through RisingWave's `postgres-cdc` connector.
 - **Out:** Iceberg through Lakekeeper (exactly-once, committed on checkpoints), Loams
   streams through the gateway (at-least-once: the gateway has no Kafka

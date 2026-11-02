@@ -1,5 +1,7 @@
 # FC1 — Loams Stream, the Rust Apache Flink-Compatible Engine — Implementation Plan
 
+> **D2450 (2026-11-02): this plan's fork `ostrium-labs/streamfusion` is replaced by official `datafusion-contrib/StreamFusion`, used as a dependency.** In-tree patches to StreamFusion are no longer possible; FC1 work lands in Loams' own crates. The fork's FC1 work is dropped (see the D2450 PR). The rest of this document is historical.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Work task by task, test first. Where this plan gives exact names, paths, flags or tests, use them verbatim. Record any deviation in the task's rulings file, `docs/plans/fc1-rulings/t<N>.md` in the Loams repository (indexed in "Rulings made during execution" at the end of this file).
 >
 > **Status: Approved** (owner, 2026-10-29: "approve all defaults, start building asap"). Track FC, design [§82](../design/82-loams-stream-flink-compatible-engine.md). FC0 (Tasks 0–9) and FC1 (Tasks 10–25) are specified task by task. **FC0 exited on 2026-10-29** ([report](fc0-exit-report.md)). FC2 and FC3 are planned at FC1's exit. Rulings made during execution take decision IDs from **D2280–D2299** and questions from **Q1451–Q1469**, the range §82 keeps free. **Nothing here is built yet.**

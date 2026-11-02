@@ -44,10 +44,10 @@
 #   --secret-prefix P       the secrets' prefix [default: loams/<dir> on aws,
 #                           loams-<dir> elsewhere]
 #   --kafka K               the Kafka endpoint for your apps and Loams' connectors:
-#                           none, iggy (the `kafka` profile: Kafka clients on the VM),
+#                           none, iggy (the `iggy` profile: the official Iggy server, no Kafka port),
 #                           confluent (the `connectors` profile: `loams-fabric connect`
 #                           to and from your Confluent Cloud cluster), or iggy,confluent
-#                           [default: none]; docs/guides/kafka.md compares them
+#                           [default: none]; docs/guides/kafka.md explains them
 #   --confluent-bootstrap B with confluent: the cluster's bootstrap endpoint, host:port
 #                           (the confluent module's bootstrap_endpoint; required)
 #   --confluent-integration I
@@ -169,7 +169,7 @@ case "$kafka" in
   iggy,confluent|confluent,iggy) use_iggy=1; use_confluent=1 ;;
   *) die "--kafka is none, iggy, confluent or iggy,confluent (each named)" ;;
 esac
-((use_iggy)) && profiles="${profiles:+$profiles,}kafka"
+((use_iggy)) && profiles="${profiles:+$profiles,}iggy"
 cf_dir_name="${dir##*/}"; cf_dir_name="${cf_dir_name:-loams}"
 cf_instdir=""
 if ((use_confluent)); then
@@ -379,10 +379,10 @@ else
   # First-run setup with auth on needs a setup token (docs/release/preview.md,
   # "First-run setup"). It stays in the host's .env, mode 0600, and is not printed.
   [[ -n "$cloud" ]] || setkv LOAMS_SETUP_TOKEN "$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
-  # The `kafka` profile refuses .env.example's placeholder for Iggy's root
-  # password (config/kafka-guard.sh), so a new .env gets one of its own,
+  # The `iggy` profile refuses .env.example's placeholder for Iggy's root
+  # password (config/iggy-guard.sh), so a new .env gets one of its own,
   # whichever profiles it starts with. Also never printed.
-  setkv KAFKA_IGGY_PASSWORD "$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
+  setkv IGGY_PASSWORD "$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
   if [[ -n "$headscale" ]]; then
     setkv HEADSCALE_SERVER_URL "$headscale"
     setkv HEADSCALE_BIND "0.0.0.0"

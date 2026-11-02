@@ -27,10 +27,10 @@ pub enum Mode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CommitMode {
     /// Async commit, and one-phase commit when the transaction fits one
-    /// region (the default).
-    #[default]
+    /// region. Opt-in only since D2450 (see `loams_tikv::CommitMode`).
     Async1pc,
-    /// Classic two-phase commit.
+    /// Classic two-phase commit (the default since D2450).
+    #[default]
     TwoPc,
 }
 
@@ -135,7 +135,7 @@ mod tests {
         assert!(!o.commit_token);
         assert_eq!(o.mode, Mode::Optimistic);
         assert_eq!(o.commit_mode, None);
-        assert_eq!(CommitMode::default(), CommitMode::Async1pc);
+        assert_eq!(CommitMode::default(), CommitMode::TwoPc);
         let p = TxnOptions::pessimistic("p").with_token();
         assert_eq!(p.mode, Mode::Pessimistic);
         assert!(p.commit_token);

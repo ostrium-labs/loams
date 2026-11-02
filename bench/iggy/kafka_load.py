@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Kafka-wire load generator for the Iggy gateway (BQ1-iggy). Uses librdkafka (confluent-kafka)
+"""Kafka-wire load generator for the Iggy gateway (BQ1-iggy). NOT RUNNABLE against official
+Apache Iggy: the Kafka gateway only existed in the dropped fork (D2450); kept for the record. Uses librdkafka (confluent-kafka)
 for produce/consume and a raw pipelined Metadata/ApiVersions client for request QPS.
 Run under benchslot.sh and taskset. One JSON line per scenario on stdout.
   produce  --procs N --size B --seconds S --acks 1|all --linger-ms --batch-size

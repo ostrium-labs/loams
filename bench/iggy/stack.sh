@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# BQ1-iggy stack: iggy-server (pinned, N shards) [+ Kafka gateway] on private ports.
+# BQ1-iggy stack: iggy-server (pinned, N shards) on private ports. The Kafka gateway option is gone (D2450).
 # stack.sh up <shards> [gateway]   |  stack.sh down      (kills only the PIDs it wrote)
 # Env: BIN (dir with iggy-server, iggy-gateway-kafka), DATA (default /mnt/Projects/bench-data/bq1-iggy)
 set -u
@@ -10,6 +10,7 @@ alive() { [ -f "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null; }
 case "${1:-}" in
 up)
   N="${2:?shards}"; GW="${3:-}"
+  [ -z "$GW" ] || { echo "the Kafka gateway is gone (D2450, official Apache Iggy): run stack.sh up <shards> without gateway" >&2; exit 78; }
   rm -rf "$DATA/iggy"
   # a previous run leaves TIME_WAIT sockets that block the bind
   for i in $(seq 90); do [ -z "$(ss -tan "( sport = :48090 or sport = :49093 )" 2>/dev/null | tail -n +2)" ] && break; sleep 2; done
