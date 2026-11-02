@@ -11,7 +11,7 @@ Status: **Approved** · 2026-11-02 (owner: "all ok, do the best", then "go ahead
 
 The owner approved the direction and asked for the best design ("all ok, do the best").
 
-Decisions **D2600–D2631** and questions **Q1600–Q1609** use a reserved block. They go into the [decision log](13-decision-log.md) when this design is approved. Plan stub: OP2, written after approval. **This document writes no code.**
+Decisions **D2600–D2634** and questions **Q1600–Q1609** use a reserved block. They go into the [decision log](13-decision-log.md) when this design is approved. Plan stub: OP2, written after approval. **This document writes no code.**
 
 This design amends:
 - [§65](65-loams-operator.md), the Loams Operator. It becomes operator v2.
@@ -137,7 +137,7 @@ The operator is distributed as one Helm chart and one OCI image, amd64 and arm64
 
 - **The home cluster (D2623).** Every customer deployment has at least one cluster target, called the **home**. Its `LoamsCluster` carries only the **platform base**:
   - the gateway (§57, with §69's edge listener)
-  - identity (§76)
+  - Loams Access: identity, permissions and usage (§4.3)
   - agentd (§73)
   - the Meter (§63)
   - the operator
@@ -155,13 +155,31 @@ The operator is distributed as one Helm chart and one OCI image, amd64 and arm64
 
 ### 4.2 Identity and Postgres without forks or Ostrium accounts (D2630–D2631, the author's calls)
 
-- **Identity lives in each home (D2630).** The platform base installs **official Zitadel** (and OpenFGA, §76) in every home. Install and device identities, machine users and the device mTLS trust root (§83) all come from the customer's own Zitadel. `auth.loams.dev`, which Ostrium hosts, is used only to sign in to loams.dev itself, for example to submit a listing or star one. A deploy never needs it.
+- **Identity lives in each home (D2630).** Each home runs its own identity provider as part of Loams Access (D2632). Install and device identities, machine users and the device mTLS trust root (§83) all come from the customer's own home. `auth.loams.dev`, which Ostrium hosts, is used only to sign in to loams.dev itself, for example to submit a listing or star one. A deploy never needs it.
   This amends §76 where it assumed one shared instance, and the preview model's "Ostrium hosts console and auth" for deployments.
 - **Postgres without the Neon fork (D2631).**
   - The default is a **`sql-postgres` binding to managed Postgres**: Neon's cloud, RDS, Cloud SQL or Azure Database. This fits storage in the cloud.
   - Self-hosted Postgres in a home is the official **CloudNativePG** operator, driven by operator v2 as an `engine` listing. It is plain Postgres, without branching.
   - Running official Neon self-hosted (pageserver and safekeepers, no `loams-wal`) through our own reconciler is a later, optional listing.
   - `crates/loams-postgres` and `loams-wal`'s Postgres role are retired once their users move. Loams Postgres branching survives only through Neon's managed branching.
+
+### 4.3 Loams Access: identity, permissions and usage as one product (D2632–D2634, owner 2026-11-02)
+
+The owner asked to "combine Loams Meter, our Zitadel Rust rewrite and OpenFGA to provide a unified experience".
+
+- **One product, three engines (D2632).** **Loams Access** is part of every home's platform base:
+  - **identity:** `loams-identity`, our clean-room Rust identity provider (repo `ostrium-labs/loams-identity`). It is not a fork, so D2450 allows it.
+  - **permissions:** official **OpenFGA** (§76).
+  - **usage, budgets and entitlements:** the **Loams Meter** (§63, §84).
+
+  Until `loams-identity` passes its OIDC conformance gate, the identity part is **official Zitadel** behind the same port (`loams-zitadel`'s client and `loams-identity-sync`). Moving to `loams-identity` is then a configuration change with a data migration, not a redesign. `loams-identity`'s Phase B is no longer deferred: it runs in parallel with OP2 (its open PRs #3 and #4 are the start).
+- **One model (D2633).** All three engines share one tenant tree, `org → project → {install, device, user, agent}`, and one id scheme. Creating any subject creates all three records together, from one operator reconcile or one API call:
+  - a `LoamsInstall` or `LoamsDevice` gets a machine identity
+  - OpenFGA tuples (`owner`, `operator`, `viewer` on its project)
+  - a Meter subject with the project's budgets as entitlements
+
+  Deleting the subject removes all three. One audit stream (`io.loams.dev.access.*` CloudEvents) records identity, permission and usage changes together.
+- **One experience (D2634).** One console area, **Access**, with members and machines, roles, usage and budgets, and the audit log on one page per project. One API, `loams.access.v1`, which wraps the three engines. One CLI, `loams access`. A budget can block or warn on an action through the same OpenFGA check path: the Meter's gate (`loams-meter-gate`) answers as a condition in the permission check, so "allowed" already includes "within budget".
 
 ## 5. The open marketplace (D2605–D2610)
 
@@ -268,7 +286,7 @@ Design:
 | **EDGE2** | BLE + QR setup; Wi-Fi and Thread devices on Linux arm | EDGE1 |
 | **EDGE3** | Zigbee through a coordinator listing; optional Matter bridge listing | EDGE2 |
 
-## 9. Decisions (D2600–D2631)
+## 9. Decisions (D2600–D2634)
 
 | ID | Decision |
 |---|---|
@@ -302,7 +320,10 @@ Design:
 | D2627 | New `aws-k3s`, `gcp-k3s`, `azure-k3s` home targets; the compose VM modules stay as the non-operator path |
 | D2628 | Devices reach their home over the customer's tailnet (official Tailscale/Headscale), or Cloudflare Tunnel + Access; D1312 stays deferred |
 | D2629 | Desktop does BLE setup first, through `btleplug`; mobile follows AP2/AP3 |
-| D2630 | Identity lives in each home: official Zitadel and OpenFGA; `auth.loams.dev` only for loams.dev itself |
+| D2630 | Identity lives in each home, as part of Loams Access; `auth.loams.dev` only for loams.dev itself |
+| D2632 | Loams Access = `loams-identity` (Rust; official Zitadel behind the same port until it passes OIDC conformance) + official OpenFGA + Loams Meter, in every home's platform base; `loams-identity` Phase B runs in parallel with OP2 |
+| D2633 | One tenant tree (`org → project → install/device/user/agent`) and id scheme; one reconcile creates and removes identity, OpenFGA tuples and Meter subject together; one `io.loams.dev.access.*` audit stream |
+| D2634 | One Access console area, `loams.access.v1` API and `loams access` CLI; budgets enforced as a condition in the OpenFGA check |
 | D2631 | Postgres: managed by default (`sql-postgres` binding); self-hosted via official CloudNativePG; official Neon self-hosted later; `crates/loams-postgres` retired as users move |
 
 ## 10. Open questions (Q1600–Q1609)
