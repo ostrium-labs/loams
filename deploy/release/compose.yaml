@@ -829,6 +829,8 @@ services:
       IGGY_HTTP_ADDRESS: 0.0.0.0:3000
       IGGY_QUIC_ADDRESS: 0.0.0.0:8080
       IGGY_WEBSOCKET_ADDRESS: 0.0.0.0:8092
+      # Official Iggy 0.9 refuses a wildcard bind without the address clients dial.
+      IGGY_NODE_ADVERTISED_ADDRESS: iggy
     volumes:
       - iggy-data:/app/local_data
       - ./config/iggy-guard.sh:/etc/loams/iggy-guard.sh:ro
