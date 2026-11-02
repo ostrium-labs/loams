@@ -36,6 +36,14 @@ unused-allowed-license = "allow"
 
 # stringmetrics (via httpmock, dev tooling in loams-console-mock) states its
 # license only as a LICENSE file: Apache-2.0.
+# Decoder-only (D2450): official Neon builds pprof with `flamegraph`, which
+# brings inferno (CDDL-1.0); the former fork's LP-0003 removed it. Allowed
+# here only because loams-wal-interpreted is a CI and benchmark binary that is
+# never published; scripts/pg2/check-decoder-deny.py allows no other exception.
+[[licenses.exceptions]]
+crate = "inferno"
+allow = ["CDDL-1.0"]
+
 [[licenses.clarify]]
 crate = "stringmetrics"
 expression = "Apache-2.0"
@@ -73,6 +81,24 @@ ignore = [
     { id = "RUSTSEC-2026-0398", reason = "zstd-safe Seekable::decompress length past capacity, via zstd 0.13/0.14 (arrow-ipc 58, loams-hot); no Loams code uses the seekable format; the fixed zstd-safe 8.2.0 is under the 14-day rule; revisit 2026-11-10" },
     { id = "RUSTSEC-2026-0403", reason = "zstd-safe uninitialized memory when a legacy (v0.4-v0.7) frame fails to stream-decompress, via zstd 0.13/0.14 (arrow-ipc 58, loams-hot): the fixed zstd-safe 8.2.0 is under the 14-day rule; revisit 2026-11-10" },
     { id = "RUSTSEC-2026-0410", reason = "zstd-sys wasm32 allocator shim, via zstd 0.13/0.14 (arrow-ipc 58, loams-hot): reachable only on wasm32, and Loams builds zstd for native targets only; the fixed zstd-sys 2.1.2 is under the 14-day rule; revisit 2026-11-10" },
+    # Decoder-only (D2450): official Neon at fa504217 links its storage clients
+    # (aws-sdk, azure, remote_storage), pprof and tokio-tar into pageserver_api,
+    # postgres_ffi and utils, which the former fork's decoder trim left out. The
+    # decoder never opens a remote store, an HTTP client or a tarball: it decodes
+    # WAL records in process. loams-wal-interpreted is a CI and benchmark binary,
+    # never published.
+    { id = "RUSTSEC-2026-0174", reason = "http-types 2.12.0, through official Neon's storage clients (D2450); not reached by the in-process WAL decoder, whose binary is not published" },
+    { id = "RUSTSEC-2026-0382", reason = "rustls-webpki 0.101.7, through official Neon's storage clients (D2450); not reached by the in-process WAL decoder, whose binary is not published" },
+    { id = "RUSTSEC-2026-0098", reason = "rustls-webpki 0.101.7, through official Neon's storage clients (D2450); not reached by the in-process WAL decoder, whose binary is not published" },
+    { id = "RUSTSEC-2026-0099", reason = "rustls-webpki 0.101.7, through official Neon's storage clients (D2450); not reached by the in-process WAL decoder, whose binary is not published" },
+    { id = "RUSTSEC-2026-0104", reason = "rustls-webpki 0.101.7, through official Neon's storage clients (D2450); not reached by the in-process WAL decoder, whose binary is not published" },
+    { id = "RUSTSEC-2026-0346", reason = "rustls 0.21.12, through official Neon's storage clients (D2450); not reached by the in-process WAL decoder, whose binary is not published" },
+    { id = "RUSTSEC-2026-0349", reason = "rustls 0.21.12, through official Neon's storage clients (D2450); not reached by the in-process WAL decoder, whose binary is not published" },
+    { id = "RUSTSEC-2026-0258", reason = "h2 0.3.27, through official Neon's storage clients (D2450); not reached by the in-process WAL decoder, whose binary is not published" },
+    { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5.5, through official Neon's storage clients (D2450); not reached by the in-process WAL decoder, whose binary is not published" },
+    { id = "RUSTSEC-2026-0194", reason = "quick-xml 0.31.0, through official Neon's storage clients (D2450); not reached by the in-process WAL decoder, whose binary is not published" },
+    { id = "RUSTSEC-2026-0195", reason = "quick-xml 0.31.0, through official Neon's storage clients (D2450); not reached by the in-process WAL decoder, whose binary is not published" },
+    { id = "RUSTSEC-2025-0111", reason = "tokio-tar 0.3.1, through official Neon's storage clients (D2450); not reached by the in-process WAL decoder, whose binary is not published" },
     { id = "RUSTSEC-2026-0381", reason = "webpki-roots 0.26.11 re-exports webpki-roots 1.0.10, which drops the distrusted emSign roots; the 0.26 shim carries no certificates" },
 ]
 
@@ -82,12 +108,14 @@ unknown-git = "deny"
 # tikv-client is pinned by rev to Loams's fork, branch `loam` (R1 plan rows R4
 # and F1). Resonate is pinned by rev to the fork's loam/0.10.1 (D1 plan Task
 # 1, D140).
-# Decoder-only: Loams' fork of Neon (pinned to the loams-decoder-trim-3
-# tag), Apache-2.0. Neon's rust-postgres fork left the graph with that trim.
+# Decoder-only (D2450): Neon's official repository at fa504217, Apache-2.0,
+# and the forks of rust-postgres and azure-sdk-for-rust its workspace pins.
 allow-git = [
     "https://github.com/ostrium-labs/client-rust",
     "https://github.com/ostrium-labs/resonate",
     "https://github.com/ostrium-labs/grafeo",
     "https://github.com/microsoft/graspologic-native",
-    "https://github.com/ostrium-labs/loams-postgres",
+    "https://github.com/neondatabase/neon",
+    "https://github.com/neondatabase/rust-postgres.git",
+    "https://github.com/neondatabase/azure-sdk-for-rust.git",
 ]
