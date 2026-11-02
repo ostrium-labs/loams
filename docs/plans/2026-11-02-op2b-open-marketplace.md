@@ -632,4 +632,69 @@ Each is recorded here because the spec leaves it open:
 
 ## Rulings made during execution
 
-(Empty until Task 0.)
+Recorded by Task 0 on 2026-11-02. Later tasks consume these.
+
+### OP2-A names (as its draft plan states them)
+
+- Status: none of this is on `main` as of 2026-11-02. `deploy/helm/` holds only `loams-connectors`, `loams-meter-agent` and `loams-risingwave`; there is no `conformance/operator/`. OP2-A has not started. Source: [OP2-A plan](2026-11-02-op2a-operator-v2-core.md), "Interfaces for sibling plans" and Task 18.
+- Chart: `deploy/helm/loams-operator` (OCI `oci://ghcr.io/ostrium-labs/charts/loams-operator`), installs only into `loams-system`.
+- Marketplace values: `marketplace.index` (default `https://ostrium-labs.github.io/loams-marketplace/index.v2.json`), `marketplace.publicKey` (PEM; empty means `TrustAnchor::official()`), `marketplace.configMap` (optional ConfigMap with the four index files, mounted read-only at `/etc/loams/marketplace/`). With `home.create`, `home.spec.marketplace` takes these values.
+- `file://` sources: yes, but only under `/etc/loams/marketplace/` (for example `file:///etc/loams/marketplace/index.v2.json`). Any other path fails with `SourceError::Unavailable`.
+- What OP2-B still needs from OP2-A, both yes:
+  - `spec.marketplace.publicKey` (PEM, becomes `TrustAnchor::PublicKey`);
+  - an in-kind index URL: the `file://` ConfigMap mount above, plus `FixtureSource` for controller unit tests.
+- `LoamsInstall`: `spec { cluster, listing { id, version }, values, storage[{name, binding}], exposure, project (default "default"), sandbox { allowWithoutGvisor }, approvedClusterScoped }`. Status adds `access { identityId, tuplesWritten, meterSubject }`, `listing { tier, digest }`, `clusterScoped { objects, digest }`, `dependencies`. Conditions: `Ready` (`kubectl wait loamsinstall/<name> --for=condition=Ready`), `AwaitingConfirmation`, `AccessReady`, `Revoked`, `Degraded`, `Sandboxed`. Namespace `loams-i-<install name>`. Home: `LoamsCluster home` in `loams-system`, `kubectl wait loamscluster/home --for=condition=Ready`.
+- LOC harness: crates `conformance/operator/loc-spec` and `conformance/operator/loc-harness` (plus `adapters/loams`). The kind cluster type is `ClusterKind::Kind`, used as `run(adapter, level, class, ClusterKind::Kind) -> Report`; its kind config is `conformance/operator/loc-harness/kind/cluster.yaml`.
+
+### Pinned tool versions (each at least 14 days old, so published on or before 2026-10-19)
+
+- kind `v0.33.0`, released 2026-08-26 (newest stable; `kubernetes-sigs/kind` releases).
+- `kindest/node` `v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5`, the default node image of kind v0.33.0 (its release notes; always use the digest). Fallback lines in the same notes: v1.36.4 `sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed`.
+- Helm `v3.22.1`, released 2026-10-15 (18 days before 2026-11-02). Helm `v4.3.1` was released the same day. Ruling: use the 3.x line, as it is the conservative one for `helm lint` and `helm template`. OP2-A's R4 also uses the `helm` CLI; a bump to 4.x is a separate change. Verify the downloaded binary by the checksum file Helm publishes.
+- cosign `v3.0.6` (released 2026-04-06) stays pinned for signing. Newer 3.x releases exist; this plan does not move.
+
+### Cosign v3.0.6 `sign-blob` bundle shape
+
+Source: `cmd/cosign/cli/sign/sign_blob.go`, `pkg/cosign/bundle/protobundle.go` and `cmd/cosign/cli/signcommon/common.go` at tag `v3.0.6`.
+
+- Flags: the documented command line fails on v3.0.6. `--use-signing-config` defaults to `true`, and `LoadTrustedMaterialAndSigningConfig` rejects it with `--tlog-upload=false` ("--tlog-upload=false is not supported with --signing-config or --use-signing-config"). Use `cosign sign-blob --key <k> --bundle <f> --tlog-upload=false --use-signing-config=false <file>`. `--new-bundle-format` defaults to `true`.
+- With a plain key (no certificate), the code path writes a Sigstore protobuf bundle as protojson. The shape:
+
+```json
+{
+  "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+  "verificationMaterial": {
+    "publicKey": { "hint": "<base64 of sha256(PKIX DER of the public key)>" }
+  },
+  "messageSignature": {
+    "messageDigest": { "algorithm": "SHA2_256", "digest": "<base64 of the raw sha256 of the file>" },
+    "signature": "<base64 of the signature bytes>"
+  }
+}
+```
+
+- Task 3's `KeyVerifier` reads `messageSignature.signature` (base64 standard) as the signature over the exact file bytes. For an ECDSA P-256 key (cosign's default `cosign generate-key-pair`) it is ASN.1 DER ECDSA over the SHA-256 of the file. `verificationMaterial.publicKey.hint` is only a hint, not the key. The key comes from `TrustAnchor::PublicKey { pem }`. The hint may be used to reject a bundle early when it differs from sha256(DER of the configured key), but a mismatch must not be the only check.
+- With `--tlog-upload=false` and no `--rfc3161-timestamp`, no `tlogEntries` or timestamp data are expected.
+- Not confirmed from source alone: the exact whitespace and key order of the protojson output (protojson is deliberately not stable, so parse it; never compare bytes), and the exact `algorithm` string for the digest. Task 3 must parse leniently (ignore unknown fields) and Task 2/3 tests must use a bundle generated by a real cosign v3.0.6, committed as a fixture.
+
+### Org membership check for the namespace gate
+
+- `GET /orgs/{org}/public_members/{username}` answers `204 No Content` when the user is a public member and `404 Not Found` when not (GitHub REST docs, "Check public organization membership for a user"). It lists only public members, so a private member also gets 404.
+- Verified read-only on 2026-11-02: `gh api -i /orgs/ostrium-labs/public_members` returns `[]` (nobody is public), and `/orgs/ostrium-labs/public_members/dina-kar` returns 404 while `/orgs/ostrium-labs/members/dina-kar` returns 204 for the authenticated owner.
+- Ruling: a 404 from `public_members` is not a reason to refuse by itself. It is public data and works with a workflow `GITHUB_TOKEN` (no org scope), so the check treats 204 as "member" and 404 as "not a public member", and the `official/` namespace gate must not depend on it for ostrium-labs people. Task 11 uses it only for namespaces whose owners say they are public members, and otherwise uses CODEOWNERS and the maintainers team. The `workflow_policy` self-test stays the fork-safety proof.
+
+### CODEOWNERS and the maintainers team
+
+- `GET /orgs/ostrium-labs/teams` works for the owner's token. Teams: `maintainers` (slug `maintainers`, "Trusted maintainers: merge dev into main, manage teams and releases") and `committers`.
+- Ruling: CODEOWNERS in `loams-marketplace` lists `@ostrium-labs/maintainers` for the registry-owned paths, with `@dina-kar` as a second owner until team membership is confirmed to cover reviewers. The team must have write access to `ostrium-labs/loams-marketplace`; its repository permission is not checked here. Owner follow-ups, not done by this lane: grant the team access to the repo, and set branch protection on `main` that requires code-owner review and the validate checks.
+
+### Lane rulings (controller)
+
+- P1: loams PRs target `main`, not `dev` (owner brief; the OP2 plan/design PRs landed on main).
+- P2: loams-marketplace is cloned locally at `~/Documents/Ostriumlabs/loams-marketplace` (owner approved) and changed through branches and PRs, superseding "never clone it".
+- P3: one loams worktree `loams-wt/op2b` with a branch per task, since tasks run sequentially.
+- P4: `ring` and `KeyVerifier` stay in the feature-free core; `testkit` without `agentd` needs only ring and serde_json.
+- P5: Task 2 adds `ListingKind` beside `index::Kind`; Task 3 turns `index::Kind` into `pub type Kind = ListingKind`.
+- P6: Task 11 Step 5 (a real fork pull request from a personal fork) is an owner follow-up; the lane covers fork safety with the `workflow_policy` self-test.
+- P7: Task 12's ignored live test `live_official_index_v2_verifies` ships in a loams PR after the publish lands.
+- P8: `review:greptile` labels are applied, but merges do not wait on Greptile.
