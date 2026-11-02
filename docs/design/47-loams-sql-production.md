@@ -100,7 +100,7 @@ What it costs (§13):
 | Piece | State |
 |---|---|
 | `deploy/tikv/` | PD and TiKV `v8.5.0` (compose default `TIKV_TAG`), API v2 with TTL, pre-allocated keyspaces including `sql_dev` and `loams_test_sql`; `tidb.toml` / `tidb-test.toml` set `keyspace-name`. The R1 spike ran v8.5.8 |
-| TiDB image (SQ1 R5.3, 2026-10-10) | `ghcr.io/ostrium-labs/tidb:v8.5.8-loams.1@sha256:ea62f135814fef2d9d89bb659f1b70b63d7eecb6f2ba61edf53482f29089a954`: upstream v8.5.8 plus pingcap/tidb#60403 (§5.4 (d)), private, linux/amd64. PD, TiKV, TiCDC and BR stay `pingcap/*:v8.5.8` |
+| TiDB image (SQ1 R5.3, 2026-10-10) | `pingcap/tidb:v8.5.8@sha256:df168c764bf2dfdb166dc37a5c3b0e210d29d5f3ab2d33317fd0fdf7b32037f5`, the official multi-arch image (D2450, 2026-11-02; supersedes `ghcr.io/ostrium-labs/tidb:v8.5.8-loams.1`, which carried pingcap/tidb#60403). PD, TiKV, TiCDC and BR are `pingcap/*:v8.5.8` too |
 | R1 spike (§20 §10, `r1-dependency-spike.md`) | Keyspace-mode TiDB v8.5.8 serves CREATE, INSERT, UPDATE, BEGIN/COMMIT and SELECT; a key in another keyspace is invisible; PD, TiKV and TiDB were ready 12 s after a playground start. TiDB RSS was 180–365 MB under a write workload. **TiKV v8.5.8 ignores keyspace-level safe points**, so Loams' GC loop is the cluster GC worker |
 | `crates/loams-tikv` | Loams' `tikv-client` fork with the GC loop (service safe point `gc_worker`, resolve locks, `UpdateGCSafePoint`) |
 | `crates/loams-sqlrouter`, `loams-compat` | RT0's machines and inventories (Vitess-era; the method is reused for TiDB, §17) |
@@ -145,7 +145,7 @@ What it costs (§13):
 | Foreign keys | Since v6.6.0, **GA in v8.5.0**; `CASCADE` and `SET NULL` supported; not on partitioned tables or `BLOB`/`TEXT` | docs: foreign-key |
 | Savepoints | Since v6.2.0. `ROLLBACK TO SAVEPOINT` does not release locks taken after the savepoint | docs: sql-statement-savepoint |
 | Desktop images | Same v8.5.8 digests. `deploy/tikv/compose.yaml` moves from v8.5.0 to v8.5.8 | — |
-| TiDB image actually pinned | Since SQ1 R5.3 (2026-10-10), `tidb` is `ghcr.io/ostrium-labs/tidb:v8.5.8-loams.1@sha256:ea62f135814fef2d9d89bb659f1b70b63d7eecb6f2ba61edf53482f29089a954` (§5.4 (d)); the upstream `pingcap/tidb:v8.5.8` digest above is its base | `release/sqldb-images.toml` |
+| TiDB image actually pinned | Since D2450 (2026-11-02), `tidb` is the official `pingcap/tidb:v8.5.8` at the digest above. From SQ1 R5.3 (2026-10-10) until then it was the patched `ghcr.io/ostrium-labs/tidb:v8.5.8-loams.1` | `release/sqldb-images.toml` |
 | Source findings | See §23: GC registrations, BR keyspace rewrite, TiCDC classic, `cloud-engine`, config defaults | Owner's clones, 2026-10-08 |
 
 ## 5. Compute: a `tidb-server` pool per branch (D722)
@@ -176,14 +176,14 @@ What it costs (§13):
 TiDB pods of one keyspace coordinate through PD (DDL owner, global kill, auto-ID allocation). With more than one pod, AUTO_INCREMENT values are unique but not sequential across pods unless `AUTO_ID_CACHE 1` is set (docs). The gate balances connections across pods. Classes `xs`–`m` use one pod, and `l`+ autoscale on CPU.
 
 ### 5.4 Allowed TiDB patches ("lightly patched")
-These are Go, kept as a patch queue on `ostrium-labs/tidb` against v8.5.x tags, each offered upstream:
+**Superseded by D2450 (2026-11-02):** the `ostrium-labs/tidb` patch queue is dropped and Loams runs the official `pingcap/tidb:v8.5.8`. The text below is history; no patch is applied and `scripts/sqldb/tidb-image/` is removed. These were Go, kept as a patch queue on `ostrium-labs/tidb` against v8.5.x tags, each offered upstream:
 1. **None for v1, if Task 1 confirms** that `keyspace-name`, PROXY protocol and the session-state statements behave as documented.
 2. **Candidates if the spike shows a need:**
    - (a) registering the minimum start ts in a place Loams' GC loop reads, if keyspace-mode TiDB publishes it under a path the loop cannot see (§7.2, source);
    - (b) refusing `SET GLOBAL` of variables that must stay Loams-managed;
    - (c) an idle-timeout hint to the gate;
-   - (d) **applied in `v8.5.8-loams.1`:** the keyspace etcd prefix for the global DDL owner manager (upstream pingcap/tidb#60403, not in release-8.5). Without it every keyspace's TiDB on one PD elects one DDL owner between them, and DDL in the other keyspaces waits forever (SQ1 R5.3).
-3. **Layout.** The queue is branch `loams/v8.5.8-patches` on `ostrium-labs/tidb`: the upstream tag plus cherry-picks (`git cherry-pick -x`), and nothing else. Each image is built from an annotated tag `v8.5.8-loams.N` by `scripts/sqldb/tidb-image/build.sh` in this repository and pinned by digest in `release/sqldb-images.toml` as `ghcr.io/ostrium-labs/tidb`.
+   - (d) **was applied in `v8.5.8-loams.1`, dropped by D2450 (DDL in one keyspace can stall while another keyspace's TiDB runs on the same PD until a release carries it):** the keyspace etcd prefix for the global DDL owner manager (upstream pingcap/tidb#60403, not in release-8.5). Without it every keyspace's TiDB on one PD elects one DDL owner between them, and DDL in the other keyspaces waits forever (SQ1 R5.3).
+3. **Layout (historical).** The queue was branch `loams/v8.5.8-patches` on `ostrium-labs/tidb`: the upstream tag plus cherry-picks (`git cherry-pick -x`), and nothing else. Each image is built from an annotated tag `v8.5.8-loams.N` by `scripts/sqldb/tidb-image/build.sh` in this repository and pinned by digest in `release/sqldb-images.toml` as `ghcr.io/ostrium-labs/tidb`.
 
 ## 6. Storage: the shared TiKV, a keyspace per branch (D723)
 
