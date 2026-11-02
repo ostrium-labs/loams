@@ -24,12 +24,18 @@ cargo_package(
     },
     tests = [
         {
+            "name": "estimate",
+            "crate": "estimate",
+            "root": "tests/estimate.rs",
+        },
+        {
             "name": "registry",
             "crate": "registry",
             "root": "tests/registry.rs",
         },
     ],
     deps = [
+        "//crates/loams-cost:loams-cost",
         "//crates/loams-meter-core:loams-meter-core",
         "//third-party/rust:serde",
         "//third-party/rust:time",
@@ -37,6 +43,7 @@ cargo_package(
     ],
     dev_deps = [
         "//third-party/rust:regex",
+        "//third-party/rust:serde_json",
     ],
     extra_srcs = {
         "deploy/tofu/prices.toml": "//:file=deploy+tofu+prices.toml",

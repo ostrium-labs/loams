@@ -9227,9 +9227,11 @@ dependencies = [
 name = "loams-deploy"
 version = "0.1.4"
 dependencies = [
+ "loams-cost",
  "loams-meter-core",
  "regex",
  "serde",
+ "serde_json",
  "time",
  "toml 0.8.23",
 ]
