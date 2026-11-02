@@ -2,6 +2,8 @@
 
 Status: **Approved** (owner, 2026-10-29: "approve all defaults, start building asap"). Decisions **D2240–D2279** and questions **Q1430–Q1450** are in the [decision log](13-decision-log.md) with status **Approved**; every question is answered with its default (§20). D2280–D2299 and Q1451–Q1469 are kept free for track FC's plan rulings. Plan: [FC1](../plans/2026-10-29-fc1-flink-compat-engine.md). **No engine code is written by this document.**
 
+> **Superseded by D2450 (owner, 2026-11-02): no fork.** Loams Stream builds on the official `datafusion-contrib/StreamFusion` as a dependency, not on a hard fork (`ostrium-labs/streamfusion`). D2243 and D2244 are superseded. Loams loses the ability to carry in-tree patches to StreamFusion's operators, state backends or formats, and the FC1 changes made in the fork (listed in the D2450 PR for this change) are dropped. Changes must live in Loams' own crates (`loams-stream-*`), which depend on StreamFusion as an official dependency, pinned by rev or crates.io release. Passages below that say "the fork" or "hard fork" describe the superseded plan and are kept as history until the engine work is re-planned on the official base.
+
 Source: the owner, 2026-10-29: "like iggy for kafka, event fabric for trino, i want one for flink, full api compat but in rust", and earlier the same day: "fork rising wave latest apache 2.0 and strip components we do not need, or find alternatives like arroyo, fluss etc".
 
 **The pattern.** Loams runs its own Rust engines that speak another system's API: the Iggy fork speaks the Kafka wire protocol (D1797), and Loams House speaks ClickHouse on DataFusion and Iceberg v3 with ClickHouse as the oracle ([§75](75-loams-house-engine.md)). This document applies the House's method to Apache Flink. (The owner's "event fabric for trino" has no counterpart in the repository: Loams Event Fabric is Iggy plus Fluss, D331, and nothing in Loams speaks Trino's protocol. The pattern, not that example, is what this design follows.)
@@ -33,8 +35,8 @@ Pins follow D1274: releases at least 14 days old when the PR opens.
 | D2240 | **What Loams Stream is**: a Rust engine with Flink's SQL, REST and (in phases) Table API, PyFlink and DataStream surfaces, state in the bucket, behind `loams-gateway` as a backend of §81's managed Flink. Supersedes D1261 and Q1036's answer; amends §00 §7 | 1, 6 | Approved (owner, 2026-10-29) |
 | D2241 | **"Full Flink API compatibility" is six layers** (SQL, REST, Table API, DataStream, connectors, checkpoints), each with a measurable bar against the oracle; the claim names a layer, a phase and a Flink version, never "100 % Flink" | 3 | Approved (owner, 2026-10-29) |
 | D2242 | **The oracle is Apache Flink 2.2.1**, the same pin as D1931, run through `loams-flink`; it moves only when D1931's pin moves | 3, 15 | Approved (owner, 2026-10-29) |
-| D2243 | **Base: a hard fork of StreamFusion** (`ostrium-labs/streamfusion`). Its Rust operators, Flink expression semantics, state backends and formats, on DataFusion 54 and Arrow 58, are the core. Loams adds the standalone runtime, the Flink SQL front end, the REST surfaces and the control plane. Runtime machinery (network, barriers, checkpoint coordination, Kafka two-phase commit) is ported from **Arroyo** where it fits. RisingWave donates specific algorithms only. Fluss is not an engine and is not used | 5 | Approved (owner, 2026-10-29) |
-| D2244 | **Hard-fork rules**: `ostrium-labs/streamfusion` (forked 2026-10-29) is Loams-owned with no upstream sync, PRs or posts (as the Neon and Iggy forks); Arroyo and RisingWave code is ported file by file with attribution and listed in `PORTS.md`; NOTICE carries every attribution. Amends D1930 and D1272 | 5.5 | Approved (owner, 2026-10-29) |
+| D2243 | **Superseded by D2450 (official StreamFusion as a dependency).** Was: base, a hard fork of StreamFusion** (`ostrium-labs/streamfusion`). Its Rust operators, Flink expression semantics, state backends and formats, on DataFusion 54 and Arrow 58, are the core. Loams adds the standalone runtime, the Flink SQL front end, the REST surfaces and the control plane. Runtime machinery (network, barriers, checkpoint coordination, Kafka two-phase commit) is ported from **Arroyo** where it fits. RisingWave donates specific algorithms only. Fluss is not an engine and is not used | 5 | Approved (owner, 2026-10-29) |
+| D2244 | **Superseded by D2450.** Was: hard-fork rules**: `ostrium-labs/streamfusion` (forked 2026-10-29) is Loams-owned with no upstream sync, PRs or posts (as the Neon and Iggy forks); Arroyo and RisingWave code is ported file by file with attribution and listed in `PORTS.md`; NOTICE carries every attribution. Amends D1930 and D1272 | 5.5 | Approved (owner, 2026-10-29) |
 | D2245 | **Where the code lives**: the engine in the fork's `native/` Cargo workspace (bumped from DataFusion 54.0 and Arrow 58.3 to the root workspace's 54.1 and 58.4, and to Loams' toolchain), released from the fork as the `loams-stream` image; the product integration (`loams-flink` backend, compose, gateway, product conformance) in the Loams repository; no DataFusion fork; sqlparser from crates.io with Loams' own `FlinkDialect` | 7.6 | Approved (owner, 2026-10-29) |
 | D2246 | **Crates**: StreamFusion's own crates (renamed only where Loams needs to), plus new `loams-stream-{sql,plan,runtime,coord,rest,connectors,udf,conformance}` and the binary `loams-stream`, all in the fork | 7.6 | Approved (owner, 2026-10-29) |
 | D2247 | **The SQL layer (L1)**: Flink 2.2's DDL, DML, queries, `SET`, statement sets, catalogs, functions and `EXPLAIN`, with the window TVFs, joins, `MATCH_RECOGNIZE` and changelog semantics of §4.1, phased by §16 | 4.1 | Approved (owner, 2026-10-29) |
@@ -195,7 +197,10 @@ Credentials follow D1917 (the instance's scoped Iggy user, Lakekeeper client, CD
 
 See §7.5. The user-visible contract is Flink's: `execution.checkpointing.interval`, `execution.checkpointing.mode` (`EXACTLY_ONCE`, `AT_LEAST_ONCE`), externalised retention, `STOP JOB '<id>' WITH SAVEPOINT`, `execution.state-recovery.path`, the REST savepoint and stop paths. Paths outside the instance's prefix are refused (D1977's protected keys carry over).
 
-## 5. The base engine (D2243, D2244)
+## 5. The base engine (D2243, D2244; superseded by D2450)
+
+> **Superseded by D2450 (owner, 2026-11-02): no fork.** Loams Stream builds on the official `datafusion-contrib/StreamFusion` as a dependency, not on a hard fork (`ostrium-labs/streamfusion`). D2243 and D2244 are superseded. Loams loses the ability to carry in-tree patches to StreamFusion's operators, state backends or formats, and the FC1 changes made in the fork (listed in the D2450 PR for this change) are dropped. Changes must live in Loams' own crates (`loams-stream-*`), which depend on StreamFusion as an official dependency, pinned by rev or crates.io release. Passages below that say "the fork" or "hard fork" describe the superseded plan and are kept as history until the engine work is re-planned on the official base.
+
 
 ### 5.1 Candidates (checked 2026-10-29 on GitHub; §21; the research lane's report, §5.4)
 
@@ -254,7 +259,9 @@ The research lane's report (`loams-wt/.he0-shared/stream-engine-options.md`, 202
 
 The first draft's "hard fork of Arroyo's runtime as the base" is withdrawn. The owner then asked (2026-10-29, via the coordinator): "is streamfusion using datafusion, just fork it if it matches our loams engines". It does: DataFusion 54.0.0 and Arrow 58.3.0 in its lockfile, against Loams' 54.1 and 58.4, and Apache-2.0 (checked 2026-10-29). So `ostrium-labs/streamfusion` was forked on 2026-10-29 and is the base (D2243). Real Flink 2.2.1 stays the oracle and the fallback.
 
-### 5.5 Hard-fork rules (D2244)
+### 5.5 Hard-fork rules (D2244; superseded by D2450)
+
+> **Superseded by D2450.** There is no fork. Rules now: Loams Stream depends on official StreamFusion by pinned rev or crates.io release; no in-tree patches; changes live in `loams-stream-*` crates; no upstream PRs or posts without the owner's consent; Arroyo and RisingWave code is still ported file by file with attribution (`PORTS.md`, NOTICE). The text below is the superseded D2244.
 
 - **The fork.** `ostrium-labs/streamfusion` (forked from `datafusion-contrib/StreamFusion` on 2026-10-29) is Loams-owned. There is no upstream sync, no upstream PR and no upstream post, as with the Neon fork (`ostrium-labs/loams-postgres`) and the Iggy fork. A blobless clone lives at `~/Documents/Ostriumlabs/streamfusion`, with worktrees in `~/Documents/Ostriumlabs/streamfusion-wt/`. PRs go to the fork's `main`.
 - **Versions.** FC0 moves the fork's `native/` workspace to the root workspace's DataFusion 54.1 and Arrow 58.4 and to Loams' Rust toolchain. Later DataFusion moves happen together with the House where they can.
@@ -333,6 +340,8 @@ Ported pieces (§5.3) fill a Loams-owned runtime: operators process Arrow record
 - **Verification.** The barrier and two-phase-commit protocol is modelled in TLA+ under `spec/tla/` and run in deterministic simulation with injected failures (the practice of §31, §55 and §75 suite 8).
 
 ### 7.6 Code layout (D2245, D2246)
+
+> **D2450:** the `native/` workspace of the fork no longer exists as ours; the `loams-stream-*` crates live in Loams' own workspace and depend on official StreamFusion. The text below describes the superseded fork layout.
 
 The engine lives in the fork's **`native/`** Cargo workspace, as the Kafka-compatible broker lives in the Iggy fork. It is on **DataFusion 54.1 and Arrow 58.4**, the root workspace's pins, after FC0's bump from 54.0 and 58.3. The fork builds and releases the `loams-stream` binary and image (`ghcr.io/ostrium-labs/loams-stream`). The Loams repository holds the integration: the `backend: loams` support in `loams-flink`, the compose profile, the gateway routes and the product conformance under `conformance/stream/` (Q1432). StreamFusion's existing crates keep their names; the new crates are:
 

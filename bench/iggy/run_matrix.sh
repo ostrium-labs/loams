@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+echo "needs the Iggy Kafka gateway, dropped by D2450 (official Apache Iggy has no Kafka wire protocol); this script is kept for the record" >&2; exit 78
 # BQ1-iggy: one (shards, partitions) configuration. Run the WHOLE script under
 #   .he0-shared/benchslot.sh bq1-iggy bench/iggy/run_matrix.sh <shards> <partitions>
 # Layout (14 cores): iggy-server 0-3 (N shards), Kafka gateway 4-7, load generators 8-13.

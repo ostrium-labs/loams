@@ -24,7 +24,7 @@ use std::sync::{Arc, Barrier, Mutex};
 use grafeo::{Config, GrafeoDB, Role, Session, Value};
 use grafeo_common::types::EpochId;
 use loams_graph::Access;
-use loams_graph::changeset::capture::{CdcCapture, ChangeCapture, CommitEvents};
+use loams_graph::changeset::capture::{CdcCapture, ChangeCapture};
 use loams_graph::changeset::{ChangeOp, ElementKind, PropMap, apply_to_store};
 use loams_graph::classify::engine_classify;
 use proptest::prelude::*;
@@ -167,9 +167,8 @@ enum Outcome {
 /// statements, `prepare_commit().commit()`, then capture at the epoch that returns. The caller
 /// serialises calls (R0.5), so that epoch is the transaction's own.
 ///
-/// The lane captures from the events the engine hands its commit listener (LG-0001,
-/// [`CommitEvents`]); this captures both ways and checks that the listener's epoch is the commit's
-/// and that both captures agree, so every workload below also tests the lane's path.
+/// The lane captures the same way since D2450 (official Grafeo, no commit listener), so every
+/// workload below also tests the lane's path.
 fn run_txn(
     db: &GrafeoDB,
     capture: &CdcCapture<'_>,
@@ -178,8 +177,6 @@ fn run_txn(
 ) -> Outcome {
     let mut session = db.session();
     capture.begin(&mut session);
-    let listened = CommitEvents::default();
-    listened.listen(&session);
     session.begin_transaction().expect("begin");
     for statement in statements {
         if session.execute(statement).is_err() {
@@ -198,18 +195,9 @@ fn run_txn(
         .expect("prepare")
         .commit()
         .expect("commit");
-    let (listened_epoch, events) = listened.take().expect("the listener saw the commit");
-    assert_eq!(listened_epoch, epoch.as_u64(), "the listener's epoch");
-    let from_listener = capture.capture_events(events).map(|captured| captured.ops);
     match capture.take(epoch.as_u64()) {
-        Ok(ops) => {
-            assert_eq!(from_listener.as_ref().ok(), Some(&ops), "listener vs log");
-            Outcome::Committed(epoch.as_u64(), ops)
-        }
-        Err(_) => {
-            assert!(from_listener.is_err(), "listener vs log: {from_listener:?}");
-            Outcome::Refused
-        }
+        Ok(ops) => Outcome::Committed(epoch.as_u64(), ops),
+        Err(_) => Outcome::Refused,
     }
 }
 
@@ -523,18 +511,8 @@ fn replay_does_not_carry_the_engine_epoch() {
     ));
     assert_eq!(epoch, 1, "the fresh engine's epochs restart");
 
-    // Unless the replay carries it: `GrafeoDB::sync_epoch` (LG-0006) moves the rebuilt engine to
-    // the log's last commit epoch, and its next commit follows it.
-    let carried = rebuild(&log);
-    carried.sync_epoch(EpochId::new(5)).expect("sync the epoch");
-    let carried_capture = CdcCapture::new(&carried).expect("CDC is on");
-    let (epoch, _) = committed(run_txn(
-        &carried,
-        &carried_capture,
-        &["INSERT (:P {k: 9})".to_string()],
-        false,
-    ));
-    assert_eq!(epoch, 6, "the carried engine continues the log's epochs");
+    // The fork's `GrafeoDB::sync_epoch` (LG-0006) carried the log's epoch into the rebuilt engine;
+    // official Grafeo has no such call (D2450), so the epochs restart, as asserted above.
 }
 
 /// R9.8, fixed by the fork's LG-0004: Grafeo 0.5.43 committed a dangling edge when a transaction
@@ -879,10 +857,10 @@ fn commit_epoch_is_exact_under_lane() {
                     let events = db
                         .changes_between(EpochId::new(epoch), EpochId::new(epoch))
                         .expect("cdc");
-                    // The create and one update per property, all for this node, all here.
-                    assert_eq!(
-                        events.len(),
-                        3,
+                    // All for this node, all here. Grafeo 0.5.43 logged the create and one
+                    // update per property (3 events); 0.5.44 logs the create with its properties.
+                    assert!(
+                        !events.is_empty(),
                         "this transaction's events at exactly its epoch"
                     );
                     assert!(events.iter().all(|e| e.entity_id == events[0].entity_id));

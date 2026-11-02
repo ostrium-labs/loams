@@ -1880,6 +1880,17 @@ dependencies = [
 
 [[package]]
 name = "fail"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3be3c61c59fdc91f5dbc3ea31ee8623122ce80057058be560654c5d410d181a6"
+dependencies = [
+ "lazy_static",
+ "log",
+ "rand 0.7.3",
+]
+
+[[package]]
+name = "fail"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe5e43d0f78a42ad591453aedb1d7ae631ce7ee445c7643691055a9ed8d3b01c"
@@ -3083,6 +3094,7 @@ version = "0.1.4"
 dependencies = [
  "futures",
  "loams-tuple",
+ "prost 0.14.4",
  "rand 0.9.3",
  "reqwest 0.13.5",
  "serde",
@@ -3091,6 +3103,9 @@ dependencies = [
  "tikv-client",
  "tokio",
  "tokio-util",
+ "tonic 0.14.6",
+ "tonic-prost",
+ "tonic-prost-build",
  "tracing",
 ]
 
@@ -5762,13 +5777,13 @@ dependencies = [
 [[package]]
 name = "tikv-client"
 version = "0.4.0"
-source = "git+https://github.com/ostrium-labs/client-rust?rev=41b3588f9b63d505dd61e15bf3d26abfd53689a2#41b3588f9b63d505dd61e15bf3d26abfd53689a2"
+source = "git+https://github.com/tikv/client-rust?rev=1b883bf144a8557938f6069682c61b4d39cf6bf2#1b883bf144a8557938f6069682c61b4d39cf6bf2"
 dependencies = [
  "async-recursion",
  "async-trait",
  "derive-new",
  "either",
- "fail",
+ "fail 0.4.0",
  "futures",
  "lazy_static",
  "log",
@@ -6523,7 +6538,7 @@ dependencies = [
  "chrono",
  "const_format",
  "diatomic-waker",
- "fail",
+ "fail 0.5.1",
  "futures",
  "git-version",
  "hex",

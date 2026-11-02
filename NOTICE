@@ -102,22 +102,19 @@ Cargo.toml. loams-temporal-resonate links resonate-client from the same
 fork and revision. Copyright 2026 Resonate HQ, Inc.
 
 TiKV Rust client (https://github.com/tikv/client-rust), Apache License 2.0.
-loams-tikv, loams-meta-tikv and loams-live link tikv-client from the fork
-https://github.com/ostrium-labs/client-rust, branch loam (upstream revision
-ab4be1c2cdd58d4e593202991fb520221c83bdfd plus the patches listed in
-docs/plans/r1-dependency-spike.md), pinned by revision in Cargo.toml. Its
-generated protobuf code comes from pingcap/kvproto (Apache License 2.0).
-Copyright TiKV Project Authors.
+loams-tikv, loams-meta-tikv and loams-live link tikv-client from the official
+repository at revision 1b883bf144a8557938f6069682c61b4d39cf6bf2, pinned in
+Cargo.toml. loams-tikv generates its PD client from kvproto's protos
+(https://github.com/pingcap/kvproto, release-8.5 at 07aa8c6, Apache License
+2.0), vendored unchanged in crates/loams-tikv/proto/kvproto with their
+LICENSE. Copyright TiKV Project Authors.
 
 Grafeo (https://github.com/GrafeoDB/grafeo), Apache License 2.0, Copyright
 2025-2026 S.T. Grond. crates/loams-graph links the grafeo, grafeo-engine,
 grafeo-core, grafeo-adapters, grafeo-common and grafeo-storage crates at
-version 0.5.43, built from Loams' fork (https://github.com/ostrium-labs/grafeo,
-tag v0.5.43-loams.1: upstream v0.5.43 plus the patches listed in its
-PATCHES.md), pinned by revision in Cargo.toml and compiled into loams only
+version 0.5.44 from crates.io, the official releases, compiled into loams only
 with the `graph` cargo feature. No Grafeo source is copied into this
-repository. The NOTICE below is the fork's at that tag, reproduced verbatim
-(indented):
+repository. Grafeo's NOTICE at v0.5.44, reproduced verbatim (indented):
   Grafeo
   Copyright 2025-2026 S.T. Grond
 
@@ -125,12 +122,6 @@ repository. The NOTICE below is the fork's at that tag, reproduced verbatim
   https://github.com/GrafeoDB/grafeo
 
   Licensed under the Apache License, Version 2.0.
-
-  This copy is the Loams fork (https://github.com/ostrium-labs/grafeo), maintained
-  by Ostrium Labs. It modifies Grafeo; every modification is listed in PATCHES.md
-  and carries a `Loams-Patch:` trailer in its commit message.
-  Modifications Copyright 2026 Ostrium Labs, licensed under the Apache License,
-  Version 2.0.
 
 network_partitions (https://github.com/microsoft/graspologic-native), MIT
 License, Copyright (c) Microsoft Corporation. crates/loams-graph links the

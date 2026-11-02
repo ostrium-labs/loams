@@ -111,6 +111,7 @@ unknown-git = "deny"
 # Decoder-only (D2450): Neon's official repository at fa504217, Apache-2.0,
 # and the forks of rust-postgres and azure-sdk-for-rust its workspace pins.
 allow-git = [
+    "https://github.com/tikv/client-rust",
     "https://github.com/ostrium-labs/client-rust",
     "https://github.com/ostrium-labs/resonate",
     "https://github.com/ostrium-labs/grafeo",

@@ -12,7 +12,6 @@
 //! durable (R9.3).
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Mutex, PoisonError};
 
 use grafeo::cdc::{ChangeEvent, ChangeKind, EntityId};
 use grafeo::{GrafeoDB, Session};
@@ -87,38 +86,6 @@ impl<'db> CdcCapture<'db> {
     }
 }
 
-/// The epoch and change events of the commit a session made, handed over by the engine as it
-/// commits: the commit listener of Loams' Grafeo fork (patch LG-0001).
-///
-/// The write lane captures from these rather than reading the commit back from the CDC log with
-/// `changes_between`, which can find the commit's events pruned by the log's retention or by
-/// buffer-manager eviction (R9.9) and scans every retained event. The epoch is the one the engine
-/// committed at, not the current epoch read afterwards (R0.5).
-#[derive(Debug, Clone, Default)]
-pub struct CommitEvents(Arc<Mutex<Option<Committed>>>);
-
-/// A commit's epoch and its change events.
-type Committed = (u64, Vec<ChangeEvent>);
-
-impl CommitEvents {
-    /// Listens to `session`'s commits: each one replaces what this holds.
-    pub fn listen(&self, session: &Session) {
-        let slot = Arc::clone(&self.0);
-        session.set_commit_listener(Some(Arc::new(
-            move |epoch: EpochId, events: &[ChangeEvent]| {
-                *slot.lock().unwrap_or_else(PoisonError::into_inner) =
-                    Some((epoch.as_u64(), events.to_vec()));
-            },
-        )));
-    }
-
-    /// The last commit's epoch and events, or `None` when the session has not committed since
-    /// the last call.
-    pub fn take(&self) -> Option<Committed> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner).take()
-    }
-}
-
 impl ChangeCapture for CdcCapture<'_> {
     /// Nothing to prepare: a session created on a CDC database records events by default, and the
     /// capture reads the result from the store at [`take`](ChangeCapture::take). Mechanism A would
@@ -149,16 +116,14 @@ impl CdcCapture<'_> {
         self.capture_events(self.events(EpochId::new(commit_epoch))?)
     }
 
-    /// [`capture`](Self::capture), from the commit's events as the engine handed them over
-    /// ([`CommitEvents`]) instead of as the CDC log still holds them.
+    /// [`capture`](Self::capture), from a commit's events already read from the CDC log.
     ///
     /// # Errors
     ///
     /// As [`ChangeCapture::take`].
     pub fn capture_events(&self, mut events: Vec<ChangeEvent>) -> Result<Captured, GraphError> {
         // `changes_between` returns a commit's events grouped by element and sorted by epoch
-        // only, so the order across elements is a hash map's; the listener's are in the order
-        // they were recorded. Within a process the HLC timestamp is strictly increasing and
+        // only, so the order across elements is a hash map's. Within a process the HLC timestamp is strictly increasing and
         // assigned as each mutation lands, so sorting by it gives the mutation order either way.
         events.sort_by_key(|event| event.timestamp);
         let mut counters = Counters::default();
