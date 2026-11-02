@@ -1,8 +1,14 @@
-//! Loams streams as Flink tables, through the Iggy Kafka gateway (D1983).
+//! Loams streams as Flink tables, through a Kafka-protocol endpoint (D1983).
+//!
+//! **D2450:** the Iggy Kafka gateway this was written for only existed in Ostrium's
+//! Iggy fork and is gone (official Apache Iggy has no Kafka wire protocol). The
+//! builders are plain Kafka connector settings and still work against any Kafka
+//! broker; `DEFAULT_BOOTSTRAP` points at a service that no longer exists, so a
+//! caller must set the bootstrap explicitly.
 //!
 //! `kafka` for append streams and `upsert-kafka` for changelog streams keyed
-//! by a primary key. The gateway (`ghcr.io/ostrium-labs/iggy`, the `kafka`
-//! compose profile) authenticates with SASL/PLAIN as the instance's own Iggy
+//! by a primary key. The gateway (the fork's, formerly the `kafka`
+//! compose profile) authenticated with SASL/PLAIN as the instance's own Iggy
 //! user, minted by the engines facade and scoped to the namespace's topics
 //! (ENG81 R5): a user's API key is never written into engine SQL. The
 //! gateway has no transactions, so a sink is at-least-once: the builders
@@ -15,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use super::{Column, TableDdl, Watermark};
 use crate::catalog::quote::{Escape, OptValue, Part, Secret, SqlError, WithOptions};
 
-/// The gateway on the compose network.
+/// The former gateway on the compose network (gone, D2450: set the bootstrap).
 pub const DEFAULT_BOOTSTRAP: &str = "kafka-gateway:9093";
 /// The PLAIN login module, as shaded inside `flink-sql-connector-kafka`.
 pub const SHADED_PLAIN_LOGIN_MODULE: &str =

@@ -102,7 +102,7 @@ Loams' Rust engine, its data-plane BYOC (§70) and the Electron desktop's build 
 - the Loams Cloud control plane (§78 §17), as an option.
 
 **Out of scope:**
-- the Rust engine and its builds (Cargo, Nx, and `loams-build`, the Buck2 research fork);
+- the Rust engine and its builds (Cargo, Nx, and Buck2 on the official release pinned in `scripts/buck/versions.env`; the `loams-build` fork is replaced, D2450);
 - data-plane BYOC installs (§70), except the console's build;
 - native mobile and desktop apps;
 - forking Void or Vite+.
@@ -604,7 +604,7 @@ VV1 can start right after the owner approves. It doesn't block 0.1.x work, and i
 | [§44](44-unified-api-and-sdks.md) | The TypeScript SDK's runtimes are browsers, Node and Bun. Deno is no longer claimed or tested (D1790) |
 | [§69](69-edge-reach.md) | Deno Deploy is dropped from the "others with only `fetch`" row; it shuts down in about six months (D1790) |
 | loams-site (`ostrium-labs/loams-site`) | **Follow-up:** link [Moving from Deno to Bun](../guides/migrate-deno-to-bun.md) from the site's docs, in a site PR. The guide lives in this repository at `docs/guides/migrate-deno-to-bun.md` |
-| `ostrium-labs/loams-build` `LOAMS.md` | Vite+ is the recommended toolchain. Plain Vite, Rolldown and Vitest are the fallback (done 2026-10-23 on `loams/main`, commit `4ea63e8`). Bun AOT is the way to package TypeScript outputs (D1791, D1792; commit `d9ee171`) |
+| `ostrium-labs/loams-build` `LOAMS.md` | Vite+ is the recommended toolchain. Plain Vite, Rolldown and Vitest are the fallback (done 2026-10-23 on `loams/main`, commit `4ea63e8`; historical, the `loams-build` fork is replaced by official projects, D2450). Bun AOT is the way to package TypeScript outputs (D1791, D1792; commit `d9ee171`) |
 
 ---
 

@@ -14,13 +14,6 @@ git_fetch(
 )
 
 git_fetch(
-    name = "grafeo-9bdcc1c5e4b720e7.git",
-    repo = "https://github.com/ostrium-labs/grafeo",
-    rev = "bc6091e35953935f8221c3f0631d5aae77858e8f",
-    visibility = [],
-)
-
-git_fetch(
     name = "graspologic-native-78b58a70b02536ed.git",
     repo = "https://github.com/microsoft/graspologic-native",
     rev = "773181488b4e5b81925e302b972b294fd51f61a4",
@@ -250,13 +243,11 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "3",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    features = ["zeroize"],
     visibility = [],
     deps = [
         ":cipher-0.5",
         ":cpubits-0.1",
         ":cpufeatures-0.3",
-        ":zeroize-1",
     ],
 )
 
@@ -296,7 +287,6 @@ cargo.rust_library(
         "alloc",
         "default",
         "getrandom",
-        "zeroize",
     ],
     visibility = [],
     deps = [
@@ -306,57 +296,6 @@ cargo.rust_library(
         ":ctr-0.10",
         ":ctutils-0.4",
         ":ghash-0.6",
-        ":zeroize-1",
-    ],
-)
-
-http_archive(
-    name = "aes-gcm-siv-0.12.1.crate",
-    sha256 = "4c32325128cb24de2a2d14d92da7569dae7073f9e47334521d494747fa94d902",
-    strip_prefix = "aes-gcm-siv-0.12.1",
-    urls = ["https://static.crates.io/crates/aes-gcm-siv/0.12.1/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "aes-gcm-siv-0.12",
-    srcs = [":aes-gcm-siv-0.12.1.crate"],
-    crate = "aes_gcm_siv",
-    crate_root = "aes-gcm-siv-0.12.1.crate/src/lib.rs",
-    edition = "2024",
-    env = {
-        "CARGO_BIN_NAME": "aes_gcm_siv",
-        "CARGO_CRATE_NAME": "aes_gcm_siv",
-        "CARGO_MANIFEST_DIR": "aes-gcm-siv-0.12.1.crate",
-        "CARGO_PKG_AUTHORS": "RustCrypto Developers",
-        "CARGO_PKG_DESCRIPTION": "Pure Rust implementation of the AES-GCM-SIV Misuse-Resistant Authenticated\nEncryption Cipher (RFC 8452) with optional architecture-specific\nhardware acceleration\n",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "aes-gcm-siv",
-        "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/AEADs",
-        "CARGO_PKG_RUST_VERSION": "1.85",
-        "CARGO_PKG_VERSION": "0.12.1",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "12",
-        "CARGO_PKG_VERSION_PATCH": "1",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = [
-        "aes",
-        "alloc",
-        "default",
-        "getrandom",
-        "zeroize",
-    ],
-    visibility = [],
-    deps = [
-        ":aead-0.6",
-        ":aes-0.9",
-        ":cipher-0.5",
-        ":ctr-0.10",
-        ":ctutils-0.4",
-        ":polyval-0.7",
-        ":zeroize-1",
     ],
 )
 
@@ -18580,12 +18519,8 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    features = ["zeroize"],
     visibility = [],
-    deps = [
-        ":polyval-0.7",
-        ":zeroize-1",
-    ],
+    deps = [":polyval-0.7"],
 )
 
 http_archive(
@@ -20270,16 +20205,24 @@ cargo_alias(
     visibility = ["PUBLIC"],
 )
 
+http_archive(
+    name = "grafeo-0.5.44.crate",
+    sha256 = "29af4411d0dd42516da00555c1e87e8f901d55f934bee27c69a6357d8fe29cf9",
+    strip_prefix = "grafeo-0.5.44",
+    urls = ["https://static.crates.io/crates/grafeo/0.5.44/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "grafeo-0.5",
-    srcs = [":grafeo-9bdcc1c5e4b720e7.git"],
+    srcs = [":grafeo-0.5.44.crate"],
     crate = "grafeo",
-    crate_root = "grafeo-9bdcc1c5e4b720e7/crates/grafeo/src/lib.rs",
+    crate_root = "grafeo-0.5.44.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "grafeo",
         "CARGO_CRATE_NAME": "grafeo",
-        "CARGO_MANIFEST_DIR": "grafeo-9bdcc1c5e4b720e7",
+        "CARGO_MANIFEST_DIR": "grafeo-0.5.44.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "A high-performance, embeddable graph database with a Rust core and no required C dependencies",
         "CARGO_PKG_HOMEPAGE": "",
@@ -20287,10 +20230,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/GrafeoDB/grafeo",
         "CARGO_PKG_RUST_VERSION": "1.91.1",
-        "CARGO_PKG_VERSION": "0.5.43",
+        "CARGO_PKG_VERSION": "0.5.44",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "5",
-        "CARGO_PKG_VERSION_PATCH": "43",
+        "CARGO_PKG_VERSION_PATCH": "44",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -20326,16 +20269,24 @@ cargo_alias(
     visibility = ["PUBLIC"],
 )
 
+http_archive(
+    name = "grafeo-adapters-0.5.44.crate",
+    sha256 = "64e442f93246d7dd3f13f897623579ae4468844ecd60d8c129716980d18f426c",
+    strip_prefix = "grafeo-adapters-0.5.44",
+    urls = ["https://static.crates.io/crates/grafeo-adapters/0.5.44/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "grafeo-adapters-0.5",
-    srcs = [":grafeo-9bdcc1c5e4b720e7.git"],
+    srcs = [":grafeo-adapters-0.5.44.crate"],
     crate = "grafeo_adapters",
-    crate_root = "grafeo-9bdcc1c5e4b720e7/crates/grafeo-adapters/src/lib.rs",
+    crate_root = "grafeo-adapters-0.5.44.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "grafeo_adapters",
         "CARGO_CRATE_NAME": "grafeo_adapters",
-        "CARGO_MANIFEST_DIR": "grafeo-9bdcc1c5e4b720e7",
+        "CARGO_MANIFEST_DIR": "grafeo-adapters-0.5.44.crate",
         "CARGO_PKG_AUTHORS": "S.T. Grond",
         "CARGO_PKG_DESCRIPTION": "Storage, query language, and plugin adapters for Grafeo",
         "CARGO_PKG_HOMEPAGE": "",
@@ -20343,10 +20294,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "https://github.com/GrafeoDB/grafeo",
         "CARGO_PKG_RUST_VERSION": "1.91.1",
-        "CARGO_PKG_VERSION": "0.5.43",
+        "CARGO_PKG_VERSION": "0.5.44",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "5",
-        "CARGO_PKG_VERSION_PATCH": "43",
+        "CARGO_PKG_VERSION_PATCH": "44",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -20383,16 +20334,24 @@ cargo_alias(
     visibility = ["PUBLIC"],
 )
 
+http_archive(
+    name = "grafeo-common-0.5.44.crate",
+    sha256 = "57df2ae6f700d93d8f5bc7d46de2acd566b38eeb7c12edc0cb1a69923597f94f",
+    strip_prefix = "grafeo-common-0.5.44",
+    urls = ["https://static.crates.io/crates/grafeo-common/0.5.44/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "grafeo-common-0.5",
-    srcs = [":grafeo-9bdcc1c5e4b720e7.git"],
+    srcs = [":grafeo-common-0.5.44.crate"],
     crate = "grafeo_common",
-    crate_root = "grafeo-9bdcc1c5e4b720e7/crates/grafeo-common/src/lib.rs",
+    crate_root = "grafeo-common-0.5.44.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "grafeo_common",
         "CARGO_CRATE_NAME": "grafeo_common",
-        "CARGO_MANIFEST_DIR": "grafeo-9bdcc1c5e4b720e7",
+        "CARGO_MANIFEST_DIR": "grafeo-common-0.5.44.crate",
         "CARGO_PKG_AUTHORS": "S.T. Grond",
         "CARGO_PKG_DESCRIPTION": "Common types, memory allocators, and utilities for Grafeo",
         "CARGO_PKG_HOMEPAGE": "",
@@ -20400,10 +20359,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "https://github.com/GrafeoDB/grafeo",
         "CARGO_PKG_RUST_VERSION": "1.91.1",
-        "CARGO_PKG_VERSION": "0.5.43",
+        "CARGO_PKG_VERSION": "0.5.44",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "5",
-        "CARGO_PKG_VERSION_PATCH": "43",
+        "CARGO_PKG_VERSION_PATCH": "44",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -20429,16 +20388,24 @@ cargo.rust_library(
     ],
 )
 
+http_archive(
+    name = "grafeo-core-0.5.44.crate",
+    sha256 = "3212b5678e1fcd0afc2762c9100d578566341a9e9f2359e652666068f17469b2",
+    strip_prefix = "grafeo-core-0.5.44",
+    urls = ["https://static.crates.io/crates/grafeo-core/0.5.44/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "grafeo-core-0.5",
-    srcs = [":grafeo-9bdcc1c5e4b720e7.git"],
+    srcs = [":grafeo-core-0.5.44.crate"],
     crate = "grafeo_core",
-    crate_root = "grafeo-9bdcc1c5e4b720e7/crates/grafeo-core/src/lib.rs",
+    crate_root = "grafeo-core-0.5.44.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "grafeo_core",
         "CARGO_CRATE_NAME": "grafeo_core",
-        "CARGO_MANIFEST_DIR": "grafeo-9bdcc1c5e4b720e7",
+        "CARGO_MANIFEST_DIR": "grafeo-core-0.5.44.crate",
         "CARGO_PKG_AUTHORS": "S.T. Grond",
         "CARGO_PKG_DESCRIPTION": "Core graph models, indexes, and execution primitives for Grafeo",
         "CARGO_PKG_HOMEPAGE": "",
@@ -20446,10 +20413,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "https://github.com/GrafeoDB/grafeo",
         "CARGO_PKG_RUST_VERSION": "1.91.1",
-        "CARGO_PKG_VERSION": "0.5.43",
+        "CARGO_PKG_VERSION": "0.5.44",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "5",
-        "CARGO_PKG_VERSION_PATCH": "43",
+        "CARGO_PKG_VERSION_PATCH": "44",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -20495,16 +20462,24 @@ cargo_alias(
     visibility = ["PUBLIC"],
 )
 
+http_archive(
+    name = "grafeo-engine-0.5.44.crate",
+    sha256 = "4b6cb79b84db29dded59ecc526823befa20177b763b61fc82bcbad15405c60c1",
+    strip_prefix = "grafeo-engine-0.5.44",
+    urls = ["https://static.crates.io/crates/grafeo-engine/0.5.44/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "grafeo-engine-0.5",
-    srcs = [":grafeo-9bdcc1c5e4b720e7.git"],
+    srcs = [":grafeo-engine-0.5.44.crate"],
     crate = "grafeo_engine",
-    crate_root = "grafeo-9bdcc1c5e4b720e7/crates/grafeo-engine/src/lib.rs",
+    crate_root = "grafeo-engine-0.5.44.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "grafeo_engine",
         "CARGO_CRATE_NAME": "grafeo_engine",
-        "CARGO_MANIFEST_DIR": "grafeo-9bdcc1c5e4b720e7",
+        "CARGO_MANIFEST_DIR": "grafeo-engine-0.5.44.crate",
         "CARGO_PKG_AUTHORS": "S.T. Grond",
         "CARGO_PKG_DESCRIPTION": "Query engine and database management for Grafeo",
         "CARGO_PKG_HOMEPAGE": "",
@@ -20512,10 +20487,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "https://github.com/GrafeoDB/grafeo",
         "CARGO_PKG_RUST_VERSION": "1.91.1",
-        "CARGO_PKG_VERSION": "0.5.43",
+        "CARGO_PKG_VERSION": "0.5.44",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "5",
-        "CARGO_PKG_VERSION_PATCH": "43",
+        "CARGO_PKG_VERSION_PATCH": "44",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -20556,16 +20531,24 @@ cargo.rust_library(
     ],
 )
 
+http_archive(
+    name = "grafeo-storage-0.5.44.crate",
+    sha256 = "d0239c820e1cbef635eb47afb03d47fded93feca9eed3302bf59ad0671d8ca1e",
+    strip_prefix = "grafeo-storage-0.5.44",
+    urls = ["https://static.crates.io/crates/grafeo-storage/0.5.44/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "grafeo-storage-0.5",
-    srcs = [":grafeo-9bdcc1c5e4b720e7.git"],
+    srcs = [":grafeo-storage-0.5.44.crate"],
     crate = "grafeo_storage",
-    crate_root = "grafeo-9bdcc1c5e4b720e7/crates/grafeo-storage/src/lib.rs",
+    crate_root = "grafeo-storage-0.5.44.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "grafeo_storage",
         "CARGO_CRATE_NAME": "grafeo_storage",
-        "CARGO_MANIFEST_DIR": "grafeo-9bdcc1c5e4b720e7",
+        "CARGO_MANIFEST_DIR": "grafeo-storage-0.5.44.crate",
         "CARGO_PKG_AUTHORS": "S.T. Grond",
         "CARGO_PKG_DESCRIPTION": "Persistence layer for Grafeo: WAL, container format, section I/O",
         "CARGO_PKG_HOMEPAGE": "",
@@ -20573,10 +20556,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "https://github.com/GrafeoDB/grafeo",
         "CARGO_PKG_RUST_VERSION": "1.91.1",
-        "CARGO_PKG_VERSION": "0.5.43",
+        "CARGO_PKG_VERSION": "0.5.44",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "5",
-        "CARGO_PKG_VERSION_PATCH": "43",
+        "CARGO_PKG_VERSION_PATCH": "44",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -23981,23 +23964,23 @@ cargo_alias(
 )
 
 http_archive(
-    name = "iggy-0.11.1-edge.2.crate",
-    sha256 = "df187b330ecc195c3983dbadb1405f5f428cb7403aeab0fc19ca8663d1ccc247",
-    strip_prefix = "iggy-0.11.1-edge.2",
-    urls = ["https://static.crates.io/crates/iggy/0.11.1-edge.2/download"],
+    name = "iggy-0.11.0.crate",
+    sha256 = "13d604e5573ec5f6bed2fcc3103f7d7ec2d42207312012b7d96487008a0c8d24",
+    strip_prefix = "iggy-0.11.0",
+    urls = ["https://static.crates.io/crates/iggy/0.11.0/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "iggy-0.11",
-    srcs = [":iggy-0.11.1-edge.2.crate"],
+    srcs = [":iggy-0.11.0.crate"],
     crate = "iggy",
-    crate_root = "iggy-0.11.1-edge.2.crate/src/lib.rs",
+    crate_root = "iggy-0.11.0.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "iggy",
         "CARGO_CRATE_NAME": "iggy",
-        "CARGO_MANIFEST_DIR": "iggy-0.11.1-edge.2.crate",
+        "CARGO_MANIFEST_DIR": "iggy-0.11.0.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Iggy is the persistent message streaming platform written in Rust, supporting QUIC, TCP and HTTP transport protocols, capable of processing millions of messages per second.",
         "CARGO_PKG_HOMEPAGE": "https://iggy.apache.org",
@@ -24005,11 +23988,11 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/apache/iggy",
         "CARGO_PKG_RUST_VERSION": "1.95",
-        "CARGO_PKG_VERSION": "0.11.1-edge.2",
+        "CARGO_PKG_VERSION": "0.11.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "11",
-        "CARGO_PKG_VERSION_PATCH": "1",
-        "CARGO_PKG_VERSION_PRE": "edge.2",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
     },
     visibility = [],
     deps = [
@@ -24025,14 +24008,11 @@ cargo.rust_library(
         ":futures-util-0.3",
         ":iggy_binary_protocol-0.11",
         ":iggy_common-0.11",
-        ":percent-encoding-2",
         ":quinn-0.11",
-        ":rand-0.10",
         ":reqwest-0.13",
         ":reqwest-middleware-0.5",
         ":reqwest-retry-0.9",
         ":reqwest-tracing-0.7",
-        ":ring-0.17",
         ":rustls-0.23",
         ":secrecy-0.10",
         ":serde-1",
@@ -24047,23 +24027,23 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "iggy_binary_protocol-0.11.1-edge.2.crate",
-    sha256 = "444fd1b1c0511103654a8c0325bf5cc92824c105b7cbe667a4c29f51f1354dfd",
-    strip_prefix = "iggy_binary_protocol-0.11.1-edge.2",
-    urls = ["https://static.crates.io/crates/iggy_binary_protocol/0.11.1-edge.2/download"],
+    name = "iggy_binary_protocol-0.11.0.crate",
+    sha256 = "dc1dfab100ec08e587dc5348c6cbfa52353d93e7cc03f63655e2251ac3adc230",
+    strip_prefix = "iggy_binary_protocol-0.11.0",
+    urls = ["https://static.crates.io/crates/iggy_binary_protocol/0.11.0/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "iggy_binary_protocol-0.11",
-    srcs = [":iggy_binary_protocol-0.11.1-edge.2.crate"],
+    srcs = [":iggy_binary_protocol-0.11.0.crate"],
     crate = "iggy_binary_protocol",
-    crate_root = "iggy_binary_protocol-0.11.1-edge.2.crate/src/lib.rs",
+    crate_root = "iggy_binary_protocol-0.11.0.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "iggy_binary_protocol",
         "CARGO_CRATE_NAME": "iggy_binary_protocol",
-        "CARGO_MANIFEST_DIR": "iggy_binary_protocol-0.11.1-edge.2.crate",
+        "CARGO_MANIFEST_DIR": "iggy_binary_protocol-0.11.0.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Wire protocol types and codec for the Iggy binary protocol. Shared between server and SDK.",
         "CARGO_PKG_HOMEPAGE": "https://iggy.apache.org",
@@ -24071,43 +24051,41 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/apache/iggy",
         "CARGO_PKG_RUST_VERSION": "1.95",
-        "CARGO_PKG_VERSION": "0.11.1-edge.2",
+        "CARGO_PKG_VERSION": "0.11.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "11",
-        "CARGO_PKG_VERSION_PATCH": "1",
-        "CARGO_PKG_VERSION_PRE": "edge.2",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
     },
     visibility = [],
     deps = [
         ":bytemuck-1",
         ":bytes-1",
         ":enumset-1",
-        ":ring-0.17",
         ":secrecy-0.10",
-        ":serde-1",
         ":thiserror-2",
         ":twox-hash-2",
     ],
 )
 
 http_archive(
-    name = "iggy_common-0.11.1-edge.2.crate",
-    sha256 = "fed4fc43bbc44cd2ba59f32bcc2e8854423269d6e6a338ca916670c432980bba",
-    strip_prefix = "iggy_common-0.11.1-edge.2",
-    urls = ["https://static.crates.io/crates/iggy_common/0.11.1-edge.2/download"],
+    name = "iggy_common-0.11.0.crate",
+    sha256 = "15e5cd528c3222e3e785148f1a888e736fa83a0bf429aec6f5a95a67fa7103a3",
+    strip_prefix = "iggy_common-0.11.0",
+    urls = ["https://static.crates.io/crates/iggy_common/0.11.0/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "iggy_common-0.11",
-    srcs = [":iggy_common-0.11.1-edge.2.crate"],
+    srcs = [":iggy_common-0.11.0.crate"],
     crate = "iggy_common",
-    crate_root = "iggy_common-0.11.1-edge.2.crate/src/lib.rs",
+    crate_root = "iggy_common-0.11.0.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "iggy_common",
         "CARGO_CRATE_NAME": "iggy_common",
-        "CARGO_MANIFEST_DIR": "iggy_common-0.11.1-edge.2.crate",
+        "CARGO_MANIFEST_DIR": "iggy_common-0.11.0.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Iggy is the persistent message streaming platform written in Rust, supporting QUIC, TCP and HTTP transport protocols, capable of processing millions of messages per second.",
         "CARGO_PKG_HOMEPAGE": "https://iggy.apache.org",
@@ -24115,16 +24093,15 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/apache/iggy",
         "CARGO_PKG_RUST_VERSION": "1.95",
-        "CARGO_PKG_VERSION": "0.11.1-edge.2",
+        "CARGO_PKG_VERSION": "0.11.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "11",
-        "CARGO_PKG_VERSION_PATCH": "1",
-        "CARGO_PKG_VERSION_PRE": "edge.2",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
     },
     visibility = [],
     deps = [
         ":aes-gcm-0.11",
-        ":aes-gcm-siv-0.12",
         ":async-broadcast-0.7",
         ":async-trait-0.1",
         ":base64-0.23",
@@ -36848,16 +36825,12 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "3",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    features = [
-        "hazmat",
-        "zeroize",
-    ],
+    features = ["hazmat"],
     visibility = [],
     deps = [
         ":cpubits-0.1",
         ":cpufeatures-0.3",
         ":universal-hash-0.6",
-        ":zeroize-1",
     ],
 )
 
@@ -46552,7 +46525,6 @@ cargo.rust_library(
         "alloc",
         "base64",
         "default",
-        "json",
         "macros",
         "std",
     ],
@@ -46560,7 +46532,6 @@ cargo.rust_library(
     deps = [
         ":base64-0.23",
         ":serde_core-1",
-        ":serde_json-1",
         ":serde_with_macros-3",
     ],
 )

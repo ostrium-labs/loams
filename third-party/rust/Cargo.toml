@@ -66,10 +66,10 @@ gix-validate = { package = "gix-validate", version = "=0.12.0", default-features
 gix-worktree = { package = "gix-worktree", version = "=0.57.0", default-features = false, features = ["attributes"] }
 gix-zlib = { package = "gix-zlib", version = "=0.2.0", default-features = false }
 glob = { package = "glob", version = "=0.3.4", default-features = false }
-grafeo = { package = "grafeo", version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "bc6091e35953935f8221c3f0631d5aae77858e8f", default-features = false, features = ["algos", "cdc", "gql", "grafeo-file", "metrics", "parallel", "regex", "spill", "tracing", "wal"] }
-grafeo-adapters = { package = "grafeo-adapters", version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "bc6091e35953935f8221c3f0631d5aae77858e8f", default-features = false, features = ["algos", "gql", "parallel", "rayon", "tracing"] }
-grafeo-common = { package = "grafeo-common", version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "bc6091e35953935f8221c3f0631d5aae77858e8f", default-features = true, features = ["tracing"] }
-grafeo-engine = { package = "grafeo-engine", version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "bc6091e35953935f8221c3f0631d5aae77858e8f", default-features = false, features = ["algos", "cdc", "crossbeam", "gql", "grafeo-file", "lpg", "metrics", "parallel", "rayon", "regex", "spill", "tracing", "wal"] }
+grafeo = { package = "grafeo", version = "=0.5.44", default-features = false, features = ["algos", "cdc", "gql", "grafeo-file", "metrics", "parallel", "regex", "spill", "tracing", "wal"] }
+grafeo-adapters = { package = "grafeo-adapters", version = "=0.5.44", default-features = false, features = ["algos", "gql", "parallel", "rayon", "tracing"] }
+grafeo-common = { package = "grafeo-common", version = "=0.5.44", default-features = true, features = ["tracing"] }
+grafeo-engine = { package = "grafeo-engine", version = "=0.5.44", default-features = false, features = ["algos", "cdc", "crossbeam", "gql", "grafeo-file", "lpg", "metrics", "parallel", "rayon", "regex", "spill", "tracing", "wal"] }
 grep-matcher = { package = "grep-matcher", version = "=0.1.9", default-features = false }
 grep-regex = { package = "grep-regex", version = "=0.1.14", default-features = false }
 grep-searcher = { package = "grep-searcher", version = "=0.1.17", default-features = false }
@@ -85,7 +85,7 @@ httpmock = { package = "httpmock", version = "=0.8.3", default-features = false,
 humantime = { package = "humantime", version = "=2.4.0", default-features = false }
 hyper = { package = "hyper", version = "=1.12.0", default-features = true, features = ["client", "full", "http1", "http2", "server"] }
 hyper-util = { package = "hyper-util", version = "=0.1.21", default-features = true, features = ["client", "client-legacy", "client-proxy", "client-proxy-system", "http1", "http2", "server", "server-auto", "server-graceful", "service", "tokio", "tracing"] }
-iggy = { package = "iggy", version = "=0.11.1-edge.2", default-features = false }
+iggy = { package = "iggy", version = "=0.11.0", default-features = false }
 ignore = { package = "ignore", version = "=0.4.33", default-features = false }
 itertools = { package = "itertools", version = "=0.15.0", default-features = true, features = ["use_alloc", "use_std"] }
 jsonschema = { package = "jsonschema", version = "=0.58.6", default-features = false }
@@ -158,7 +158,7 @@ semver = { package = "semver", version = "=1.0.28", default-features = true, fea
 serde = { package = "serde", version = "=1.0.229", default-features = true, features = ["alloc", "derive", "rc", "serde_derive", "std"] }
 serde_json = { package = "serde_json", version = "=1.0.154", default-features = true, features = ["alloc", "float_roundtrip", "indexmap", "preserve_order", "raw_value", "std"] }
 serde_path_to_error = { package = "serde_path_to_error", version = "=0.1.20", default-features = false }
-serde_with = { package = "serde_with", version = "=3.24.0", default-features = true, features = ["alloc", "base64", "json", "macros", "std"] }
+serde_with = { package = "serde_with", version = "=3.24.0", default-features = true, features = ["alloc", "base64", "macros", "std"] }
 serde_yaml_ng = { package = "serde_yaml_ng", version = "=0.10.0", default-features = false }
 sha2 = { package = "sha2", version = "=0.11.1", default-features = true, features = ["alloc", "oid"] }
 sigstore-verify = { package = "sigstore-verify", version = "=0.14.0", default-features = false }

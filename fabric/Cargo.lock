@@ -4747,7 +4747,7 @@ dependencies = [
 [[package]]
 name = "iceberg"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/iceberg-rust?rev=d0788551f83b2ef2018d28d60a859d6283345a3b#d0788551f83b2ef2018d28d60a859d6283345a3b"
+source = "git+https://github.com/apache/iceberg-rust?rev=000e791d5229d9d136cda2b41fa0d7563fa58e1e#000e791d5229d9d136cda2b41fa0d7563fa58e1e"
 dependencies = [
  "aes-gcm 0.10.3",
  "anyhow",
@@ -4805,7 +4805,7 @@ dependencies = [
 [[package]]
 name = "iceberg-property-macro"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/iceberg-rust?rev=d0788551f83b2ef2018d28d60a859d6283345a3b#d0788551f83b2ef2018d28d60a859d6283345a3b"
+source = "git+https://github.com/apache/iceberg-rust?rev=000e791d5229d9d136cda2b41fa0d7563fa58e1e#000e791d5229d9d136cda2b41fa0d7563fa58e1e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6106,7 +6106,7 @@ dependencies = [
  "bytes",
  "datafusion",
  "futures",
- "iceberg 0.10.1 (git+https://github.com/ostrium-labs/iceberg-rust?rev=d0788551f83b2ef2018d28d60a859d6283345a3b)",
+ "iceberg 0.10.1 (git+https://github.com/apache/iceberg-rust?rev=000e791d5229d9d136cda2b41fa0d7563fa58e1e)",
  "loams-house-lake",
  "loams-house-sql",
  "loams-house-types",
