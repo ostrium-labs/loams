@@ -1,0 +1,256 @@
+# Deploy targets for `loams deploy` (design 86, plan OP2-C). Embedded by crates/loams-deploy.
+#
+# One [targets.<kind>] table each. Fields:
+#   module          directory under deploy/tofu/modules/ (empty when there is none)
+#   cloud           aws | gcp | azure | server | none
+#   class           k3s | managed-k8s | server | compose | app-free | laptop
+#   operator        deployed by `loams deploy` with the operator (needs deploy/tofu/examples/<kind>)
+#   available       the module (and example root) exist in the tree; a module task flips its own target
+#   sizes.*         one NODE of the size and how many nodes: cpu_millis, memory_mib, nodes
+#   reserve         what the platform base plus the Access database take (an estimate)
+#   disk_sku, egress_sku   price table SKUs (deploy/tofu/prices.toml)
+#   keep_on_destroy state addresses removed from state and kept on teardown (provisional until the module lands)
+#   credentials     the CLI session the user needs: aws | gcloud | az | ssh
+#   needs_tailnet   the engine is reached over the user's tailnet
+
+# Operator targets: their modules are created by later tasks, which flip `available`.
+[targets.aws-k3s]
+module = "aws-k3s"
+cloud = "aws"
+class = "k3s"
+operator = true
+available = false
+free_tier = false
+default_region = "us-east-1"
+disk_sku = "aws/ebs/gp3"
+egress_sku = "aws/network/egress-internet"
+required_inputs = []
+keep_on_destroy = ["module.target.aws_s3_bucket.this", "module.target.aws_kms_key.bucket"]
+credentials = "aws"
+needs_tailnet = true
+reserve = { cpu_millis = 1500, memory_mib = 4096 }
+sizes.small = { cpu_millis = 2000, memory_mib = 8192, nodes = 1 }
+sizes.medium = { cpu_millis = 4000, memory_mib = 16384, nodes = 1 }
+
+[targets.gcp-k3s]
+module = "gcp-k3s"
+cloud = "gcp"
+class = "k3s"
+operator = true
+available = false
+free_tier = false
+default_region = "us-central1"
+disk_sku = "gcp/pd/balanced"
+egress_sku = "gcp/network/egress-internet"
+required_inputs = ["project"]
+keep_on_destroy = ["module.target.google_storage_bucket.this", "module.target.google_kms_crypto_key.bucket"]
+credentials = "gcloud"
+needs_tailnet = true
+reserve = { cpu_millis = 1500, memory_mib = 4096 }
+sizes.small = { cpu_millis = 2000, memory_mib = 8192, nodes = 1 }
+sizes.medium = { cpu_millis = 4000, memory_mib = 16384, nodes = 1 }
+
+[targets.azure-k3s]
+module = "azure-k3s"
+cloud = "azure"
+class = "k3s"
+operator = true
+available = false
+free_tier = false
+default_region = "eastus"
+disk_sku = "azure/disk/premium-ssd-p6"
+egress_sku = "azure/network/egress-internet"
+required_inputs = ["subscription_id"]
+keep_on_destroy = ["module.target.azurerm_storage_account.this", "module.target.azurerm_storage_container.this", "module.target.azurerm_key_vault_key.storage"]
+credentials = "az"
+needs_tailnet = true
+reserve = { cpu_millis = 1500, memory_mib = 4096 }
+sizes.small = { cpu_millis = 2000, memory_mib = 8192, nodes = 1 }
+sizes.medium = { cpu_millis = 4000, memory_mib = 16384, nodes = 1 }
+
+[targets.aws-eks]
+module = "aws-eks"
+cloud = "aws"
+class = "managed-k8s"
+operator = true
+available = false
+free_tier = false
+default_region = "us-east-1"
+disk_sku = "aws/ebs/gp3"
+egress_sku = "aws/network/egress-internet"
+required_inputs = []
+keep_on_destroy = ["module.target.aws_s3_bucket.this", "module.target.aws_kms_key.bucket"]
+credentials = "aws"
+needs_tailnet = false
+reserve = { cpu_millis = 1500, memory_mib = 4096 }
+sizes.small = { cpu_millis = 4000, memory_mib = 16384, nodes = 1 }
+sizes.medium = { cpu_millis = 4000, memory_mib = 16384, nodes = 3 }
+
+[targets.gcp-gke]
+module = "gcp-gke"
+cloud = "gcp"
+class = "managed-k8s"
+operator = true
+available = false
+free_tier = false
+default_region = "us-central1"
+disk_sku = "gcp/pd/balanced"
+egress_sku = "gcp/network/egress-internet"
+required_inputs = ["project"]
+keep_on_destroy = ["module.target.google_storage_bucket.this", "module.target.google_kms_crypto_key.bucket"]
+credentials = "gcloud"
+needs_tailnet = false
+reserve = { cpu_millis = 1500, memory_mib = 4096 }
+sizes.small = { cpu_millis = 4000, memory_mib = 16384, nodes = 1 }
+sizes.medium = { cpu_millis = 4000, memory_mib = 16384, nodes = 3 }
+
+[targets.azure-aks]
+module = "azure-aks"
+cloud = "azure"
+class = "managed-k8s"
+operator = true
+available = false
+free_tier = false
+default_region = "eastus"
+disk_sku = "azure/disk/premium-ssd-p10"
+egress_sku = "azure/network/egress-internet"
+required_inputs = ["subscription_id"]
+keep_on_destroy = ["module.target.azurerm_storage_account.this", "module.target.azurerm_storage_container.this", "module.target.azurerm_key_vault_key.storage"]
+credentials = "az"
+needs_tailnet = false
+reserve = { cpu_millis = 1500, memory_mib = 4096 }
+sizes.small = { cpu_millis = 4000, memory_mib = 16384, nodes = 1 }
+sizes.medium = { cpu_millis = 4000, memory_mib = 16384, nodes = 3 }
+
+# server-ssh: an existing amd64 or arm64 Ubuntu/Debian host; the sizes are the smallest host the install fits.
+[targets.server-ssh]
+module = "server-ssh"
+cloud = "server"
+class = "server"
+operator = true
+available = false
+free_tier = false
+default_region = ""
+disk_sku = ""
+egress_sku = ""
+required_inputs = ["ssh_host", "ssh_user"]
+keep_on_destroy = []
+credentials = "ssh"
+needs_tailnet = true
+reserve = { cpu_millis = 1500, memory_mib = 4096 }
+sizes.small = { cpu_millis = 2000, memory_mib = 8192, nodes = 1 }
+sizes.medium = { cpu_millis = 4000, memory_mib = 16384, nodes = 1 }
+
+# Listed, not deployed by `loams deploy`: compose on one VM (design 70). The modules already exist.
+[targets.aws-vm]
+module = "aws-vm"
+cloud = "aws"
+class = "compose"
+operator = false
+available = true
+free_tier = false
+default_region = "us-east-1"
+disk_sku = "aws/ebs/gp3"
+egress_sku = "aws/network/egress-internet"
+required_inputs = []
+keep_on_destroy = []
+credentials = "aws"
+needs_tailnet = true
+sizes.small = { cpu_millis = 2000, memory_mib = 8192, nodes = 1 }
+sizes.medium = { cpu_millis = 4000, memory_mib = 16384, nodes = 1 }
+
+[targets.gcp-vm]
+module = "gcp-vm"
+cloud = "gcp"
+class = "compose"
+operator = false
+available = true
+free_tier = false
+default_region = "us-central1"
+disk_sku = "gcp/pd/balanced"
+egress_sku = "gcp/network/egress-internet"
+required_inputs = ["project"]
+keep_on_destroy = []
+credentials = "gcloud"
+needs_tailnet = true
+sizes.small = { cpu_millis = 2000, memory_mib = 8192, nodes = 1 }
+sizes.medium = { cpu_millis = 4000, memory_mib = 16384, nodes = 1 }
+
+[targets.azure-vm]
+module = "azure-vm"
+cloud = "azure"
+class = "compose"
+operator = false
+available = true
+free_tier = false
+default_region = "eastus"
+disk_sku = "azure/disk/premium-ssd-p6"
+egress_sku = "azure/network/egress-internet"
+required_inputs = ["subscription_id"]
+keep_on_destroy = []
+credentials = "az"
+needs_tailnet = true
+sizes.small = { cpu_millis = 2000, memory_mib = 8192, nodes = 1 }
+sizes.medium = { cpu_millis = 4000, memory_mib = 16384, nodes = 1 }
+
+# Listed, not deployed by `loams deploy`: apps on the free tier (`loams app deploy`, design 71).
+[targets.aws-free]
+module = "aws-free"
+cloud = "aws"
+class = "app-free"
+operator = false
+available = true
+free_tier = true
+default_region = "us-east-1"
+disk_sku = ""
+egress_sku = ""
+required_inputs = []
+keep_on_destroy = []
+credentials = "aws"
+needs_tailnet = false
+
+[targets.gcp-free]
+module = "gcp-free"
+cloud = "gcp"
+class = "app-free"
+operator = false
+available = true
+free_tier = true
+default_region = "us-central1"
+disk_sku = ""
+egress_sku = ""
+required_inputs = ["project"]
+keep_on_destroy = []
+credentials = "gcloud"
+needs_tailnet = false
+
+[targets.azure-free]
+module = "azure-free"
+cloud = "azure"
+class = "app-free"
+operator = false
+available = true
+free_tier = true
+default_region = "eastus"
+disk_sku = ""
+egress_sku = ""
+required_inputs = ["subscription_id"]
+keep_on_destroy = []
+credentials = "az"
+needs_tailnet = false
+
+# Listed, not deployed by `loams deploy`: a laptop or edge device (EDGE1).
+[targets.laptop]
+module = ""
+cloud = "none"
+class = "laptop"
+operator = false
+available = false
+free_tier = false
+default_region = ""
+disk_sku = ""
+egress_sku = ""
+required_inputs = []
+keep_on_destroy = []
+credentials = ""
+needs_tailnet = false

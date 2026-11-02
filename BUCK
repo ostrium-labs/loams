@@ -225,6 +225,24 @@ export_file(
 )
 
 export_file(
+    name = "file=deploy+tofu+prices.toml",
+    src = "deploy/tofu/prices.toml",
+    mode = "reference",
+    visibility = [
+        "PUBLIC",
+    ],
+)
+
+export_file(
+    name = "file=deploy+tofu+targets.toml",
+    src = "deploy/tofu/targets.toml",
+    mode = "reference",
+    visibility = [
+        "PUBLIC",
+    ],
+)
+
+export_file(
     name = "file=release+companions.toml",
     src = "release/companions.toml",
     mode = "reference",
