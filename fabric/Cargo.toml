@@ -191,13 +191,16 @@ datafusion = { version = "=55.2.0", default-features = false, features = [
     "string_expressions",
     "unicode_expressions",
 ] }
-# Iceberg for the Rust engine (D1576; plan HE1 R11.8, R11.9): Loams' fork
-# ostrium-labs/iceberg-rust at the merge of fork PR #6 on `loams/row-delta`
-# (deletion-vector reads and writes, RowDelta, row lineage; PR head 01243900c
-# passed the fork's CI), on Arrow 59.2. Named `iceberg-engine` so it sits beside
-# the 0.10.1 above until HE2 Task 60 retires that. No default features (no
-# storage backend). Apache-2.0.
-iceberg-engine = { package = "iceberg", git = "https://github.com/ostrium-labs/iceberg-rust", rev = "d0788551f83b2ef2018d28d60a859d6283345a3b", default-features = false }
+# Iceberg for the Rust engine (D1576; plan HE1 R11.8, R11.9; D2450): the official
+# apache/iceberg-rust, pinned by commit at 000e791d (main, 2026-10-21): the upstream
+# base of our fork ostrium-labs/iceberg-rust, so the same code without the fork's
+# RowDelta and deletion-vector writer, which nothing calls yet. Its public
+# `delete_vector` module (DeleteVector::deserialize), the Storage traits and Runtime
+# are on main but not in crates.io 0.10.1. HE2 Task 66 (mutations) needs RowDelta: it
+# moves this pin to an upstream release that has it, or back to the fork, in its own
+# PR. On Arrow 59.2. Named `iceberg-engine` so it sits beside the 0.10.1 above until
+# HE2 Task 60 retires that. No default features (no storage backend). Apache-2.0.
+iceberg-engine = { package = "iceberg", git = "https://github.com/apache/iceberg-rust", rev = "000e791d5229d9d136cda2b41fa0d7563fa58e1e", default-features = false }
 # The House's TLS listener (HS1 Task 20, §49 §14): rustls 0.23 with the ring
 # provider, through tokio-rustls 0.26, both already in this lockfile (through
 # reqwest and the connectors) and in the engine workspace's. Apache-2.0/ISC/MIT.
