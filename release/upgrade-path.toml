@@ -15,6 +15,24 @@
 # (`scripts/release/check-upgrade-path.sh`) and the signed manifest's copy.
 
 [[release]]
+version     = "0.1.5"
+from        = "0.1"
+free_factor = 1.5
+downtime_seconds = 300
+
+# Unreleased; the pins the next 0.1.x ships (D2450: official dependencies, no
+# forks). Grafeo moves from the fork's 0.5.43 to the official 0.5.44 (#1658):
+# a build input; Loams Graph stores its own change log, not Grafeo's files.
+
+[release.components]
+pd             = "v8.5.8"
+tikv           = "v8.5.8"
+tidb           = "v8.5.8-loams.1"
+loams_postgres = "sha256:4dcec4cbef637b92b1088ea2c0bc857f3b5ef4318f02e8d2d4a0f9263ed4140e"
+chdb           = "26.9.0"
+grafeo         = "0.5.44"
+
+[[release]]
 version     = "0.1.4"
 from        = "0.1"
 free_factor = 1.5
