@@ -1,0 +1,69 @@
+{
+  "$schema": "https://loams.dev/schemas/listing/v2.json",
+  "id": "acme/notes-app",
+  "kind": "app",
+  "version": "1.2.0",
+  "title": "Notes",
+  "summary": "A small notes app on Loams object storage and Postgres.",
+  "licence": "Apache-2.0",
+  "source": {
+    "repository": "https://github.com/acme/notes",
+    "commit": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "publisher": {
+    "name": "Acme",
+    "url": "https://acme.example"
+  },
+  "security_contact": "security@acme.example",
+  "package": {
+    "type": "oci",
+    "image": "ghcr.io/acme/notes",
+    "digest": "sha256:930397a93ccf0495736b17d4d327f246212b427cc4022b05d92710fac759f77c"
+  },
+  "provenance": {
+    "type": "github-attestation",
+    "ref": "https://api.github.com/repos/acme/notes/attestations"
+  },
+  "targets": [
+    "cluster"
+  ],
+  "requires": {
+    "storage": [
+      "object"
+    ],
+    "cpu_millis": 500,
+    "memory_mib": 512
+  },
+  "depends_on": [
+    {
+      "id": "acme/pg",
+      "version": "^16"
+    }
+  ],
+  "cost_hint": {
+    "cpu_millis": 500,
+    "memory_mib": 512,
+    "storage_gib": 10,
+    "egress_gib_per_month": 5,
+    "managed": [
+      "object"
+    ]
+  },
+  "run": {
+    "ports": [
+      {
+        "name": "http",
+        "port": 8080,
+        "protocol": "tcp"
+      }
+    ],
+    "health": {
+      "http_path": "/healthz",
+      "port": 8080
+    },
+    "args": [
+      "serve"
+    ]
+  },
+  "pricing": "free"
+}

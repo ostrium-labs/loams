@@ -1,0 +1,54 @@
+{
+  "$schema": "https://loams.dev/schemas/listing/v2.json",
+  "id": "acme/syncd",
+  "kind": "app",
+  "version": "0.4.1",
+  "title": "Sync daemon",
+  "summary": "Keeps a laptop folder in sync with a Loams bucket.",
+  "licence": "Apache-2.0",
+  "source": {
+    "repository": "https://github.com/acme/syncd",
+    "commit": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "publisher": {
+    "name": "Acme",
+    "url": "https://acme.example"
+  },
+  "security_contact": "security@acme.example",
+  "package": {
+    "type": "binary",
+    "targets": [
+      {
+        "triple": "x86_64-unknown-linux-gnu",
+        "url": "https://github.com/acme/syncd/releases/download/v0.4.1/syncd-x86_64-unknown-linux-gnu",
+        "digest": "sha256:0f1d90d47be6f003e67fc494170c5c5bdeb155708ce301dd89ab8c3a78e0d9d1"
+      },
+      {
+        "triple": "aarch64-apple-darwin",
+        "url": "https://github.com/acme/syncd/releases/download/v0.4.1/syncd-aarch64-apple-darwin",
+        "digest": "sha256:22e646c491e351727a26b15899914751b28e3b9cb80a6f4f4be1359e84d35cd1"
+      }
+    ]
+  },
+  "provenance": {
+    "type": "github-attestation",
+    "ref": "https://api.github.com/repos/acme/syncd/attestations"
+  },
+  "targets": [
+    "node-laptop"
+  ],
+  "requires": {
+    "storage": [
+      "object"
+    ],
+    "cpu_millis": 100,
+    "memory_mib": 64
+  },
+  "cost_hint": {
+    "cpu_millis": 100,
+    "memory_mib": 64,
+    "storage_gib": 1,
+    "egress_gib_per_month": 2
+  },
+  "pricing": "free"
+}

@@ -15,12 +15,7 @@ use crate::revocations::{self, Finding, Installed, Revocation, Revocations};
 use crate::sources::{Source, SourceError, Sources};
 use crate::verify::{SignatureError, SignatureVerifier};
 
-/// Fetches a URL's bytes. agentd's implementation is an HTTPS client; tests
-/// serve fixtures.
-#[async_trait::async_trait]
-pub trait Fetcher: Send + Sync {
-    async fn get(&self, url: &str) -> Result<Vec<u8>, String>;
-}
+pub use crate::fetch::Fetcher;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum MarketError {

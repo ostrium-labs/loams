@@ -1,0 +1,44 @@
+{
+  "$schema": "https://loams.dev/schemas/listing/v2.json",
+  "id": "acme/sensor-filter",
+  "kind": "app",
+  "version": "0.1.0",
+  "title": "Sensor filter",
+  "summary": "Filters sensor readings on the device before they reach Kafka.",
+  "licence": "Apache-2.0",
+  "source": {
+    "repository": "https://github.com/acme/sensor-filter",
+    "commit": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "publisher": {
+    "name": "Acme",
+    "url": "https://acme.example"
+  },
+  "security_contact": "security@acme.example",
+  "package": {
+    "type": "wasm",
+    "url": "https://github.com/acme/sensor-filter/releases/download/v0.1.0/filter.wasm",
+    "digest": "sha256:579664bda624a976452c175e8b8f12c4916a65aa47c6aa63e6ee6f1cd1db3397"
+  },
+  "provenance": {
+    "type": "sigstore-bundle",
+    "ref": "https://github.com/acme/sensor-filter/releases/download/v0.1.0/filter.wasm.sigstore.json"
+  },
+  "targets": [
+    "node-device"
+  ],
+  "requires": {
+    "storage": [
+      "kafka"
+    ],
+    "cpu_millis": 50,
+    "memory_mib": 32
+  },
+  "cost_hint": {
+    "cpu_millis": 50,
+    "memory_mib": 32,
+    "storage_gib": 0,
+    "egress_gib_per_month": 1
+  },
+  "pricing": "free"
+}
