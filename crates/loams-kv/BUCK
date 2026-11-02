@@ -53,6 +53,11 @@ cargo_package(
             "root": "tests/metrics.rs",
         },
         {
+            "name": "raw",
+            "crate": "raw",
+            "root": "tests/raw.rs",
+        },
+        {
             "name": "tenant",
             "crate": "tenant",
             "root": "tests/tenant.rs",

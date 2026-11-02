@@ -7,9 +7,9 @@ load("@prelude//rust:cargo_buildscript.bzl", "buildscript_run")
 load("@prelude//rust:cargo_package.bzl", "cargo", cargo_alias = "alias")
 
 git_fetch(
-    name = "client-rust-409ec7ebfe5dd3b9.git",
-    repo = "https://github.com/ostrium-labs/client-rust",
-    rev = "41b3588f9b63d505dd61e15bf3d26abfd53689a2",
+    name = "client-rust-33c7c5ee857ad18b.git",
+    repo = "https://github.com/tikv/client-rust",
+    rev = "1b883bf144a8557938f6069682c61b4d39cf6bf2",
     visibility = [],
 )
 
@@ -3713,23 +3713,23 @@ cargo_alias(
 )
 
 http_archive(
-    name = "aws-lc-rs-1.18.1.crate",
-    sha256 = "b281d307588d634de920874890732659e2e7672f72b5e10e81badc1a8a83621e",
-    strip_prefix = "aws-lc-rs-1.18.1",
-    urls = ["https://static.crates.io/crates/aws-lc-rs/1.18.1/download"],
+    name = "aws-lc-rs-1.18.2.crate",
+    sha256 = "faac5829c2b74c28f830747e7818ccfb684261b5f48a1118b1e2a13d36dfab13",
+    strip_prefix = "aws-lc-rs-1.18.2",
+    urls = ["https://static.crates.io/crates/aws-lc-rs/1.18.2/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "aws-lc-rs-1",
-    srcs = [":aws-lc-rs-1.18.1.crate"],
+    srcs = [":aws-lc-rs-1.18.2.crate"],
     crate = "aws_lc_rs",
-    crate_root = "aws-lc-rs-1.18.1.crate/src/lib.rs",
+    crate_root = "aws-lc-rs-1.18.2.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "aws_lc_rs",
         "CARGO_CRATE_NAME": "aws_lc_rs",
-        "CARGO_MANIFEST_DIR": "aws-lc-rs-1.18.1.crate",
+        "CARGO_MANIFEST_DIR": "aws-lc-rs-1.18.2.crate",
         "CARGO_PKG_AUTHORS": "AWS-LibCrypto",
         "CARGO_PKG_DESCRIPTION": "aws-lc-rs is a cryptographic library using AWS-LC for its cryptographic operations. This library strives to be API-compatible with the popular Rust library named ring.",
         "CARGO_PKG_HOMEPAGE": "https://github.com/aws/aws-lc-rs",
@@ -3737,10 +3737,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/aws/aws-lc-rs",
         "CARGO_PKG_RUST_VERSION": "1.71.0",
-        "CARGO_PKG_VERSION": "1.18.1",
+        "CARGO_PKG_VERSION": "1.18.2",
         "CARGO_PKG_VERSION_MAJOR": "1",
         "CARGO_PKG_VERSION_MINOR": "18",
-        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PATCH": "2",
         "CARGO_PKG_VERSION_PRE": "",
         "OUT_DIR": "$(location :aws-lc-rs-1-build-script-run[out_dir])",
     },
@@ -3755,7 +3755,7 @@ cargo.rust_library(
     rustc_flags = ["@$(location :aws-lc-rs-1-build-script-run[rustc_flags])"],
     visibility = [],
     deps = [
-        ":aws-lc-sys-0.45",
+        ":aws-lc-sys-0.46",
         ":untrusted-0.7",
         ":zeroize-1",
     ],
@@ -3763,14 +3763,14 @@ cargo.rust_library(
 
 cargo.rust_binary(
     name = "aws-lc-rs-1-build-script-build",
-    srcs = [":aws-lc-rs-1.18.1.crate"],
+    srcs = [":aws-lc-rs-1.18.2.crate"],
     crate = "build_script_build",
-    crate_root = "aws-lc-rs-1.18.1.crate/build.rs",
+    crate_root = "aws-lc-rs-1.18.2.crate/build.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "build-script-build",
         "CARGO_CRATE_NAME": "build_script_build",
-        "CARGO_MANIFEST_DIR": "aws-lc-rs-1.18.1.crate",
+        "CARGO_MANIFEST_DIR": "aws-lc-rs-1.18.2.crate",
         "CARGO_PKG_AUTHORS": "AWS-LibCrypto",
         "CARGO_PKG_DESCRIPTION": "aws-lc-rs is a cryptographic library using AWS-LC for its cryptographic operations. This library strives to be API-compatible with the popular Rust library named ring.",
         "CARGO_PKG_HOMEPAGE": "https://github.com/aws/aws-lc-rs",
@@ -3778,10 +3778,10 @@ cargo.rust_binary(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/aws/aws-lc-rs",
         "CARGO_PKG_RUST_VERSION": "1.71.0",
-        "CARGO_PKG_VERSION": "1.18.1",
+        "CARGO_PKG_VERSION": "1.18.2",
         "CARGO_PKG_VERSION_MAJOR": "1",
         "CARGO_PKG_VERSION_MINOR": "18",
-        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PATCH": "2",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -3800,7 +3800,7 @@ buildscript_run(
     package_name = "aws-lc-rs",
     buildscript_rule = ":aws-lc-rs-1-build-script-build",
     env = {
-        "CARGO_MANIFEST_LINKS": "aws_lc_rs_1_18_1_sys",
+        "CARGO_MANIFEST_LINKS": "aws_lc_rs_1_18_2_sys",
         "CARGO_PKG_AUTHORS": "AWS-LibCrypto",
         "CARGO_PKG_DESCRIPTION": "aws-lc-rs is a cryptographic library using AWS-LC for its cryptographic operations. This library strives to be API-compatible with the popular Rust library named ring.",
         "CARGO_PKG_HOMEPAGE": "https://github.com/aws/aws-lc-rs",
@@ -3809,7 +3809,7 @@ buildscript_run(
         "CARGO_PKG_RUST_VERSION": "1.71.0",
         "CARGO_PKG_VERSION_MAJOR": "1",
         "CARGO_PKG_VERSION_MINOR": "18",
-        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PATCH": "2",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -3822,27 +3822,27 @@ buildscript_run(
     ],
     rustc_link_lib = True,
     rustc_link_search = True,
-    version = "1.18.1",
+    version = "1.18.2",
 )
 
 http_archive(
-    name = "aws-lc-sys-0.45.0.crate",
-    sha256 = "9bff6c3b54fad79a2e60b8102caf565819711497c1f5f092f49508e2f5c31b27",
-    strip_prefix = "aws-lc-sys-0.45.0",
-    urls = ["https://static.crates.io/crates/aws-lc-sys/0.45.0/download"],
+    name = "aws-lc-sys-0.46.0.crate",
+    sha256 = "f1622d8446a2d4b2ce0c7eefc73dd43a99779028d5ee5c2dd8073a658ba8a2bc",
+    strip_prefix = "aws-lc-sys-0.46.0",
+    urls = ["https://static.crates.io/crates/aws-lc-sys/0.46.0/download"],
     visibility = [],
 )
 
 cargo.rust_library(
-    name = "aws-lc-sys-0.45",
-    srcs = [":aws-lc-sys-0.45.0.crate"],
+    name = "aws-lc-sys-0.46",
+    srcs = [":aws-lc-sys-0.46.0.crate"],
     crate = "aws_lc_sys",
-    crate_root = "aws-lc-sys-0.45.0.crate/src/lib.rs",
+    crate_root = "aws-lc-sys-0.46.0.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "aws_lc_sys",
         "CARGO_CRATE_NAME": "aws_lc_sys",
-        "CARGO_MANIFEST_DIR": "aws-lc-sys-0.45.0.crate",
+        "CARGO_MANIFEST_DIR": "aws-lc-sys-0.46.0.crate",
         "CARGO_PKG_AUTHORS": "AWS-LC",
         "CARGO_PKG_DESCRIPTION": "AWS-LC is a general-purpose cryptographic library maintained by the AWS Cryptography team for AWS and their customers. It іs based on code from the Google BoringSSL project and the OpenSSL project.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -3850,28 +3850,28 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/aws/aws-lc-rs",
         "CARGO_PKG_RUST_VERSION": "1.71.0",
-        "CARGO_PKG_VERSION": "0.45.0",
+        "CARGO_PKG_VERSION": "0.46.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "45",
+        "CARGO_PKG_VERSION_MINOR": "46",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
-        "OUT_DIR": "$(location :aws-lc-sys-0.45-build-script-main-run[out_dir])",
+        "OUT_DIR": "$(location :aws-lc-sys-0.46-build-script-main-run[out_dir])",
     },
     features = ["prebuilt-nasm"],
-    rustc_flags = ["@$(location :aws-lc-sys-0.45-build-script-main-run[rustc_flags])"],
+    rustc_flags = ["@$(location :aws-lc-sys-0.46-build-script-main-run[rustc_flags])"],
     visibility = [],
 )
 
 cargo.rust_binary(
-    name = "aws-lc-sys-0.45-build-script-main",
-    srcs = [":aws-lc-sys-0.45.0.crate"],
+    name = "aws-lc-sys-0.46-build-script-main",
+    srcs = [":aws-lc-sys-0.46.0.crate"],
     crate = "build_script_main",
-    crate_root = "aws-lc-sys-0.45.0.crate/builder/main.rs",
+    crate_root = "aws-lc-sys-0.46.0.crate/builder/main.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "build-script-main",
         "CARGO_CRATE_NAME": "build_script_build",
-        "CARGO_MANIFEST_DIR": "aws-lc-sys-0.45.0.crate",
+        "CARGO_MANIFEST_DIR": "aws-lc-sys-0.46.0.crate",
         "CARGO_PKG_AUTHORS": "AWS-LC",
         "CARGO_PKG_DESCRIPTION": "AWS-LC is a general-purpose cryptographic library maintained by the AWS Cryptography team for AWS and their customers. It іs based on code from the Google BoringSSL project and the OpenSSL project.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -3879,9 +3879,9 @@ cargo.rust_binary(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/aws/aws-lc-rs",
         "CARGO_PKG_RUST_VERSION": "1.71.0",
-        "CARGO_PKG_VERSION": "0.45.0",
+        "CARGO_PKG_VERSION": "0.46.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "45",
+        "CARGO_PKG_VERSION_MINOR": "46",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
@@ -3897,11 +3897,11 @@ cargo.rust_binary(
 )
 
 buildscript_run(
-    name = "aws-lc-sys-0.45-build-script-main-run",
+    name = "aws-lc-sys-0.46-build-script-main-run",
     package_name = "aws-lc-sys",
-    buildscript_rule = ":aws-lc-sys-0.45-build-script-main",
+    buildscript_rule = ":aws-lc-sys-0.46-build-script-main",
     env = {
-        "CARGO_MANIFEST_LINKS": "aws_lc_0_45_0",
+        "CARGO_MANIFEST_LINKS": "aws_lc_0_46_0",
         "CARGO_PKG_AUTHORS": "AWS-LC",
         "CARGO_PKG_DESCRIPTION": "AWS-LC is a general-purpose cryptographic library maintained by the AWS Cryptography team for AWS and their customers. It іs based on code from the Google BoringSSL project and the OpenSSL project.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -3909,14 +3909,14 @@ buildscript_run(
         "CARGO_PKG_REPOSITORY": "https://github.com/aws/aws-lc-rs",
         "CARGO_PKG_RUST_VERSION": "1.71.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "45",
+        "CARGO_PKG_VERSION_MINOR": "46",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = ["prebuilt-nasm"],
     rustc_link_lib = True,
     rustc_link_search = True,
-    version = "0.45.0",
+    version = "0.46.0",
 )
 
 http_archive(
@@ -14766,6 +14766,45 @@ cargo.rust_library(
     ],
 )
 
+http_archive(
+    name = "fail-0.4.0.crate",
+    sha256 = "3be3c61c59fdc91f5dbc3ea31ee8623122ce80057058be560654c5d410d181a6",
+    strip_prefix = "fail-0.4.0",
+    urls = ["https://static.crates.io/crates/fail/0.4.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "fail-0.4",
+    srcs = [":fail-0.4.0.crate"],
+    crate = "fail",
+    crate_root = "fail-0.4.0.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "fail",
+        "CARGO_CRATE_NAME": "fail",
+        "CARGO_MANIFEST_DIR": "fail-0.4.0.crate",
+        "CARGO_PKG_AUTHORS": "The TiKV Project Developers",
+        "CARGO_PKG_DESCRIPTION": "Fail points for rust.",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/tikv/fail-rs",
+        "CARGO_PKG_NAME": "fail",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/tikv/fail-rs",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.4.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "4",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [
+        ":lazy_static-1",
+        ":log-0.4",
+        ":rand-0.7",
+    ],
+)
+
 cargo_alias(
     name = "fail",
     actual = ":fail-0.5",
@@ -19421,7 +19460,7 @@ cargo.rust_library(
     visibility = [],
     deps = [
         ":bstr-1",
-        ":hashbrown-0.15",
+        ":hashbrown-0.17",
     ],
 )
 
@@ -44224,23 +44263,23 @@ cargo_alias(
 )
 
 http_archive(
-    name = "rustls-native-certs-0.8.4.crate",
-    sha256 = "dab5152771c58876a2146916e53e35057e1a4dfa2b9df0f0305b07f611fdea4d",
-    strip_prefix = "rustls-native-certs-0.8.4",
-    urls = ["https://static.crates.io/crates/rustls-native-certs/0.8.4/download"],
+    name = "rustls-native-certs-0.8.5.crate",
+    sha256 = "4a073f5dc7469f984c52ad2752b63b0807745133b6de880b7b64c1ac4c48aec4",
+    strip_prefix = "rustls-native-certs-0.8.5",
+    urls = ["https://static.crates.io/crates/rustls-native-certs/0.8.5/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "rustls-native-certs-0.8",
-    srcs = [":rustls-native-certs-0.8.4.crate"],
+    srcs = [":rustls-native-certs-0.8.5.crate"],
     crate = "rustls_native_certs",
-    crate_root = "rustls-native-certs-0.8.4.crate/src/lib.rs",
+    crate_root = "rustls-native-certs-0.8.5.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "rustls_native_certs",
         "CARGO_CRATE_NAME": "rustls_native_certs",
-        "CARGO_MANIFEST_DIR": "rustls-native-certs-0.8.4.crate",
+        "CARGO_MANIFEST_DIR": "rustls-native-certs-0.8.5.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "rustls-native-certs allows rustls to use the platform native certificate store",
         "CARGO_PKG_HOMEPAGE": "https://github.com/rustls/rustls-native-certs",
@@ -44248,10 +44287,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/rustls/rustls-native-certs",
         "CARGO_PKG_RUST_VERSION": "1.71",
-        "CARGO_PKG_VERSION": "0.8.4",
+        "CARGO_PKG_VERSION": "0.8.5",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "8",
-        "CARGO_PKG_VERSION_PATCH": "4",
+        "CARGO_PKG_VERSION_PATCH": "5",
         "CARGO_PKG_VERSION_PRE": "",
     },
     named_deps = {
@@ -50995,7 +51034,7 @@ cargo.rust_library(
     visibility = [],
     deps = [
         ":fastrand-2",
-        ":getrandom-0.3",
+        ":getrandom-0.4",
         ":once_cell-1",
         ":rustix-1",
     ],
@@ -51506,14 +51545,14 @@ cargo_alias(
 
 cargo.rust_library(
     name = "tikv-client-0.4",
-    srcs = [":client-rust-409ec7ebfe5dd3b9.git"],
+    srcs = [":client-rust-33c7c5ee857ad18b.git"],
     crate = "tikv_client",
-    crate_root = "client-rust-409ec7ebfe5dd3b9/src/lib.rs",
+    crate_root = "client-rust-33c7c5ee857ad18b/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "tikv_client",
         "CARGO_CRATE_NAME": "tikv_client",
-        "CARGO_MANIFEST_DIR": "client-rust-409ec7ebfe5dd3b9",
+        "CARGO_MANIFEST_DIR": "client-rust-33c7c5ee857ad18b",
         "CARGO_PKG_AUTHORS": "The TiKV Project Authors",
         "CARGO_PKG_DESCRIPTION": "The Rust language implementation of TiKV client.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -51533,7 +51572,7 @@ cargo.rust_library(
         ":async-trait-0.1",
         ":derive-new-0.5",
         ":either-1",
-        ":fail-0.5",
+        ":fail-0.4",
         ":futures-0.3",
         ":lazy_static-1",
         ":log-0.4",
