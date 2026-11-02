@@ -173,7 +173,7 @@ tantivy-fst = { package = "tantivy-fst", version = "=0.5.0", default-features = 
 tar = { package = "tar", version = "=0.4.46", default-features = true, features = ["xattr"] }
 tempfile = { package = "tempfile", version = "=3.27.0", default-features = true, features = ["getrandom"] }
 thiserror = { package = "thiserror", version = "=2.0.21", default-features = true, features = ["std"] }
-tikv-client = { package = "tikv-client", version = "=0.4.0", git = "https://github.com/ostrium-labs/client-rust", rev = "41b3588f9b63d505dd61e15bf3d26abfd53689a2", default-features = false }
+tikv-client = { package = "tikv-client", version = "=0.4.0", git = "https://github.com/tikv/client-rust", rev = "1b883bf144a8557938f6069682c61b4d39cf6bf2", default-features = false }
 time = { package = "time", version = "=0.3.55", default-features = true, features = ["alloc", "formatting", "macros", "parsing", "serde", "serde-well-known", "std"] }
 time-fmt = { package = "time-fmt", version = "=0.3.8", default-features = true }
 tokio = { package = "tokio", version = "=1.54.1", default-features = true, features = ["bytes", "fs", "full", "io-std", "io-util", "libc", "macros", "mio", "net", "parking_lot", "process", "rt", "rt-multi-thread", "signal", "signal-hook-registry", "socket2", "sync", "test-util", "time", "tokio-macros", "windows-sys"] }

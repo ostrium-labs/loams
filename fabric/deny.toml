@@ -109,4 +109,4 @@ unknown-git = "deny"
 # 1, D140).
 # iceberg-rust is pinned by rev to the fork's `loams/row-delta` for the House
 # Rust engine (plan HE1 D1576, R11.8, R11.9).
-allow-git = ["https://github.com/ostrium-labs/client-rust", "https://github.com/ostrium-labs/resonate", "https://github.com/ostrium-labs/iceberg-rust"]
+allow-git = ["https://github.com/tikv/client-rust", "https://github.com/ostrium-labs/resonate", "https://github.com/ostrium-labs/iceberg-rust"]

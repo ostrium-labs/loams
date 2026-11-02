@@ -491,8 +491,8 @@ async fn commit_mode_two_pc_and_async_1pc_both_commit() {
     let tikv = cluster.connect(TEST_META).await;
     assert_eq!(
         tikv.commit_mode(),
-        CommitMode::Async1pc,
-        "the default (Ruling 3)"
+        CommitMode::TwoPc,
+        "the default (D2450; Ruling 3's async commit is opt-in)"
     );
     for mode in [CommitMode::Async1pc, CommitMode::TwoPc] {
         for pessimistic in [false, true] {
