@@ -85,6 +85,7 @@ unknown-git = "deny"
 # Decoder-only: Loams' fork of Neon (pinned to the loams-decoder-trim-3
 # tag), Apache-2.0. Neon's rust-postgres fork left the graph with that trim.
 allow-git = [
+    "https://github.com/tikv/client-rust",
     "https://github.com/ostrium-labs/client-rust",
     "https://github.com/ostrium-labs/resonate",
     "https://github.com/ostrium-labs/grafeo",

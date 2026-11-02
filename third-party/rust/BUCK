@@ -7,9 +7,9 @@ load("@prelude//rust:cargo_buildscript.bzl", "buildscript_run")
 load("@prelude//rust:cargo_package.bzl", "cargo", cargo_alias = "alias")
 
 git_fetch(
-    name = "client-rust-409ec7ebfe5dd3b9.git",
-    repo = "https://github.com/ostrium-labs/client-rust",
-    rev = "41b3588f9b63d505dd61e15bf3d26abfd53689a2",
+    name = "client-rust-33c7c5ee857ad18b.git",
+    repo = "https://github.com/tikv/client-rust",
+    rev = "1b883bf144a8557938f6069682c61b4d39cf6bf2",
     visibility = [],
 )
 
@@ -14702,6 +14702,45 @@ cargo.rust_library(
     deps = [
         ":event-listener-5",
         ":pin-project-lite-0.2",
+    ],
+)
+
+http_archive(
+    name = "fail-0.4.0.crate",
+    sha256 = "3be3c61c59fdc91f5dbc3ea31ee8623122ce80057058be560654c5d410d181a6",
+    strip_prefix = "fail-0.4.0",
+    urls = ["https://static.crates.io/crates/fail/0.4.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "fail-0.4",
+    srcs = [":fail-0.4.0.crate"],
+    crate = "fail",
+    crate_root = "fail-0.4.0.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "fail",
+        "CARGO_CRATE_NAME": "fail",
+        "CARGO_MANIFEST_DIR": "fail-0.4.0.crate",
+        "CARGO_PKG_AUTHORS": "The TiKV Project Developers",
+        "CARGO_PKG_DESCRIPTION": "Fail points for rust.",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/tikv/fail-rs",
+        "CARGO_PKG_NAME": "fail",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/tikv/fail-rs",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.4.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "4",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [
+        ":lazy_static-1",
+        ":log-0.4",
+        ":rand-0.7",
     ],
 )
 
@@ -51477,14 +51516,14 @@ cargo_alias(
 
 cargo.rust_library(
     name = "tikv-client-0.4",
-    srcs = [":client-rust-409ec7ebfe5dd3b9.git"],
+    srcs = [":client-rust-33c7c5ee857ad18b.git"],
     crate = "tikv_client",
-    crate_root = "client-rust-409ec7ebfe5dd3b9/src/lib.rs",
+    crate_root = "client-rust-33c7c5ee857ad18b/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "tikv_client",
         "CARGO_CRATE_NAME": "tikv_client",
-        "CARGO_MANIFEST_DIR": "client-rust-409ec7ebfe5dd3b9",
+        "CARGO_MANIFEST_DIR": "client-rust-33c7c5ee857ad18b",
         "CARGO_PKG_AUTHORS": "The TiKV Project Authors",
         "CARGO_PKG_DESCRIPTION": "The Rust language implementation of TiKV client.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -51504,7 +51543,7 @@ cargo.rust_library(
         ":async-trait-0.1",
         ":derive-new-0.5",
         ":either-1",
-        ":fail-0.5",
+        ":fail-0.4",
         ":futures-0.3",
         ":lazy_static-1",
         ":log-0.4",

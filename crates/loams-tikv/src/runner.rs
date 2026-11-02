@@ -37,10 +37,13 @@ pub enum Mode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CommitMode {
     /// Async commit, and one-phase commit when the transaction fits one
-    /// region: `use_async_commit()` + `try_one_pc()` (the default).
-    #[default]
+    /// region: `use_async_commit()` + `try_one_pc()`. Opt-in only since
+    /// D2450: the official tikv-client sends no `max_commit_ts` and does not
+    /// handle TiKV's fallback to 2PC, so a fallback can fail as `OnePcFailure`
+    /// or commit at a timestamp the client did not expect.
     Async1pc,
-    /// Classic two-phase commit, the switch back if async commit misbehaves.
+    /// Classic two-phase commit (the default since D2450).
+    #[default]
     TwoPc,
 }
 
@@ -750,7 +753,7 @@ mod tests {
         assert_eq!(o.deadline, Duration::from_secs(10));
         assert!(!o.commit_token);
         assert_eq!(o.mode, Mode::Optimistic);
-        assert_eq!(CommitMode::default(), CommitMode::Async1pc);
+        assert_eq!(CommitMode::default(), CommitMode::TwoPc);
         assert_eq!(
             TxnOptions::pessimistic("p").with_token().mode,
             Mode::Pessimistic

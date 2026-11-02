@@ -4411,6 +4411,17 @@ dependencies = [
 
 [[package]]
 name = "fail"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3be3c61c59fdc91f5dbc3ea31ee8623122ce80057058be560654c5d410d181a6"
+dependencies = [
+ "lazy_static",
+ "log",
+ "rand 0.7.3",
+]
+
+[[package]]
+name = "fail"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe5e43d0f78a42ad591453aedb1d7ae631ce7ee445c7643691055a9ed8d3b01c"
@@ -8500,7 +8511,7 @@ dependencies = [
  "connectrpc-reflection",
  "datafusion",
  "datafusion-postgres",
- "fail",
+ "fail 0.5.1",
  "futures",
  "getrandom 0.4.3",
  "hex",
@@ -9076,7 +9087,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "crc32c",
- "fail",
+ "fail 0.5.1",
  "futures",
  "lance",
  "lance-file",
@@ -9431,7 +9442,7 @@ dependencies = [
  "bytes",
  "connectrpc",
  "crc32c",
- "fail",
+ "fail 0.5.1",
  "futures",
  "grafeo",
  "grafeo-adapters",
@@ -9507,7 +9518,7 @@ dependencies = [
  "axum 0.8.9",
  "bytes",
  "crc32c",
- "fail",
+ "fail 0.5.1",
  "futures",
  "http",
  "lance",
@@ -9639,7 +9650,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "crc32c",
- "fail",
+ "fail 0.5.1",
  "futures",
  "loams-cache",
  "loams-common",
@@ -9769,7 +9780,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "crc32c",
- "fail",
+ "fail 0.5.1",
  "futures",
  "kafka-protocol",
  "loams-cache",
@@ -9798,7 +9809,7 @@ dependencies = [
  "axum 0.8.9",
  "bytes",
  "crc32c",
- "fail",
+ "fail 0.5.1",
  "futures",
  "loams-common",
  "loams-meta",
@@ -9835,7 +9846,7 @@ name = "loams-meta-tikv"
 version = "0.1.4"
 dependencies = [
  "async-trait",
- "fail",
+ "fail 0.5.1",
  "futures",
  "loams-common",
  "loams-meta-conformance",
@@ -9974,7 +9985,7 @@ dependencies = [
  "base64 0.23.1",
  "bytes",
  "crc32c",
- "fail",
+ "fail 0.5.1",
  "loams-common",
  "loams-kv",
  "loams-meta",
@@ -10698,19 +10709,23 @@ name = "loams-tikv"
 version = "0.1.4"
 dependencies = [
  "axum 0.8.9",
- "fail",
+ "fail 0.5.1",
  "futures",
  "loams-tikv",
  "loams-tuple",
  "proptest",
+ "prost 0.14.4",
  "rand 0.9.5",
  "reqwest 0.13.5",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
- "tikv-client",
+ "tikv-client 0.4.0 (git+https://github.com/tikv/client-rust?rev=1b883bf144a8557938f6069682c61b4d39cf6bf2)",
  "tokio",
  "tokio-util",
+ "tonic 0.14.6",
+ "tonic-prost",
+ "tonic-prost-build",
  "tracing",
 ]
 
@@ -14392,7 +14407,7 @@ dependencies = [
  "resonate-trace",
  "serde",
  "serde_json",
- "tikv-client",
+ "tikv-client 0.4.0 (git+https://github.com/ostrium-labs/client-rust?rev=41b3588f9b63d505dd61e15bf3d26abfd53689a2)",
  "tokio",
  "tracing",
  "uuid",
@@ -17002,13 +17017,41 @@ dependencies = [
 [[package]]
 name = "tikv-client"
 version = "0.4.0"
+source = "git+https://github.com/tikv/client-rust?rev=1b883bf144a8557938f6069682c61b4d39cf6bf2#1b883bf144a8557938f6069682c61b4d39cf6bf2"
+dependencies = [
+ "async-recursion 0.3.2",
+ "async-trait",
+ "derive-new 0.5.9",
+ "either",
+ "fail 0.4.0",
+ "futures",
+ "lazy_static",
+ "log",
+ "pin-project",
+ "prometheus 0.13.4",
+ "prost 0.13.5",
+ "rand 0.8.8",
+ "regex",
+ "semver",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "take_mut",
+ "thiserror 1.0.69",
+ "tokio",
+ "tonic 0.12.3",
+]
+
+[[package]]
+name = "tikv-client"
+version = "0.4.0"
 source = "git+https://github.com/ostrium-labs/client-rust?rev=41b3588f9b63d505dd61e15bf3d26abfd53689a2#41b3588f9b63d505dd61e15bf3d26abfd53689a2"
 dependencies = [
  "async-recursion 0.3.2",
  "async-trait",
  "derive-new 0.5.9",
  "either",
- "fail",
+ "fail 0.5.1",
  "futures",
  "lazy_static",
  "log",

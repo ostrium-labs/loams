@@ -5,8 +5,9 @@
 //! TTL (20 s for a pessimistic transaction) passes, the next writer or reader
 //! must resolve them and go on; before the `tikv-client` pin move of
 //! 2026-10-21 the secondary pessimistic locks stayed until garbage collection.
-//! A reader does not even wait for the TTL: it pushes the crashed writer's
-//! commit timestamp above its read and reads past the locks.
+//! With the official tikv-client (D2450) a reader waits for the TTL too: the
+//! fork's read-past (push the crashed writer's commit timestamp above the read
+//! and read past its locks) is gone, and its test is ignored.
 //!
 //! A crash is a transaction whose rollback the `before-rollback` failpoint
 //! suppresses: the runner drops it, its heartbeat stops, and its locks stay
@@ -291,6 +292,7 @@ async fn prewrite_locks_of_a_crashed_pessimistic_writer_are_resolved_after_their
 /// for the 20 s TTL, so the metastore's reads gave up ("transaction
 /// conflicts outlasted the retries") right after a crash.
 #[tokio::test]
+#[ignore = "needs the client-rust fork's read-past (tikv/client-rust#578, unmerged), dropped by D2450 (official tikv-client)"]
 async fn reads_go_past_a_crashed_writers_prewrite_locks_at_once() {
     let Some(cluster) = testing::cluster().await else {
         return;
