@@ -636,7 +636,7 @@ Recorded by Task 0 on 2026-11-02. Later tasks consume these.
 
 ### OP2-A names (as its draft plan states them)
 
-- Status: none of this is on `main` as of 2026-11-02. `deploy/helm/` holds only `loams-connectors`, `loams-meter-agent` and `loams-risingwave`; there is no `conformance/operator/`. OP2-A has not started. Source: [OP2-A plan](2026-11-02-op2a-operator-v2-core.md), "Interfaces for sibling plans" and Task 18.
+- Status: none of this is on `main` as of 2026-11-02, and this lane uses no `dev` branch (P1). `deploy/helm/` holds only `loams-connectors`, `loams-meter-agent` and `loams-risingwave`; there is no `conformance/operator/`. OP2-A has not started. Source: [OP2-A plan](2026-11-02-op2a-operator-v2-core.md), "Interfaces for sibling plans" and Task 18.
 - Chart: `deploy/helm/loams-operator` (OCI `oci://ghcr.io/ostrium-labs/charts/loams-operator`), installs only into `loams-system`.
 - Marketplace values: `marketplace.index` (default `https://ostrium-labs.github.io/loams-marketplace/index.v2.json`), `marketplace.publicKey` (PEM; empty means `TrustAnchor::official()`), `marketplace.configMap` (optional ConfigMap with the four index files, mounted read-only at `/etc/loams/marketplace/`). With `home.create`, `home.spec.marketplace` takes these values.
 - `file://` sources: yes, but only under `/etc/loams/marketplace/` (for example `file:///etc/loams/marketplace/index.v2.json`). Any other path fails with `SourceError::Unavailable`.
@@ -667,7 +667,7 @@ Source: `cmd/cosign/cli/sign/sign_blob.go`, `pkg/cosign/bundle/protobundle.go` a
     "publicKey": { "hint": "<base64 of sha256(PKIX DER of the public key)>" }
   },
   "messageSignature": {
-    "messageDigest": { "algorithm": "SHA2_256", "digest": "<base64 of the raw sha256 of the file>" },
+    "messageDigest": { "algorithm": "SHA2_256" /* string unconfirmed */, "digest": "<base64 of the raw sha256 of the file>" },
     "signature": "<base64 of the signature bytes>"
   }
 }
@@ -681,12 +681,12 @@ Source: `cmd/cosign/cli/sign/sign_blob.go`, `pkg/cosign/bundle/protobundle.go` a
 
 - `GET /orgs/{org}/public_members/{username}` answers `204 No Content` when the user is a public member and `404 Not Found` when not (GitHub REST docs, "Check public organization membership for a user"). It lists only public members, so a private member also gets 404.
 - Verified read-only on 2026-11-02: `gh api -i /orgs/ostrium-labs/public_members` returns `[]` (nobody is public), and `/orgs/ostrium-labs/public_members/dina-kar` returns 404 while `/orgs/ostrium-labs/members/dina-kar` returns 204 for the authenticated owner.
-- Ruling: a 404 from `public_members` is not a reason to refuse by itself. It is public data and works with a workflow `GITHUB_TOKEN` (no org scope), so the check treats 204 as "member" and 404 as "not a public member", and the `official/` namespace gate must not depend on it for ostrium-labs people. Task 11 uses it only for namespaces whose owners say they are public members, and otherwise uses CODEOWNERS and the maintainers team. The `workflow_policy` self-test stays the fork-safety proof.
+- Ruling (implemented by Task 8, tests `org_non_member_refused` and friends): for a non-reserved org namespace, refuse unless the PR author or an approver gets 204 from `public_members` or is listed in `publishers/<ns>.json` `maintainers`. For reserved namespaces (mapped to ostrium-labs, which has zero public members), use the `publishers/<ns>.json` `maintainers` list only. A 404 means "not a public member" and is not by itself a refusal when the publishers-file list covers the user. The `workflow_policy` self-test stays the fork-safety proof.
 
 ### CODEOWNERS and the maintainers team
 
 - `GET /orgs/ostrium-labs/teams` works for the owner's token. Teams: `maintainers` (slug `maintainers`, "Trusted maintainers: merge dev into main, manage teams and releases") and `committers`.
-- Ruling: CODEOWNERS in `loams-marketplace` lists `@ostrium-labs/maintainers` for the registry-owned paths, with `@dina-kar` as a second owner until team membership is confirmed to cover reviewers. The team must have write access to `ostrium-labs/loams-marketplace`; its repository permission is not checked here. Owner follow-ups, not done by this lane: grant the team access to the repo, and set branch protection on `main` that requires code-owner review and the validate checks.
+- Ruling: CODEOWNERS in `loams-marketplace` lists `@ostrium-labs/maintainers` for the registry-owned paths, with `@dina-kar` as a second owner until team membership is confirmed to cover reviewers. The team must have write access to `ostrium-labs/loams-marketplace`; its repository permission is not checked here. Owner follow-ups, not done by this lane: grant the team access to the repo, set branch protection on `main` that requires code-owner review and the validate checks, and drop the `@dina-kar` second CODEOWNER once team membership and access are confirmed.
 
 ### Lane rulings (controller)
 
