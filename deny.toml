@@ -111,4 +111,4 @@ unknown-git = "deny"
 # The Neon fork is not allowed here: only crates/loams-wal-decoder, a
 # workspace of its own with its own deny.toml, may use it, and
 # scripts/pg2/check-decoder-deny.py fails if this lockfile names it.
-allow-git = ["https://github.com/ostrium-labs/client-rust", "https://github.com/ostrium-labs/resonate", "https://github.com/ostrium-labs/grafeo", "https://github.com/microsoft/graspologic-native"]
+allow-git = ["https://github.com/ostrium-labs/client-rust", "https://github.com/ostrium-labs/resonate", "https://github.com/microsoft/graspologic-native"]

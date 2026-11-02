@@ -338,18 +338,15 @@ source = "https://crates.io/crates/aws-sdk-kinesis"
 # if Grafeo proves unmaintained the standard still stands and only the reference engine changes.
 # No crate here is in [deny], and none needs to be: Apache-2.0 is not a refused id.
 #
-# Since 2026-10-12 all six are built from Loams' fork of Grafeo,
-# https://github.com/ostrium-labs/grafeo, pinned by rev to a release tag `v0.5.43-loams.<n>`: the
-# upstream 0.5.43 source plus the patches its PATCHES.md lists, under the same Apache-2.0 licence
-# (the fork keeps LICENSE and NOTICE and adds a NOTICE line for its modifications). `source` names
-# the fork for that reason.
+# Since 2026-11-02 (D2450) all six are the official crates.io releases, version 0.5.44, from
+# https://github.com/GrafeoDB/grafeo; `source` names the upstream tag.
 [components.grafeo]
 name = "grafeo"
 spdx = "Apache-2.0"
 kind = "library"
-# The facade crate Loams depends on, at 0.5.43 from the fork (D634).
+# The facade crate Loams depends on, at 0.5.44 from crates.io (D634, D2450).
 used_by = ["grafeo"]
-source = "https://github.com/ostrium-labs/grafeo/tree/v0.5.43-loams.1/crates/grafeo"
+source = "https://github.com/GrafeoDB/grafeo/tree/v0.5.44/crates/grafeo"
 
 [components.grafeo-core]
 name = "grafeo-core"
@@ -358,7 +355,7 @@ kind = "library"
 # The core database types behind the facade: nodes, edges, properties and the LPG/RDF models
 # (D634; the spike's Finding 4).
 used_by = ["grafeo"]
-source = "https://github.com/ostrium-labs/grafeo/tree/v0.5.43-loams.1/crates/grafeo-core"
+source = "https://github.com/GrafeoDB/grafeo/tree/v0.5.44/crates/grafeo-core"
 
 [components.grafeo-engine]
 name = "grafeo-engine"
@@ -368,7 +365,7 @@ kind = "library"
 # the MVCC transactions with snapshot isolation that the manifest's `transactional: true` and
 # `position` rest on (D634; the spike's Finding 4).
 used_by = ["grafeo"]
-source = "https://github.com/ostrium-labs/grafeo/tree/v0.5.43-loams.1/crates/grafeo-engine"
+source = "https://github.com/GrafeoDB/grafeo/tree/v0.5.44/crates/grafeo-engine"
 
 [components.grafeo-adapters]
 name = "grafeo-adapters"
@@ -378,7 +375,7 @@ kind = "library"
 # flags: `cypher`, `sql-pgq`, `gremlin`, `graphql` and `sparql` are selectable per instance and
 # GQL is the default (D634(a); the spike's Finding 4).
 used_by = ["grafeo"]
-source = "https://github.com/ostrium-labs/grafeo/tree/v0.5.43-loams.1/crates/grafeo-adapters"
+source = "https://github.com/GrafeoDB/grafeo/tree/v0.5.44/crates/grafeo-adapters"
 
 [components.grafeo-common]
 name = "grafeo-common"
@@ -387,7 +384,7 @@ kind = "library"
 # The types the other four share, so this crate is what makes the set one dependency rather
 # than five (D634).
 used_by = ["grafeo"]
-source = "https://github.com/ostrium-labs/grafeo/tree/v0.5.43-loams.1/crates/grafeo-common"
+source = "https://github.com/GrafeoDB/grafeo/tree/v0.5.44/crates/grafeo-common"
 
 [components.grafeo-storage]
 name = "grafeo-storage"
@@ -401,7 +398,7 @@ kind = "library"
 # (crates/loams-graph/tests/licences.rs) fails when a `grafeo*` crate in a Cargo.lock has no
 # stanza here.
 used_by = ["grafeo"]
-source = "https://github.com/ostrium-labs/grafeo/tree/v0.5.43-loams.1/crates/grafeo-storage"
+source = "https://github.com/GrafeoDB/grafeo/tree/v0.5.44/crates/grafeo-storage"
 
 # Leiden for Loams Graph's `leiden` algorithm (GR1 Task 22, R22.3; design §48 §26.11 D1072):
 # `network_partitions` 0.3.0, the Rust core of Microsoft's graspologic-native, which GraphRAG's

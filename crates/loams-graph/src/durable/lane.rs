@@ -35,7 +35,7 @@ use grafeo_engine::transaction::IsolationLevel;
 use super::faults::KillPoint;
 use super::idempotency::Outcome;
 use super::{Commit, ConsistencyToken, Durable, Isolation, WriteOptions};
-use crate::changeset::capture::{CdcCapture, CommitEvents};
+use crate::changeset::capture::CdcCapture;
 use crate::changeset::{ChangeOp, Counters, GraphChangeSet, GraphRecord, LinkApply, encode};
 use crate::classify::Access;
 use crate::engine::{
@@ -644,8 +644,6 @@ fn run(
     job: &LaneJob,
 ) -> Result<(Vec<GraphResult>, crate::changeset::capture::Captured, u64), Step> {
     let mut session = graph.session_for(job.access);
-    let commit = CommitEvents::default();
-    commit.listen(&session);
     let level = match job.options.isolation {
         Isolation::Snapshot => IsolationLevel::SnapshotIsolation,
         Isolation::Serializable => IsolationLevel::Serializable,
@@ -677,18 +675,16 @@ fn run(
             other => Step::Fatal(other),
         });
     }
-    // The engine hands the commit's epoch and events to the session's listener as it commits
-    // (Grafeo fork patch LG-0001): the epoch is the transaction's own (R0.5) and the events cannot
-    // have been pruned from the CDC log before the capture reads them (R9.9).
-    let (commit_epoch, events) = commit.take().ok_or_else(|| {
-        Step::Fatal(GraphError::engine(
-            "change capture: the engine reported no commit",
-        ))
-    })?;
+    // The commit's epoch is the engine's current epoch: the lane holds the graph's exclusive gate
+    // from `begin` until the change set is durable, so nothing else commits in between (R0.5).
+    // Official Grafeo has no commit listener (D2450 dropped the fork's LG-0001), so the capture
+    // reads the commit back from the CDC log; if retention or eviction has already pruned its
+    // events (R9.9), the capture fails and the graph reloads from the log.
+    let commit_epoch = graph.db().current_epoch().as_u64();
     reach(graph, KillPoint::Committed);
     // A failed capture, injected for one graph by name (`durability.rs`,
     // `a_refused_capture_reloads_and_hides`). The engine bug that used to provoke one (R9.8) is
-    // fixed by the fork's LG-0004.
+    // fixed only by the fork's LG-0004, which official Grafeo lacks (D2450).
     #[cfg(feature = "failpoints")]
     if fail::eval("loams_graph::capture", |target| {
         target.as_deref() == Some(graph.name())
@@ -700,7 +696,7 @@ fn run(
         )));
     }
     let captured = CdcCapture::new(graph.db())
-        .and_then(|capture| capture.capture_events(events))
+        .and_then(|capture| capture.capture(commit_epoch))
         .map_err(Step::Fatal)?;
     reach(graph, KillPoint::Captured);
     let results = results

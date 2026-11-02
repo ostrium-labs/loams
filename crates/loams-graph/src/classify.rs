@@ -347,8 +347,13 @@ fn check_plan(root: &LogicalOperator, text: &str, max_hops: u32) -> Result<(), G
     if text.contains("ShortestPath(") && text.contains("all_paths: true") {
         return Err(GraphError::AllShortestPaths);
     }
-    // Every `ExpandOp` prints `max_hops: None` or `max_hops: Some(<n>)`.
+    // Every `ExpandOp` prints `max_hops: None` or `max_hops: Some(<n>)`. Since Grafeo 0.5.44 a
+    // `ShortestPathOp` prints one too, right after its `all_paths` and `min_hops`; a single
+    // shortest-path search is one breadth-first search, served whatever its bound (R6.4).
     for (at, _) in text.match_indices("max_hops: ") {
+        if is_shortest_path_bound(&text[..at]) {
+            continue;
+        }
         let rest = &text[at + "max_hops: ".len()..];
         let bounded = rest
             .strip_prefix("Some(")
@@ -360,6 +365,28 @@ fn check_plan(root: &LogicalOperator, text: &str, max_hops: u32) -> Result<(), G
         }
     }
     Ok(())
+}
+
+/// Whether the `max_hops: ` that follows `before` is a `ShortestPathOp`'s: its Debug text ends
+/// `all_paths: <bool>, min_hops: <n>, max_hops: <bound>`.
+fn is_shortest_path_bound(before: &str) -> bool {
+    let Some(at) = before.rfind("all_paths: ") else {
+        return false;
+    };
+    let tail = &before[at + "all_paths: ".len()..];
+    let Some(tail) = tail
+        .strip_prefix("true")
+        .or_else(|| tail.strip_prefix("false"))
+    else {
+        return false;
+    };
+    let Some(digits) = tail
+        .strip_prefix(", min_hops: ")
+        .and_then(|rest| rest.strip_suffix(", "))
+    else {
+        return false;
+    };
+    !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// Walks a plan's operator tree for operators no caller may run.
