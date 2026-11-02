@@ -20,8 +20,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use iggy::prelude::{
     Client, HeaderKey, HeaderValue, Identifier, IggyClient, IggyClientBuilder, IggyMessage,
-    MessageClient, Partitioning, StreamClient, StreamCreateOptions, TopicClient,
-    TopicCreateOptions, UserClient,
+    MessageClient, Partitioning, StreamClient, TopicClient, TopicCreateOptions, UserClient,
 };
 use loams_iggy_sink::memory::MemoryTarget;
 use loams_iggy_sink::{
@@ -70,10 +69,7 @@ async fn admin(server: &Server) -> IggyClient {
 }
 
 async fn create(client: &IggyClient, stream: &str, topic: &str, partitions: u32) {
-    client
-        .create_stream(stream, &StreamCreateOptions::default())
-        .await
-        .expect("create stream");
+    client.create_stream(stream).await.expect("create stream");
     client
         .create_topic(
             &Identifier::named(stream).expect("name"),
