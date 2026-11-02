@@ -23,11 +23,13 @@ downtime_seconds = 300
 # Unreleased; the pins the next 0.1.x ships (D2450: official dependencies, no
 # forks). Grafeo moves from the fork's 0.5.43 to the official 0.5.44 (#1658):
 # a build input; Loams Graph stores its own change log, not Grafeo's files.
+# TiDB moves from the patched `v8.5.8-loams.1` to the official `v8.5.8` image
+# (#1654), without pingcap/tidb#60403: same data format.
 
 [release.components]
 pd             = "v8.5.8"
 tikv           = "v8.5.8"
-tidb           = "v8.5.8-loams.1"
+tidb           = "v8.5.8"
 loams_postgres = "sha256:4dcec4cbef637b92b1088ea2c0bc857f3b5ef4318f02e8d2d4a0f9263ed4140e"
 chdb           = "26.9.0"
 grafeo         = "0.5.44"
@@ -45,13 +47,12 @@ downtime_seconds = 300
 # profile gains the one-shot pg-upcall-token service and its volume (NF2
 # Task 13). Everything new (cost attribution, transfers, the meter's
 # reconciliation, notifications and exports, the cluster CA) is off by
-# default or behind configuration. TiDB moves from the patched
-# `v8.5.8-loams.1` to the official `v8.5.8` image (D2450).
+# default or behind configuration.
 
 [release.components]
 pd             = "v8.5.8"
 tikv           = "v8.5.8"
-tidb           = "v8.5.8"
+tidb           = "v8.5.8-loams.1"
 loams_postgres = "sha256:4dcec4cbef637b92b1088ea2c0bc857f3b5ef4318f02e8d2d4a0f9263ed4140e"
 chdb           = "26.9.0"
 grafeo         = "0.5.43"
