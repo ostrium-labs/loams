@@ -25,6 +25,7 @@ pub mod index;
 #[cfg(feature = "agentd")]
 pub mod install;
 pub mod listing;
+pub mod listing_v2;
 #[cfg(feature = "agentd")]
 pub mod market;
 #[cfg(feature = "agentd")]
@@ -45,6 +46,12 @@ pub use artifact::{ArtifactFetch, ArtifactSources, FetchError, Origin};
 pub use engine::{Engine, EngineError, EngineProbe, ResolvedEngine};
 #[cfg(feature = "fetch")]
 pub use fetch::{Fetcher, HttpsFetcher};
+pub use index::Tier;
+pub use listing_v2::{
+    CostHint, DependsOn, Gpu, GpuVendor, Health, ListingError, ListingKind, ListingV2, Package,
+    Port, PortProtocol, ProvenanceRef, ProvenanceType, Requires, Run, SchemaVersion, SourceRef,
+    StorageKind, Target,
+};
 #[cfg(feature = "agentd")]
 pub use market::{ListingView, MarketError, Marketplace, Query, SourceInfo, Summary};
 #[cfg(feature = "agentd")]
