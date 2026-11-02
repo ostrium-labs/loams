@@ -1,5 +1,7 @@
 # 70 — BYOC on AWS, Google Cloud, Azure, Cloudflare and Vercel
 
+> **Amendment (approved 2026-11-02) by [§86](86-open-platform-operator-v2.md)** (Loams Open Platform: operator v2, open marketplace, one-click deploy anywhere). One-click deploy. The BYOC modules become one-click targets run on the user's machine with the user's credentials (Desktop deep link, `loams deploy`, a copy-paste OpenTofu module), with a cost estimate and confirmation before every apply; new `*-k3s` and managed-Kubernetes home targets sit beside the compose VMs (D2611–D2616, D2627). D1580 (no vendor marketplace listings) stands.
+
 > **Amendment (approved 2026-10-23) by [§78](78-loams-cloud-on-tidb-x.md)** (Loams Cloud on TiDB X; D1700–D1735). D1351 and D1378 stand for BYOC; D1701 clarifies their wording, since Loams Cloud is a free try-out control plane and dev-state store, not a data plane. `tidbx` joins the target list as a **state** target, and the deploy order becomes TiDB X → Cloudflare → Vercel → AWS → Google Cloud → Azure, with AWS, Google Cloud and Azure as the production targets (D1706). Target manifests reference this document's tiers instead of repeating them (D1707).
 
 > **Amendment (approved 2026-10-23) by [§79](79-void-and-vite-plus.md)** (Void and Vite+; D1770–D1791 approved by the owner). The console in every BYOC tier is built with Vite+ (D1772). Data-plane BYOC is otherwise unchanged: Void deploys only to Cloudflare and never deploys the Loams data plane.

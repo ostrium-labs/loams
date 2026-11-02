@@ -1,5 +1,7 @@
 # 73 — The Loams Agent Marketplace: Any Framework, Mastra First
 
+> **Amendment (approved 2026-11-02) by [§86](86-open-platform-operator-v2.md)** (Loams Open Platform: operator v2, open marketplace, one-click deploy anywhere). The open marketplace. The Seed Exchange accepts every listing kind (`agent`, `harness`, `mcp-server`, `app`, `engine`) in `listing/v2`, from any GitHub user or org namespace, by pull request with automated checks; Verified needs LAPC or the new Listing Install Conformance; `loams-node` is agentd plus device sync (D2605–D2610, D2624–D2626). D1452, D1455, D1467, D1470 and D1477 are amended; D1461 is amended by D2630.
+
 > **Amendment (approved 2026-10-23) by [§78](78-loams-cloud-on-tidb-x.md)** (Loams Cloud on TiDB X; D1700–D1735). D1461's rationale ("Ostrium hosts only the console and auth") reads "plus the Loams Cloud try-out (D1701)"; the index decision itself is unchanged.
 
 > **Amendment (approved 2026-10-21) by [§76](76-identity-and-authorization.md)** (identity and authorization: Zitadel and OpenFGA; owner, all defaults). An installed marketplace agent becomes one Zitadel machine user (`agent:<id>`) in the installing org with no grants until someone grants them; inside a sandbox it still holds only agentd's 15-minute Loams token (D1453), whose `sub` is that machine-user id (D1607, D1618).

@@ -1,5 +1,7 @@
 # 51 — Loams Postgres: Our Hard Fork of Neon — Mirror, Build, Maintain, Extend
 
+> **Amendment (approved 2026-11-02) by [§86](86-open-platform-operator-v2.md)** (Loams Open Platform: operator v2, open marketplace, one-click deploy anywhere). Superseded. No forks (D2450): the Loams Postgres hard fork ends; see D2631 for Postgres from here on.
+
 Status: **Proposed** · 2026-10-09, **amended the same day for the hard fork** (§1a). Sources, both binding: the owner's decision **"Mirror and fully fork neon postgres all repos we will maintain it add extension new pg 19 support etc."**, and the owner's later decision **"let the neon fork be hard fork, neon stopped open source after databricks acquisition and went silent over a repo, replace with our loams, let it be called loams-postgres not loams-neon."** Decisions **D800–D824** and questions **Q715–Q734** are recorded in the [decision log](13-decision-log.md). Plan: [NF1](../plans/2026-10-09-nf1-neon-fork.md).
 
 This file was `51-neon-fork.md` until the amendment.
