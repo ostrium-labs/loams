@@ -1,5 +1,7 @@
 # 71 — App BYOC: Apps and Agents on Each Cloud's Free Tier
 
+> **Amendment (approved 2026-11-02) by [§86](86-open-platform-operator-v2.md)** (Loams Open Platform: operator v2, open marketplace, one-click deploy anywhere). App BYOC free-tier modules stay as one-click targets for apps that fit them (D2612).
+
 > **Amendment (approved 2026-10-23) by [§78](78-loams-cloud-on-tidb-x.md)** (Loams Cloud on TiDB X; D1700–D1735). Target manifests (`deploy/targets/<id>.toml`, D1707, D1735) reference this document's free-tier table for app ports instead of copying it, and `loams app deploy --target` reads the same target ids as `loams byoc deploy` and `loams promote` (D1706, D1724).
 
 > **Amendment (approved 2026-10-23) by [§79](79-void-and-vite-plus.md)** (Void and Vite+; D1770–D1791 approved by the owner). Void becomes the recommended authoring framework, portable by default (D1392, D1778). For Void apps on Cloudflare, `void deploy` replaces `wrangler` (D1406, D1779). Bundling moves from esbuild to Vite+ (Rolldown). On AWS, Google Cloud, Azure and Vercel, §7's shims wrap Void's `node` build (D1780), because Void has no deploy adapter for them. New targets: `void-platform` (D1782) and a self-hosted image (D1781). Self-hosted and container targets (Cloud Run) run a Bun binary compiled ahead of time, while Lambda, Azure Functions and Vercel keep Node (D1791). Deno is not a target (D1790). The portable contract (D1391) and the ports (D1393) stand.

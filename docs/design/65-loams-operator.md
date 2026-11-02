@@ -1,5 +1,7 @@
 # 65 — Loams Operator: One Rust Operator for the Whole Platform, and Loams Operator Conformance
 
+> **Amendment (approved 2026-11-02) by [§86](86-open-platform-operator-v2.md)** (Loams Open Platform: operator v2, open marketplace, one-click deploy anywhere). Operator v2. The operator also installs marketplace listings (`LoamsInstall`), binds them to customer-owned cloud storage (`StorageBinding`) and tracks laptops and devices (`LoamsDevice`, `LoamsFleet`); official upstream operators are the default drivers and native reconcilers are optional and LOC-gated; Loams engines become `engine` listings in a home cluster (D2601–D2604, D2623). D1172, D1175 and D1182 are amended; D718's `LoamsPostgres` is superseded by D2631.
+
 Status: **Approved** · 2026-10-19 (owner approved all decisions and questions with their defaults, 2026-10-19). Source: the owner's request of 2026-10-19, **"There is a TiDB Rust Kubernetes operator. Fork it and write a plan for the Loams operator: a single operator for the entire Loams platform, with HA. Only design it; we can build it slowly. It should have a conformance suite that inspires all other operators."** Decisions **D1172–D1201** and questions **Q984–Q999** are in the [decision log](13-decision-log.md), all approved by the owner on 2026-10-19 with their recommended defaults. The numbers follow §64 (D1150–D1171, Q970–Q983). Plan stub: [OP1](../plans/2026-10-19-op1-loams-operator.md). **This document writes no code.**
 
 Builds on:
