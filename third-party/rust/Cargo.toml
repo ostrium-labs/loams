@@ -85,7 +85,7 @@ httpmock = { package = "httpmock", version = "=0.8.3", default-features = false,
 humantime = { package = "humantime", version = "=2.4.0", default-features = false }
 hyper = { package = "hyper", version = "=1.12.0", default-features = true, features = ["client", "full", "http1", "http2", "server"] }
 hyper-util = { package = "hyper-util", version = "=0.1.21", default-features = true, features = ["client", "client-legacy", "client-proxy", "client-proxy-system", "http1", "http2", "server", "server-auto", "server-graceful", "service", "tokio", "tracing"] }
-iggy = { package = "iggy", version = "=0.11.1-edge.2", default-features = false }
+iggy = { package = "iggy", version = "=0.11.0", default-features = false }
 ignore = { package = "ignore", version = "=0.4.33", default-features = false }
 itertools = { package = "itertools", version = "=0.15.0", default-features = true, features = ["use_alloc", "use_std"] }
 jsonschema = { package = "jsonschema", version = "=0.58.6", default-features = false }

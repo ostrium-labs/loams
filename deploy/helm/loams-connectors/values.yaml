@@ -93,7 +93,9 @@ fallback:
       storageClass: ""
   iggy:
     image:
-      repository: ghcr.io/ostrium-labs/iggy-connectors
+      # The official Apache Iggy connectors runtime (D2450); pin a digest of a
+      # release that matches the Iggy server's version.
+      repository: docker.io/apache/iggy-connect
       digest: ""
     uid: 10001
     metricsPort: 8081

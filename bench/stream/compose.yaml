@@ -3,7 +3,7 @@
 # time (profiles `risingwave`, `flink`). Every service is pinned with cpuset:
 #
 #   0-5    the engine under test (all roles share these 6 cores; ENGINE_CPUSET)
-#   6-7    Iggy server and its Kafka gateway
+#   6-7    Iggy server (the Kafka gateway is gone: D2450)
 #   8-11   the load generator (run.sh starts it with --cpuset-cpus)
 #   12-13  infrastructure (Postgres for metadata, RustFS, Lakekeeper; INFRA_CPUSET)
 #
@@ -37,7 +37,7 @@ x-rw-env: &rw-env
 
 services:
   iggy:
-    image: ghcr.io/ostrium-labs/iggy@sha256:649c20714dcde257131be46e456ab32bf62d283a047c26b41b3c8c3132cea332
+    image: docker.io/apache/iggy:0.9.0@sha256:b35fc2841964f2962a5f164d33b3ae3a9de99a66920defd3cd8a1c039470602d
     command: ["/usr/local/bin/iggy-server"]
     cpuset: "6-7"
     cap_add: [SYS_NICE]
@@ -51,7 +51,6 @@ services:
       IGGY_HTTP_ADDRESS: 0.0.0.0:3000
       IGGY_QUIC_ADDRESS: 0.0.0.0:8080
       IGGY_WEBSOCKET_ADDRESS: 0.0.0.0:8092
-      IGGY_NODE_ADVERTISED_ADDRESS: iggy
     volumes:
       - /mnt/Projects/bench-data/bq1-stream/iggy:/app/local_data
     healthcheck:
@@ -59,25 +58,6 @@ services:
       interval: 2s
       timeout: 3s
       retries: 60
-
-  kafka-gateway:
-    image: ghcr.io/ostrium-labs/iggy@sha256:649c20714dcde257131be46e456ab32bf62d283a047c26b41b3c8c3132cea332
-    command: ["/usr/local/bin/iggy-gateway-kafka"]
-    cpuset: "6-7"
-    environment:
-      RUST_LOG: warn
-      IGGY_KAFKA_BIND_ADDR: 0.0.0.0:9093
-      # The load generator and the engines both run on the compose network.
-      IGGY_KAFKA_ADVERTISED_HOST: kafka-gateway
-      IGGY_KAFKA_ADVERTISED_PORT: "9093"
-      IGGY_KAFKA_BRIDGE_ENABLED: "true"
-      IGGY_KAFKA_IGGY_ADDR: iggy:8090
-      IGGY_KAFKA_IGGY_USERNAME: iggy
-      IGGY_KAFKA_IGGY_PASSWORD: benchbench
-      IGGY_KAFKA_SASL_ENABLED: "false"
-      IGGY_KAFKA_AUTO_CREATE_TOPICS_ENABLED: "false"
-    depends_on:
-      iggy: { condition: service_healthy }
 
   postgres:
     <<: *infra

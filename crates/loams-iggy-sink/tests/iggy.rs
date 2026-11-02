@@ -1,14 +1,14 @@
-//! The sink against a real Iggy server: the image the `kafka` compose profile
-//! pins (ostrium-labs/iggy). `deploy/release/ci/iggy-sink-it.sh` starts it and
+//! The sink against a real Iggy server: the official Apache Iggy image the
+//! `iggy` compose profile pins (D2450). `deploy/release/ci/iggy-sink-it.sh` starts it and
 //! runs these with:
 //!
 //! - `LOAMS_IGGY_SINK_IT`: Iggy's TCP address (`127.0.0.1:<port>`);
 //! - `LOAMS_IGGY_SINK_IT_USER`, `LOAMS_IGGY_SINK_IT_PASSWORD`: the root user;
 //! - `LOAMS_IGGY_SINK_IT_RESTART` (optional): a shell command that restarts
 //!   the server, for the restart test;
-//! - `LOAMS_IGGY_SINK_IT_KAFKA_TOPIC` (optional): a topic of the `kafka`
-//!   stream the script produced to with kcat through the gateway, holding
-//!   `k1:v1` (header `trace=abc`) and `k2:{"n":2}`.
+//! - `LOAMS_IGGY_SINK_IT_KAFKA_TOPIC` (optional, only for the ignored Kafka
+//!   gateway test): a topic of the `kafka` stream written by the Iggy Kafka
+//!   gateway, which only Ostrium's fork had and D2450 dropped.
 //!
 //! Without `LOAMS_IGGY_SINK_IT` each test prints a skip line and passes.
 
@@ -374,9 +374,10 @@ async fn the_sink_survives_an_iggy_restart() {
         .await;
 }
 
-/// Records the Kafka gateway wrote (kcat, through the `kafka` profile) map to
-/// Kafka record events: key, headers, value.
+/// Records the Kafka gateway wrote (kcat, through the former `kafka` profile)
+/// map to Kafka record events: key, headers, value.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs the Iggy Kafka gateway, dropped by D2450 (official Apache Iggy)"]
 async fn records_from_the_kafka_gateway_map_to_kafka_events() {
     let Some(server) = server("records_from_the_kafka_gateway_map_to_kafka_events") else {
         return;

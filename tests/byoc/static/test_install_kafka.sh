@@ -13,10 +13,10 @@ r() { "$inst" --render-env-only "$@" 2>&1; }
 refused() { if "$inst" --render-env-only "$@" >/dev/null 2>&1; then return 1; fi; }
 bs="SASL_SSL://pkc-abc12.us-east-1.aws.confluent.cloud:9092"
 
-# iggy: the kafka profile only; no connect, no auth change.
+# iggy: the iggy profile only; no connect, no auth change.
 o="$(r --kafka iggy)"
-grep -qx 'COMPOSE_PROFILES=kafka' <<<"$o" && ! grep -q 'LOAMS_AUTH_MODE\|connect/instances' <<<"$o" \
-  && ok "iggy: the kafka profile only" || bad "iggy: $o"
+grep -qx 'COMPOSE_PROFILES=iggy' <<<"$o" && ! grep -q 'LOAMS_AUTH_MODE\|connect/instances' <<<"$o" \
+  && ok "iggy: the iggy profile only" || bad "iggy: $o"
 
 # confluent: the connectors profile, apikey beside tailscale, one file per topic and sink.
 o="$(r --kafka confluent --confluent-bootstrap "$bs" --confluent-topics orders,cdc.app.users=users --confluent-sinks events=loams-prod-events --dir prod)"
@@ -58,7 +58,7 @@ fi
 
 # --cloud: the fetcher's integration in config.env.
 o="$(r --cloud aws --bucket s3://b/loams --region us-east-1 --kafka iggy,confluent --confluent-bootstrap "$bs" --confluent-integration main --confluent-topics orders --confluent-rate 1048576)"
-grep -qx 'COMPOSE_PROFILES=kafka,connectors' <<<"$o" && grep -qx 'CONFLUENT_INTEGRATIONS=main' <<<"$o" \
+grep -qx 'COMPOSE_PROFILES=iggy,connectors' <<<"$o" && grep -qx 'CONFLUENT_INTEGRATIONS=main' <<<"$o" \
   && grep -qx 'CONNECT_NAMESPACE=0' <<<"$o" && grep -q 'confluent-main/password' <<<"$o" \
   && grep -q 'bytes_per_sec: 1048576' <<<"$o" && ok "iggy,confluent with --cloud" || bad "cloud: $o"
 o="$(r --cloud aws --bucket s3://b/loams --region us-east-1)"

@@ -23942,23 +23942,23 @@ cargo_alias(
 )
 
 http_archive(
-    name = "iggy-0.11.1-edge.2.crate",
-    sha256 = "df187b330ecc195c3983dbadb1405f5f428cb7403aeab0fc19ca8663d1ccc247",
-    strip_prefix = "iggy-0.11.1-edge.2",
-    urls = ["https://static.crates.io/crates/iggy/0.11.1-edge.2/download"],
+    name = "iggy-0.11.0.crate",
+    sha256 = "13d604e5573ec5f6bed2fcc3103f7d7ec2d42207312012b7d96487008a0c8d24",
+    strip_prefix = "iggy-0.11.0",
+    urls = ["https://static.crates.io/crates/iggy/0.11.0/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "iggy-0.11",
-    srcs = [":iggy-0.11.1-edge.2.crate"],
+    srcs = [":iggy-0.11.0.crate"],
     crate = "iggy",
-    crate_root = "iggy-0.11.1-edge.2.crate/src/lib.rs",
+    crate_root = "iggy-0.11.0.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "iggy",
         "CARGO_CRATE_NAME": "iggy",
-        "CARGO_MANIFEST_DIR": "iggy-0.11.1-edge.2.crate",
+        "CARGO_MANIFEST_DIR": "iggy-0.11.0.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Iggy is the persistent message streaming platform written in Rust, supporting QUIC, TCP and HTTP transport protocols, capable of processing millions of messages per second.",
         "CARGO_PKG_HOMEPAGE": "https://iggy.apache.org",
@@ -23966,11 +23966,11 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/apache/iggy",
         "CARGO_PKG_RUST_VERSION": "1.95",
-        "CARGO_PKG_VERSION": "0.11.1-edge.2",
+        "CARGO_PKG_VERSION": "0.11.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "11",
-        "CARGO_PKG_VERSION_PATCH": "1",
-        "CARGO_PKG_VERSION_PRE": "edge.2",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
     },
     visibility = [],
     deps = [
@@ -24008,23 +24008,23 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "iggy_binary_protocol-0.11.1-edge.2.crate",
-    sha256 = "444fd1b1c0511103654a8c0325bf5cc92824c105b7cbe667a4c29f51f1354dfd",
-    strip_prefix = "iggy_binary_protocol-0.11.1-edge.2",
-    urls = ["https://static.crates.io/crates/iggy_binary_protocol/0.11.1-edge.2/download"],
+    name = "iggy_binary_protocol-0.11.0.crate",
+    sha256 = "dc1dfab100ec08e587dc5348c6cbfa52353d93e7cc03f63655e2251ac3adc230",
+    strip_prefix = "iggy_binary_protocol-0.11.0",
+    urls = ["https://static.crates.io/crates/iggy_binary_protocol/0.11.0/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "iggy_binary_protocol-0.11",
-    srcs = [":iggy_binary_protocol-0.11.1-edge.2.crate"],
+    srcs = [":iggy_binary_protocol-0.11.0.crate"],
     crate = "iggy_binary_protocol",
-    crate_root = "iggy_binary_protocol-0.11.1-edge.2.crate/src/lib.rs",
+    crate_root = "iggy_binary_protocol-0.11.0.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "iggy_binary_protocol",
         "CARGO_CRATE_NAME": "iggy_binary_protocol",
-        "CARGO_MANIFEST_DIR": "iggy_binary_protocol-0.11.1-edge.2.crate",
+        "CARGO_MANIFEST_DIR": "iggy_binary_protocol-0.11.0.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Wire protocol types and codec for the Iggy binary protocol. Shared between server and SDK.",
         "CARGO_PKG_HOMEPAGE": "https://iggy.apache.org",
@@ -24032,11 +24032,11 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/apache/iggy",
         "CARGO_PKG_RUST_VERSION": "1.95",
-        "CARGO_PKG_VERSION": "0.11.1-edge.2",
+        "CARGO_PKG_VERSION": "0.11.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "11",
-        "CARGO_PKG_VERSION_PATCH": "1",
-        "CARGO_PKG_VERSION_PRE": "edge.2",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
     },
     visibility = [],
     deps = [
@@ -24052,23 +24052,23 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "iggy_common-0.11.1-edge.2.crate",
-    sha256 = "fed4fc43bbc44cd2ba59f32bcc2e8854423269d6e6a338ca916670c432980bba",
-    strip_prefix = "iggy_common-0.11.1-edge.2",
-    urls = ["https://static.crates.io/crates/iggy_common/0.11.1-edge.2/download"],
+    name = "iggy_common-0.11.0.crate",
+    sha256 = "15e5cd528c3222e3e785148f1a888e736fa83a0bf429aec6f5a95a67fa7103a3",
+    strip_prefix = "iggy_common-0.11.0",
+    urls = ["https://static.crates.io/crates/iggy_common/0.11.0/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "iggy_common-0.11",
-    srcs = [":iggy_common-0.11.1-edge.2.crate"],
+    srcs = [":iggy_common-0.11.0.crate"],
     crate = "iggy_common",
-    crate_root = "iggy_common-0.11.1-edge.2.crate/src/lib.rs",
+    crate_root = "iggy_common-0.11.0.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "iggy_common",
         "CARGO_CRATE_NAME": "iggy_common",
-        "CARGO_MANIFEST_DIR": "iggy_common-0.11.1-edge.2.crate",
+        "CARGO_MANIFEST_DIR": "iggy_common-0.11.0.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Iggy is the persistent message streaming platform written in Rust, supporting QUIC, TCP and HTTP transport protocols, capable of processing millions of messages per second.",
         "CARGO_PKG_HOMEPAGE": "https://iggy.apache.org",
@@ -24076,11 +24076,11 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/apache/iggy",
         "CARGO_PKG_RUST_VERSION": "1.95",
-        "CARGO_PKG_VERSION": "0.11.1-edge.2",
+        "CARGO_PKG_VERSION": "0.11.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "11",
-        "CARGO_PKG_VERSION_PATCH": "1",
-        "CARGO_PKG_VERSION_PRE": "edge.2",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
     },
     visibility = [],
     deps = [

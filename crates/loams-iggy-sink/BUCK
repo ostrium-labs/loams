@@ -8,7 +8,7 @@ cargo_package(
     manifest_dir = "crates/loams-iggy-sink",
     env = {
         "CARGO_PKG_AUTHORS": "The Loams Authors",
-        "CARGO_PKG_DESCRIPTION": "loams_sink (FL1 Task 10, design \u00a732 \u00a75.10): the Iggy to Loams hop. Consumes Iggy topics (the `kafka` compose profile's Kafka gateway writes there) and appends each message to a Loams stream as a CloudEvent, at least once and deduplicated by its Iggy offset.",
+        "CARGO_PKG_DESCRIPTION": "loams_sink (FL1 Task 10, design \u00a732 \u00a75.10): the Iggy to Loams hop. Consumes Iggy topics (the `iggy` compose profile runs the official Iggy server) and appends each message to a Loams stream as a CloudEvent, at least once and deduplicated by its Iggy offset.",
         "CARGO_PKG_HOMEPAGE": "",
         "CARGO_PKG_LICENSE": "Apache-2.0",
         "CARGO_PKG_LICENSE_FILE": "",

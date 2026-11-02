@@ -235,7 +235,7 @@ data:
           size: "10Gi"
       iggy:
         image:
-          repository: "ghcr.io/ostrium-labs/iggy-connectors"
+          repository: "docker.io/apache/iggy-connect"
           digest: "sha256:3333333333333333333333333333333333333333333333333333333333333333"
         uid: 10001
         metrics_port: 8081
