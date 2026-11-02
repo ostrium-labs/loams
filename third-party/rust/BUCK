@@ -14,13 +14,6 @@ git_fetch(
 )
 
 git_fetch(
-    name = "grafeo-9bdcc1c5e4b720e7.git",
-    repo = "https://github.com/ostrium-labs/grafeo",
-    rev = "bc6091e35953935f8221c3f0631d5aae77858e8f",
-    visibility = [],
-)
-
-git_fetch(
     name = "graspologic-native-78b58a70b02536ed.git",
     repo = "https://github.com/microsoft/graspologic-native",
     rev = "773181488b4e5b81925e302b972b294fd51f61a4",
@@ -20173,16 +20166,24 @@ cargo_alias(
     visibility = ["PUBLIC"],
 )
 
+http_archive(
+    name = "grafeo-0.5.44.crate",
+    sha256 = "29af4411d0dd42516da00555c1e87e8f901d55f934bee27c69a6357d8fe29cf9",
+    strip_prefix = "grafeo-0.5.44",
+    urls = ["https://static.crates.io/crates/grafeo/0.5.44/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "grafeo-0.5",
-    srcs = [":grafeo-9bdcc1c5e4b720e7.git"],
+    srcs = [":grafeo-0.5.44.crate"],
     crate = "grafeo",
-    crate_root = "grafeo-9bdcc1c5e4b720e7/crates/grafeo/src/lib.rs",
+    crate_root = "grafeo-0.5.44.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "grafeo",
         "CARGO_CRATE_NAME": "grafeo",
-        "CARGO_MANIFEST_DIR": "grafeo-9bdcc1c5e4b720e7",
+        "CARGO_MANIFEST_DIR": "grafeo-0.5.44.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "A high-performance, embeddable graph database with a Rust core and no required C dependencies",
         "CARGO_PKG_HOMEPAGE": "",
@@ -20190,10 +20191,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/GrafeoDB/grafeo",
         "CARGO_PKG_RUST_VERSION": "1.91.1",
-        "CARGO_PKG_VERSION": "0.5.43",
+        "CARGO_PKG_VERSION": "0.5.44",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "5",
-        "CARGO_PKG_VERSION_PATCH": "43",
+        "CARGO_PKG_VERSION_PATCH": "44",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -20229,16 +20230,24 @@ cargo_alias(
     visibility = ["PUBLIC"],
 )
 
+http_archive(
+    name = "grafeo-adapters-0.5.44.crate",
+    sha256 = "64e442f93246d7dd3f13f897623579ae4468844ecd60d8c129716980d18f426c",
+    strip_prefix = "grafeo-adapters-0.5.44",
+    urls = ["https://static.crates.io/crates/grafeo-adapters/0.5.44/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "grafeo-adapters-0.5",
-    srcs = [":grafeo-9bdcc1c5e4b720e7.git"],
+    srcs = [":grafeo-adapters-0.5.44.crate"],
     crate = "grafeo_adapters",
-    crate_root = "grafeo-9bdcc1c5e4b720e7/crates/grafeo-adapters/src/lib.rs",
+    crate_root = "grafeo-adapters-0.5.44.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "grafeo_adapters",
         "CARGO_CRATE_NAME": "grafeo_adapters",
-        "CARGO_MANIFEST_DIR": "grafeo-9bdcc1c5e4b720e7",
+        "CARGO_MANIFEST_DIR": "grafeo-adapters-0.5.44.crate",
         "CARGO_PKG_AUTHORS": "S.T. Grond",
         "CARGO_PKG_DESCRIPTION": "Storage, query language, and plugin adapters for Grafeo",
         "CARGO_PKG_HOMEPAGE": "",
@@ -20246,10 +20255,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "https://github.com/GrafeoDB/grafeo",
         "CARGO_PKG_RUST_VERSION": "1.91.1",
-        "CARGO_PKG_VERSION": "0.5.43",
+        "CARGO_PKG_VERSION": "0.5.44",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "5",
-        "CARGO_PKG_VERSION_PATCH": "43",
+        "CARGO_PKG_VERSION_PATCH": "44",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -20286,16 +20295,24 @@ cargo_alias(
     visibility = ["PUBLIC"],
 )
 
+http_archive(
+    name = "grafeo-common-0.5.44.crate",
+    sha256 = "57df2ae6f700d93d8f5bc7d46de2acd566b38eeb7c12edc0cb1a69923597f94f",
+    strip_prefix = "grafeo-common-0.5.44",
+    urls = ["https://static.crates.io/crates/grafeo-common/0.5.44/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "grafeo-common-0.5",
-    srcs = [":grafeo-9bdcc1c5e4b720e7.git"],
+    srcs = [":grafeo-common-0.5.44.crate"],
     crate = "grafeo_common",
-    crate_root = "grafeo-9bdcc1c5e4b720e7/crates/grafeo-common/src/lib.rs",
+    crate_root = "grafeo-common-0.5.44.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "grafeo_common",
         "CARGO_CRATE_NAME": "grafeo_common",
-        "CARGO_MANIFEST_DIR": "grafeo-9bdcc1c5e4b720e7",
+        "CARGO_MANIFEST_DIR": "grafeo-common-0.5.44.crate",
         "CARGO_PKG_AUTHORS": "S.T. Grond",
         "CARGO_PKG_DESCRIPTION": "Common types, memory allocators, and utilities for Grafeo",
         "CARGO_PKG_HOMEPAGE": "",
@@ -20303,10 +20320,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "https://github.com/GrafeoDB/grafeo",
         "CARGO_PKG_RUST_VERSION": "1.91.1",
-        "CARGO_PKG_VERSION": "0.5.43",
+        "CARGO_PKG_VERSION": "0.5.44",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "5",
-        "CARGO_PKG_VERSION_PATCH": "43",
+        "CARGO_PKG_VERSION_PATCH": "44",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -20332,16 +20349,24 @@ cargo.rust_library(
     ],
 )
 
+http_archive(
+    name = "grafeo-core-0.5.44.crate",
+    sha256 = "3212b5678e1fcd0afc2762c9100d578566341a9e9f2359e652666068f17469b2",
+    strip_prefix = "grafeo-core-0.5.44",
+    urls = ["https://static.crates.io/crates/grafeo-core/0.5.44/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "grafeo-core-0.5",
-    srcs = [":grafeo-9bdcc1c5e4b720e7.git"],
+    srcs = [":grafeo-core-0.5.44.crate"],
     crate = "grafeo_core",
-    crate_root = "grafeo-9bdcc1c5e4b720e7/crates/grafeo-core/src/lib.rs",
+    crate_root = "grafeo-core-0.5.44.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "grafeo_core",
         "CARGO_CRATE_NAME": "grafeo_core",
-        "CARGO_MANIFEST_DIR": "grafeo-9bdcc1c5e4b720e7",
+        "CARGO_MANIFEST_DIR": "grafeo-core-0.5.44.crate",
         "CARGO_PKG_AUTHORS": "S.T. Grond",
         "CARGO_PKG_DESCRIPTION": "Core graph models, indexes, and execution primitives for Grafeo",
         "CARGO_PKG_HOMEPAGE": "",
@@ -20349,10 +20374,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "https://github.com/GrafeoDB/grafeo",
         "CARGO_PKG_RUST_VERSION": "1.91.1",
-        "CARGO_PKG_VERSION": "0.5.43",
+        "CARGO_PKG_VERSION": "0.5.44",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "5",
-        "CARGO_PKG_VERSION_PATCH": "43",
+        "CARGO_PKG_VERSION_PATCH": "44",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -20398,16 +20423,24 @@ cargo_alias(
     visibility = ["PUBLIC"],
 )
 
+http_archive(
+    name = "grafeo-engine-0.5.44.crate",
+    sha256 = "4b6cb79b84db29dded59ecc526823befa20177b763b61fc82bcbad15405c60c1",
+    strip_prefix = "grafeo-engine-0.5.44",
+    urls = ["https://static.crates.io/crates/grafeo-engine/0.5.44/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "grafeo-engine-0.5",
-    srcs = [":grafeo-9bdcc1c5e4b720e7.git"],
+    srcs = [":grafeo-engine-0.5.44.crate"],
     crate = "grafeo_engine",
-    crate_root = "grafeo-9bdcc1c5e4b720e7/crates/grafeo-engine/src/lib.rs",
+    crate_root = "grafeo-engine-0.5.44.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "grafeo_engine",
         "CARGO_CRATE_NAME": "grafeo_engine",
-        "CARGO_MANIFEST_DIR": "grafeo-9bdcc1c5e4b720e7",
+        "CARGO_MANIFEST_DIR": "grafeo-engine-0.5.44.crate",
         "CARGO_PKG_AUTHORS": "S.T. Grond",
         "CARGO_PKG_DESCRIPTION": "Query engine and database management for Grafeo",
         "CARGO_PKG_HOMEPAGE": "",
@@ -20415,10 +20448,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "https://github.com/GrafeoDB/grafeo",
         "CARGO_PKG_RUST_VERSION": "1.91.1",
-        "CARGO_PKG_VERSION": "0.5.43",
+        "CARGO_PKG_VERSION": "0.5.44",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "5",
-        "CARGO_PKG_VERSION_PATCH": "43",
+        "CARGO_PKG_VERSION_PATCH": "44",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -20459,16 +20492,24 @@ cargo.rust_library(
     ],
 )
 
+http_archive(
+    name = "grafeo-storage-0.5.44.crate",
+    sha256 = "d0239c820e1cbef635eb47afb03d47fded93feca9eed3302bf59ad0671d8ca1e",
+    strip_prefix = "grafeo-storage-0.5.44",
+    urls = ["https://static.crates.io/crates/grafeo-storage/0.5.44/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "grafeo-storage-0.5",
-    srcs = [":grafeo-9bdcc1c5e4b720e7.git"],
+    srcs = [":grafeo-storage-0.5.44.crate"],
     crate = "grafeo_storage",
-    crate_root = "grafeo-9bdcc1c5e4b720e7/crates/grafeo-storage/src/lib.rs",
+    crate_root = "grafeo-storage-0.5.44.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "grafeo_storage",
         "CARGO_CRATE_NAME": "grafeo_storage",
-        "CARGO_MANIFEST_DIR": "grafeo-9bdcc1c5e4b720e7",
+        "CARGO_MANIFEST_DIR": "grafeo-storage-0.5.44.crate",
         "CARGO_PKG_AUTHORS": "S.T. Grond",
         "CARGO_PKG_DESCRIPTION": "Persistence layer for Grafeo: WAL, container format, section I/O",
         "CARGO_PKG_HOMEPAGE": "",
@@ -20476,10 +20517,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "https://github.com/GrafeoDB/grafeo",
         "CARGO_PKG_RUST_VERSION": "1.91.1",
-        "CARGO_PKG_VERSION": "0.5.43",
+        "CARGO_PKG_VERSION": "0.5.44",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "5",
-        "CARGO_PKG_VERSION_PATCH": "43",
+        "CARGO_PKG_VERSION_PATCH": "44",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
