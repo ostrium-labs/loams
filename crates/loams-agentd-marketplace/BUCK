@@ -85,6 +85,11 @@ cargo_package(
             "root": "tests/schema_v2.rs",
         },
         {
+            "name": "signed_index",
+            "crate": "signed_index",
+            "root": "tests/signed_index.rs",
+        },
+        {
             "name": "sigstore",
             "crate": "sigstore",
             "root": "tests/sigstore.rs",
@@ -104,6 +109,7 @@ cargo_package(
         "//third-party/rust:hex",
         "//third-party/rust:jsonschema",
         "//third-party/rust:reqwest-0_12",
+        "//third-party/rust:ring",
         "//third-party/rust:rustix",
         "//third-party/rust:semver",
         "//third-party/rust:serde",

@@ -35,6 +35,7 @@ pub mod provenance;
 pub mod revocations;
 #[cfg(feature = "agentd")]
 pub mod service;
+pub mod signed;
 pub mod sources;
 #[cfg(feature = "testkit")]
 pub mod testkit;
@@ -54,7 +55,12 @@ pub use listing_v2::{
 };
 #[cfg(feature = "agentd")]
 pub use market::{ListingView, MarketError, Marketplace, Query, SourceInfo, Summary};
+pub use revocations::{RevocationList, is_revoked};
 #[cfg(feature = "agentd")]
 pub use service::{Deps, MarketplaceHost, MemoryVault, Registrations, ServiceError, Vault};
+pub use signed::{
+    IndexFiles, SignedIndex, TrustAnchor, VerifiedListing, VerifyError, resolve_depends_on,
+    verify_listing,
+};
 pub use sources::Source;
-pub use verify::{Identity, SignatureVerifier, SigstoreVerifier};
+pub use verify::{Identity, KeyVerifier, SignatureVerifier, SigstoreVerifier};

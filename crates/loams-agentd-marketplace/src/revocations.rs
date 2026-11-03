@@ -186,6 +186,19 @@ impl Revocations {
     }
 }
 
+/// The revocation list the operator and one-click deploy hold (OP2-B
+/// Task 3).
+pub type RevocationList = Revocations;
+
+/// Whether `id@version` must not be installed: true only for a `disable`
+/// revocation (Decision 6). A `warn` reaches the caller as
+/// `VerifiedListing::warning` instead. Prereleases inside a range are
+/// covered.
+pub fn is_revoked(list: &RevocationList, id: &str, version: &Version) -> bool {
+    list.for_version(id, &version.to_string())
+        .is_some_and(|r| r.severity == Severity::Disable)
+}
+
 /// One installed listing, as the revocation check sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Installed {

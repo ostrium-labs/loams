@@ -1,0 +1,713 @@
+{
+  "$schema": "https://loams.dev/schemas/index/v1.json",
+  "index_version": 1,
+  "listings": [
+    {
+      "id": "example-org/research-assistant",
+      "kind": "agent",
+      "latest": "1.2.0-rc.1",
+      "summary": "A Pydantic AI agent served over A2A.",
+      "tier": "community",
+      "title": "Research assistant",
+      "versions": [
+        {
+          "listing": {
+            "artifact": {
+              "integrity": "sha256:ba59926159d2aa256eb8739b8da7e2b574b960e1202c6d624cbe981cef996c91",
+              "name": "research-assistant",
+              "type": "pypi",
+              "version": "1.2.0rc1"
+            },
+            "entrypoint": "research_assistant.serve",
+            "framework": {
+              "name": "pydantic-ai",
+              "version": "2.59.0"
+            },
+            "id": "example-org/research-assistant",
+            "kind": "agent",
+            "language": "python",
+            "licence": "MIT",
+            "loams": {
+              "postgres": true
+            },
+            "models": {
+              "api": [
+                "responses"
+              ]
+            },
+            "pricing": "free",
+            "provenance": {
+              "ref": "https://pypi.org/integrity/research-assistant/1.2.0rc1/research_assistant-1.2.0rc1-py3-none-any.whl/provenance",
+              "type": "pypi-pep740"
+            },
+            "publisher": {
+              "name": "Example Org"
+            },
+            "runtime": {
+              "kind": "python",
+              "version": ">=3.11"
+            },
+            "source": {
+              "commit": "0123456789abcdef0123456789abcdef01234567",
+              "repository": "https://github.com/example-org/research-assistant"
+            },
+            "summary": "A Pydantic AI agent served over A2A.",
+            "surfaces": {
+              "a2a": {
+                "agent_card": {
+                  "name": "Research assistant",
+                  "protocolVersion": "1.0",
+                  "skills": [
+                    {
+                      "id": "research",
+                      "name": "Research"
+                    }
+                  ]
+                }
+              },
+              "mcp": {
+                "transport": "streamable-http"
+              },
+              "responses": {}
+            },
+            "targets": [
+              "agentd",
+              "byoc-server"
+            ],
+            "title": "Research assistant",
+            "tools": [],
+            "version": "1.2.0-rc.1"
+          },
+          "listing_sha256": "b38a26c4573fde3ec5b2e13eef2fa15a4e08f25a8512c826a4a4304fc987c4d3",
+          "version": "1.2.0-rc.1"
+        }
+      ]
+    },
+    {
+      "id": "ostrium/claude-code",
+      "kind": "harness",
+      "latest": "1.0.0",
+      "summary": "Anthropic's coding agent, driven by agentd's native adapter.",
+      "tier": "first-party",
+      "title": "Claude Code",
+      "versions": [
+        {
+          "listing": {
+            "harness": {
+              "auth": [
+                "cli-login",
+                "api-key"
+              ],
+              "launch": {
+                "command": "claude",
+                "protocol": "native"
+              },
+              "native_adapter": "claude-code"
+            },
+            "id": "ostrium/claude-code",
+            "kind": "harness",
+            "licence": "Apache-2.0",
+            "pricing": "free",
+            "publisher": {
+              "name": "Ostrium Labs",
+              "url": "https://ostriumlabs.org"
+            },
+            "source": {
+              "commit": "0123456789abcdef0123456789abcdef01234567",
+              "path": "crates/loams-agentd-harness",
+              "repository": "https://github.com/ostrium-labs/loams"
+            },
+            "summary": "Anthropic's coding agent, driven by agentd's native adapter.",
+            "title": "Claude Code",
+            "version": "1.0.0"
+          },
+          "listing_sha256": "8578384ac49628a48180e958eff8d4b888cdfd85ed03a8107d4ab7b670c4e6a9",
+          "version": "1.0.0"
+        }
+      ]
+    },
+    {
+      "id": "ostrium/github-mcp-server",
+      "kind": "mcp-server",
+      "latest": "2.0.3",
+      "summary": "GitHub's official MCP server: repositories, issues, pull requests and workflows.",
+      "tier": "first-party",
+      "title": "GitHub",
+      "versions": [
+        {
+          "listing": {
+            "artifact": {
+              "files": [
+                {
+                  "path": "github-mcp-server",
+                  "platform": "linux-x86_64",
+                  "sha256": "f797c20fe02a755865d0e2d46184ab47e31bf1619b0855b8d89c531e45a651c2",
+                  "url": "https://github.com/github/github-mcp-server/releases/download/v2.0.3/github-mcp-server_Linux_x86_64.tar.gz"
+                },
+                {
+                  "path": "github-mcp-server",
+                  "platform": "darwin-aarch64",
+                  "sha256": "5c95c01f75a7ec2370607e989b2968d314b02a54d78af8a9fdf38f3dfe6135f4",
+                  "url": "https://github.com/github/github-mcp-server/releases/download/v2.0.3/github-mcp-server_Darwin_arm64.tar.gz"
+                },
+                {
+                  "path": "github-mcp-server.exe",
+                  "platform": "windows-x86_64",
+                  "sha256": "f0e1b9880a1b88730d1250d1c25cfee39617ec3e800a7a252f2279cd0c8394e0",
+                  "url": "https://github.com/github/github-mcp-server/releases/download/v2.0.3/github-mcp-server_Windows_x86_64.zip"
+                }
+              ],
+              "name": "github-mcp-server",
+              "type": "archive",
+              "version": "2.0.3"
+            },
+            "config": [
+              {
+                "description": "A GitHub personal access token.",
+                "env": "GITHUB_PERSONAL_ACCESS_TOKEN",
+                "name": "token",
+                "required": true,
+                "secret": true,
+                "type": "string"
+              }
+            ],
+            "entrypoint": "github-mcp-server",
+            "id": "ostrium/github-mcp-server",
+            "kind": "mcp-server",
+            "licence": "MIT",
+            "mcp_server": {
+              "args": [
+                "stdio"
+              ],
+              "mode": "local",
+              "server": {
+                "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+                "description": "Connect AI assistants to GitHub - manage repos, issues, PRs, and workflows through natural language.",
+                "name": "io.github.github/github-mcp-server",
+                "packages": [
+                  {
+                    "identifier": "ghcr.io/github/github-mcp-server:2.0.3",
+                    "registryType": "oci",
+                    "transport": {
+                      "type": "stdio"
+                    }
+                  }
+                ],
+                "repository": {
+                  "source": "github",
+                  "url": "https://github.com/github/github-mcp-server"
+                },
+                "title": "GitHub",
+                "version": "2.0.3"
+              },
+              "transport": "stdio"
+            },
+            "place": {
+              "always_ask": [
+                "merge_pull_request"
+              ],
+              "egress": [
+                "api.github.com"
+              ]
+            },
+            "pricing": "free",
+            "provenance": {
+              "ref": "https://api.github.com/repos/github/github-mcp-server/attestations",
+              "type": "github-attestation"
+            },
+            "publisher": {
+              "name": "GitHub",
+              "url": "https://github.com"
+            },
+            "runtime": {
+              "kind": "binary"
+            },
+            "source": {
+              "commit": "b98d115bbb080e9555466a96656ec4df605aea21",
+              "repository": "https://github.com/github/github-mcp-server"
+            },
+            "summary": "GitHub's official MCP server: repositories, issues, pull requests and workflows.",
+            "title": "GitHub",
+            "tools": [
+              {
+                "description": "Reads an issue.",
+                "name": "get_issue",
+                "risk": "read"
+              },
+              {
+                "description": "Opens an issue.",
+                "name": "create_issue",
+                "risk": "egress"
+              },
+              {
+                "description": "Merges a pull request.",
+                "name": "merge_pull_request",
+                "risk": "destructive"
+              }
+            ],
+            "version": "2.0.3"
+          },
+          "listing_sha256": "dcba7a4e921f31f264d306b64ed0fac1b62a3faff0d555b051abb4cdfcc393e6",
+          "version": "2.0.3"
+        }
+      ]
+    },
+    {
+      "id": "ostrium/loams-starter",
+      "kind": "agent",
+      "latest": "0.1.1",
+      "summary": "A Mastra agent that answers questions about the data in its Place.",
+      "tier": "first-party",
+      "title": "Loams starter agent",
+      "versions": [
+        {
+          "listing": {
+            "$schema": "https://loams.dev/schemas/listing/v1.json",
+            "artifact": {
+              "integrity": "sha512-niWWczjYYd93p3UQ+Pe5Wg8Y6nSgIetB3Rish0G1gppNCllAyin2r4AaVx8hMv32p30Kl7n7GhrIkBzZ/qCdig==",
+              "name": "@loams/starter-agent",
+              "type": "npm",
+              "version": "0.1.0"
+            },
+            "config": [
+              {
+                "default": "plain",
+                "description": "How the agent writes.",
+                "name": "tone",
+                "type": "enum",
+                "values": [
+                  "plain",
+                  "friendly"
+                ]
+              },
+              {
+                "description": "A GitHub token for the MCP server.",
+                "env": "GITHUB_TOKEN",
+                "name": "github_token",
+                "required": true,
+                "secret": true,
+                "type": "string"
+              }
+            ],
+            "conformance": {
+              "level": "core",
+              "report": "https://loams.dev/marketplace/reports/ostrium/loams-starter/0.1.0.json",
+              "report_sha256": "845e91831319e89c4d656bdb80c278ac09a7230d61e5dfd2e1b1fbb436ac8917"
+            },
+            "cost": {
+              "budget_usd_per_day": 5,
+              "budget_usd_per_run": 0.25,
+              "max_tokens_per_run": 40000,
+              "typical_runs_per_day": 20,
+              "typical_tokens_per_run": 6000
+            },
+            "description": "The starter from loams-mastra-template: a Mastra agent on Loams Postgres and the engine's Qdrant API, served over ACP.",
+            "entrypoint": "dist/agent.js",
+            "framework": {
+              "name": "mastra",
+              "version": "1.4.0"
+            },
+            "id": "ostrium/loams-starter",
+            "kind": "agent",
+            "language": "typescript",
+            "licence": "Apache-2.0",
+            "loams": {
+              "durable": true,
+              "postgres": true,
+              "qdrant": true
+            },
+            "mcp_servers": [
+              {
+                "id": "ostrium/github-mcp-server",
+                "version": "^2.0.0"
+              }
+            ],
+            "models": {
+              "api": [
+                "anthropic-messages",
+                "chat-completions"
+              ],
+              "requires": {
+                "context_min": 32000,
+                "tools": true
+              },
+              "suggested": {
+                "model": "claude-sonnet-4-5",
+                "provider": "anthropic"
+              }
+            },
+            "place": {
+              "always_ask": [
+                "create_issue"
+              ],
+              "data": [
+                {
+                  "access": "write",
+                  "kind": "database",
+                  "name": "notes"
+                },
+                {
+                  "access": "read",
+                  "kind": "collection",
+                  "name": "notes_vectors"
+                }
+              ],
+              "egress": [
+                "api.github.com"
+              ],
+              "roles": [
+                "reader"
+              ]
+            },
+            "pricing": "free",
+            "provenance": {
+              "ref": "https://registry.npmjs.org/-/npm/v1/attestations/@loams/starter-agent@0.1.0",
+              "type": "npm-slsa"
+            },
+            "publisher": {
+              "name": "Ostrium Labs",
+              "url": "https://ostriumlabs.org"
+            },
+            "runtime": {
+              "kind": "node",
+              "version": ">=22.13"
+            },
+            "security_contact": "security@ostriumlabs.org",
+            "source": {
+              "commit": "0123456789abcdef0123456789abcdef01234567",
+              "path": "templates/loams-starter",
+              "repository": "https://github.com/ostrium-labs/loams-mastra"
+            },
+            "summary": "A Mastra agent that answers questions about the data in its Place.",
+            "support": "https://github.com/ostrium-labs/loams-mastra/issues",
+            "surfaces": {
+              "acp": {
+                "protocol_version": 1
+              }
+            },
+            "targets": [
+              "agentd"
+            ],
+            "title": "Loams starter agent",
+            "tools": [
+              {
+                "description": "Reads rows from the notes database.",
+                "name": "query_notes",
+                "risk": "read"
+              },
+              {
+                "description": "Writes one row to the notes database.",
+                "name": "save_note",
+                "risk": "write"
+              },
+              {
+                "description": "Opens a GitHub issue.",
+                "mcp_server": "ostrium/github-mcp-server",
+                "name": "create_issue",
+                "risk": "egress"
+              }
+            ],
+            "version": "0.1.0"
+          },
+          "listing_sha256": "aa73b71f221b07c69a645a5199ad10061eec1e7ea5910693120a0a4d787f3350",
+          "version": "0.1.0"
+        },
+        {
+          "listing": {
+            "$schema": "https://loams.dev/schemas/listing/v1.json",
+            "artifact": {
+              "integrity": "sha512-niWWczjYYd93p3UQ+Pe5Wg8Y6nSgIetB3Rish0G1gppNCllAyin2r4AaVx8hMv32p30Kl7n7GhrIkBzZ/qCdig==",
+              "name": "@loams/starter-agent",
+              "type": "npm",
+              "version": "0.1.1"
+            },
+            "config": [
+              {
+                "default": "plain",
+                "description": "How the agent writes.",
+                "name": "tone",
+                "type": "enum",
+                "values": [
+                  "plain",
+                  "friendly"
+                ]
+              },
+              {
+                "description": "A GitHub token for the MCP server.",
+                "env": "GITHUB_TOKEN",
+                "name": "github_token",
+                "required": true,
+                "secret": true,
+                "type": "string"
+              }
+            ],
+            "conformance": {
+              "level": "compatible",
+              "report": "https://loams.dev/marketplace/reports/ostrium/loams-starter/0.1.0.json",
+              "report_sha256": "845e91831319e89c4d656bdb80c278ac09a7230d61e5dfd2e1b1fbb436ac8917"
+            },
+            "cost": {
+              "budget_usd_per_day": 5,
+              "budget_usd_per_run": 0.25,
+              "max_tokens_per_run": 40000,
+              "typical_runs_per_day": 20,
+              "typical_tokens_per_run": 6000
+            },
+            "description": "The starter from loams-mastra-template: a Mastra agent on Loams Postgres and the engine's Qdrant API, served over ACP.",
+            "entrypoint": "dist/agent.js",
+            "framework": {
+              "name": "mastra",
+              "version": "1.4.0"
+            },
+            "id": "ostrium/loams-starter",
+            "kind": "agent",
+            "language": "typescript",
+            "licence": "Apache-2.0",
+            "loams": {
+              "durable": true,
+              "postgres": true,
+              "qdrant": true
+            },
+            "mcp_servers": [
+              {
+                "id": "ostrium/github-mcp-server",
+                "version": "^2.0.0"
+              }
+            ],
+            "models": {
+              "api": [
+                "anthropic-messages",
+                "chat-completions"
+              ],
+              "requires": {
+                "context_min": 32000,
+                "tools": true
+              },
+              "suggested": {
+                "model": "claude-sonnet-4-5",
+                "provider": "anthropic"
+              }
+            },
+            "place": {
+              "always_ask": [
+                "create_issue"
+              ],
+              "data": [
+                {
+                  "access": "write",
+                  "kind": "database",
+                  "name": "notes"
+                },
+                {
+                  "access": "read",
+                  "kind": "collection",
+                  "name": "notes_vectors"
+                }
+              ],
+              "egress": [
+                "api.github.com"
+              ],
+              "roles": [
+                "reader"
+              ]
+            },
+            "pricing": "free",
+            "provenance": {
+              "ref": "https://registry.npmjs.org/-/npm/v1/attestations/@loams/starter-agent@0.1.0",
+              "type": "npm-slsa"
+            },
+            "publisher": {
+              "name": "Ostrium Labs",
+              "url": "https://ostriumlabs.org"
+            },
+            "runtime": {
+              "kind": "node",
+              "version": ">=22.13"
+            },
+            "security_contact": "security@ostriumlabs.org",
+            "source": {
+              "commit": "0123456789abcdef0123456789abcdef01234567",
+              "path": "templates/loams-starter",
+              "repository": "https://github.com/ostrium-labs/loams-mastra"
+            },
+            "summary": "A Mastra agent that answers questions about the data in its Place.",
+            "support": "https://github.com/ostrium-labs/loams-mastra/issues",
+            "surfaces": {
+              "acp": {
+                "protocol_version": 1
+              }
+            },
+            "targets": [
+              "agentd"
+            ],
+            "title": "Loams starter agent",
+            "tools": [
+              {
+                "description": "Reads rows from the notes database.",
+                "name": "query_notes",
+                "risk": "read"
+              },
+              {
+                "description": "Writes one row to the notes database.",
+                "name": "save_note",
+                "risk": "write"
+              },
+              {
+                "description": "Opens a GitHub issue.",
+                "mcp_server": "ostrium/github-mcp-server",
+                "name": "create_issue",
+                "risk": "egress"
+              }
+            ],
+            "version": "0.1.1"
+          },
+          "listing_sha256": "9ca68e98748185dddfb1798bfa6ca86213009a4014c49707bcbfadc3dbde4793",
+          "version": "0.1.1"
+        }
+      ]
+    },
+    {
+      "id": "ostrium/plane-mcp-server",
+      "kind": "mcp-server",
+      "latest": "0.3.5",
+      "summary": "Plane's official MCP server, reached at its hosted endpoint.",
+      "tier": "first-party",
+      "title": "Plane",
+      "versions": [
+        {
+          "listing": {
+            "config": [
+              {
+                "description": "A Plane personal access token.",
+                "name": "api_key",
+                "required": true,
+                "secret": true,
+                "type": "string"
+              }
+            ],
+            "id": "ostrium/plane-mcp-server",
+            "kind": "mcp-server",
+            "licence": "MIT",
+            "mcp_server": {
+              "mode": "remote",
+              "remote_url": "https://mcp.plane.so/http/api-key/mcp",
+              "server": {
+                "description": "Plane's MCP server.",
+                "name": "so.plane/plane-mcp-server",
+                "remotes": [
+                  {
+                    "type": "streamable-http",
+                    "url": "https://mcp.plane.so/http/api-key/mcp"
+                  }
+                ],
+                "version": "0.3.5"
+              },
+              "transport": "streamable-http"
+            },
+            "place": {
+              "egress": [
+                "mcp.plane.so"
+              ]
+            },
+            "pricing": "free",
+            "publisher": {
+              "name": "Plane",
+              "url": "https://plane.so"
+            },
+            "source": {
+              "commit": "0123456789abcdef0123456789abcdef01234567",
+              "repository": "https://github.com/makeplane/plane-mcp-server"
+            },
+            "summary": "Plane's official MCP server, reached at its hosted endpoint.",
+            "title": "Plane",
+            "tools": [
+              {
+                "description": "Lists work items in a project.",
+                "name": "list_work_items",
+                "risk": "read"
+              },
+              {
+                "description": "Creates a work item.",
+                "name": "create_work_item",
+                "risk": "egress"
+              }
+            ],
+            "version": "0.3.5"
+          },
+          "listing_sha256": "1973cae717a1fe2cf0adcf0d3fc39db9c624387e1d763349535d92f75f3b4e8b",
+          "version": "0.3.5"
+        }
+      ]
+    },
+    {
+      "id": "vercel-labs/fx",
+      "kind": "harness",
+      "latest": "0.0.14",
+      "summary": "A small coding-agent harness with an ACP server.",
+      "tier": "community",
+      "title": "fx",
+      "versions": [
+        {
+          "listing": {
+            "artifact": {
+              "files": [
+                {
+                  "path": "fx",
+                  "platform": "linux-x86_64",
+                  "sha256": "213840ab495023fa2d584d2f93c121559fcacde0fb4793c6c20f7f751021a333",
+                  "url": "https://github.com/vercel-labs/fx/releases/download/v0.0.14/fx-linux-x86_64.tar.gz"
+                },
+                {
+                  "path": "fx",
+                  "platform": "darwin-aarch64",
+                  "sha256": "13fd7f2038ebaa546cd4ad1a809e978a5232ebf82649833a46f6523929ee5df2",
+                  "url": "https://github.com/vercel-labs/fx/releases/download/v0.0.14/fx-darwin-aarch64.tar.gz"
+                }
+              ],
+              "name": "fx",
+              "type": "archive",
+              "version": "0.0.14"
+            },
+            "entrypoint": "fx",
+            "harness": {
+              "auth": [
+                "api-key"
+              ],
+              "launch": {
+                "args": [
+                  "acp"
+                ],
+                "command": "fx",
+                "protocol": "acp"
+              }
+            },
+            "id": "vercel-labs/fx",
+            "kind": "harness",
+            "licence": "Apache-2.0",
+            "pricing": "free",
+            "provenance": {
+              "ref": "https://github.com/vercel-labs/fx/releases/download/v0.0.14/fx.sigstore.json",
+              "type": "sigstore-bundle"
+            },
+            "publisher": {
+              "name": "Vercel Labs"
+            },
+            "runtime": {
+              "kind": "binary"
+            },
+            "source": {
+              "commit": "0123456789abcdef0123456789abcdef01234567",
+              "repository": "https://github.com/vercel-labs/fx"
+            },
+            "summary": "A small coding-agent harness with an ACP server.",
+            "title": "fx",
+            "version": "0.0.14"
+          },
+          "listing_sha256": "37ee67dcebeb15cfaa25f73be48ef19da234778635451913fca68b4da259c90d",
+          "version": "0.0.14"
+        }
+      ]
+    }
+  ],
+  "source_commit": "1111111111111111111111111111111111111111"
+}
