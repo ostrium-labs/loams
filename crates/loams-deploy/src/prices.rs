@@ -8,13 +8,13 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use loams_meter_core::Amount;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use time::Date;
 
 const EMBEDDED: &str = include_str!("../../../deploy/tofu/prices.toml");
 
 /// What `usd` is per.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PriceUnit {
     /// One hour of one resource.
@@ -25,6 +25,18 @@ pub enum PriceUnit {
     Gib,
     /// One resource for one month.
     Month,
+}
+
+impl PriceUnit {
+    /// The unit's name as `prices.toml` and the module outputs spell it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PriceUnit::Hour => "hour",
+            PriceUnit::GibMonth => "gib-month",
+            PriceUnit::Gib => "gib",
+            PriceUnit::Month => "month",
+        }
+    }
 }
 
 /// Where a price came from.
