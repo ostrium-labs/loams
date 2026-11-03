@@ -1,0 +1,360 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: loamsclusters.loams.dev
+spec:
+  group: loams.dev
+  names:
+    categories: []
+    kind: LoamsCluster
+    plural: loamsclusters
+    shortNames:
+    - lc
+    singular: loamscluster
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.summary
+      name: Summary
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for LoamsClusterSpec via `CustomResource`
+        properties:
+          spec:
+            description: |-
+              A home cluster. Its platform base is rendered from this spec; engines
+              are `LoamsInstall`s.
+            properties:
+              base:
+                description: The platform base.
+                properties:
+                  access:
+                    description: Loams Access.
+                    properties:
+                      audit:
+                        default: {}
+                        description: Audit delivery.
+                        properties:
+                          sink:
+                            description: Optional URL that receives the events over HTTP (binary mode).
+                            nullable: true
+                            type: string
+                        type: object
+                      identity:
+                        description: The identity provider.
+                        properties:
+                          database:
+                            description: The provider's Postgres database.
+                            properties:
+                              secretRef:
+                                description: Secret holding the DSN under key `dsn`.
+                                properties:
+                                  key:
+                                    description: |-
+                                      The key inside the Secret. Each user of a reference states its
+                                      default (for a database reference, `dsn`).
+                                    nullable: true
+                                    type: string
+                                  name:
+                                    description: The Secret's name.
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                            required:
+                            - secretRef
+                            type: object
+                          externalDomain:
+                            description: The external domain the provider answers on.
+                            type: string
+                          provider:
+                            default: zitadel
+                            description: '`zitadel` (default) or `loams-identity`.'
+                            enum:
+                            - zitadel
+                            - loams-identity
+                            type: string
+                          replicas:
+                            default: 1
+                            description: Number of replicas.
+                            format: uint32
+                            minimum: 1.0
+                            type: integer
+                        required:
+                        - database
+                        - externalDomain
+                        type: object
+                      meter:
+                        default:
+                          replicas: 1
+                        description: The Meter.
+                        properties:
+                          replicas:
+                            default: 1
+                            description: Number of replicas (at least 1).
+                            format: uint32
+                            minimum: 1.0
+                            type: integer
+                        type: object
+                      openfga:
+                        description: OpenFGA.
+                        properties:
+                          database:
+                            description: OpenFGA's Postgres database.
+                            properties:
+                              secretRef:
+                                description: Secret holding the DSN under key `dsn`.
+                                properties:
+                                  key:
+                                    description: |-
+                                      The key inside the Secret. Each user of a reference states its
+                                      default (for a database reference, `dsn`).
+                                    nullable: true
+                                    type: string
+                                  name:
+                                    description: The Secret's name.
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                            required:
+                            - secretRef
+                            type: object
+                          replicas:
+                            default: 1
+                            description: Number of replicas.
+                            format: uint32
+                            minimum: 1.0
+                            type: integer
+                        required:
+                        - database
+                        type: object
+                      org:
+                        description: The tenant tree's org id.
+                        type: string
+                    required:
+                    - identity
+                    - openfga
+                    - org
+                    type: object
+                  agentd:
+                    default:
+                      replicas: 1
+                    description: agentd.
+                    properties:
+                      replicas:
+                        default: 1
+                        description: Number of replicas (at least 1).
+                        format: uint32
+                        minimum: 1.0
+                        type: integer
+                    type: object
+                  gateway:
+                    default:
+                      replicas: 1
+                    description: The gateway.
+                    properties:
+                      replicas:
+                        default: 1
+                        description: Number of replicas (at least 1).
+                        format: uint32
+                        minimum: 1.0
+                        type: integer
+                    type: object
+                required:
+                - access
+                type: object
+              exposure:
+                default:
+                  mode: tailnet
+                description: Exposure (default `tailnet`).
+                properties:
+                  mode:
+                    default: tailnet
+                    description: '`tailnet` (default) or `internal`. `public` is not an option.'
+                    enum:
+                    - tailnet
+                    - internal
+                    type: string
+                type: object
+              marketplace:
+                description: The marketplace index.
+                properties:
+                  index:
+                    description: '`https://` URL of the index, or `file:///etc/loams/marketplace/...`.'
+                    type: string
+                    x-kubernetes-validations:
+                    - message: index must be an https:// URL or a file:///etc/loams/marketplace/ path
+                      rule: self.startsWith('https://') || self.startsWith('file:///etc/loams/marketplace/')
+                  publicKey:
+                    description: |-
+                      PEM public key the index is verified with. Empty means the official
+                      keyless trust anchor.
+                    nullable: true
+                    type: string
+                  refresh:
+                    default: 5m
+                    description: How often the index is fetched again, as a duration string.
+                    type: string
+                required:
+                - index
+                type: object
+              release:
+                description: The Loams release, which resolves to a pinned component set.
+                type: string
+              role:
+                description: The cluster's role. Only `home`.
+                enum:
+                - home
+                type: string
+              sandbox:
+                default: {}
+                description: Sandbox settings.
+                properties:
+                  runtimeClassName:
+                    description: |-
+                      A RuntimeClass to treat as gVisor, besides the ones the operator
+                      detects by handler.
+                    nullable: true
+                    type: string
+                type: object
+              storage:
+                description: The object store of the home.
+                nullable: true
+                properties:
+                  object:
+                    description: Name of an `object` StorageBinding in the same namespace.
+                    type: string
+                required:
+                - object
+                type: object
+              tls:
+                default:
+                  issuer: operator-ca
+                description: Internal TLS.
+                properties:
+                  issuer:
+                    default: operator-ca
+                    description: '`operator-ca` (default) or `cert-manager`.'
+                    enum:
+                    - operator-ca
+                    - cert-manager
+                    type: string
+                type: object
+            required:
+            - base
+            - marketplace
+            - release
+            - role
+            type: object
+          status:
+            description: Observed state of a `LoamsCluster`.
+            nullable: true
+            properties:
+              conditions:
+                default: []
+                description: Conditions; `Ready` is the one to wait for.
+                items:
+                  description: Condition contains details for one aspect of the current state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: lastTransitionTime is the last time the condition transitioned from one status to another. This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: message is a human readable message indicating details about the transition. This may be an empty string.
+                      type: string
+                    observedGeneration:
+                      description: observedGeneration represents the .metadata.generation that the condition was set based upon. For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date with respect to the current state of the instance.
+                      format: int64
+                      type: integer
+                    reason:
+                      description: reason contains a programmatic identifier indicating the reason for the condition's last transition. Producers of specific condition types may define expected values and meanings for this field, and whether the values are considered a guaranteed API. The value should be a CamelCase string. This field may not be empty.
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              observedGeneration:
+                description: The spec generation the conditions describe.
+                format: int64
+                nullable: true
+                type: integer
+              operation:
+                description: The journal of the operation in progress.
+                nullable: true
+                properties:
+                  done:
+                    default: []
+                    description: The plan items already done.
+                    items:
+                      type: string
+                    type: array
+                  fence:
+                    default: 0
+                    description: Fence token of the leader that wrote this journal.
+                    format: int32
+                    type: integer
+                  id:
+                    description: Operation id, stable across restarts.
+                    type: string
+                  kind:
+                    description: Operation kind (for example `install`, `upgrade`, `delete`).
+                    type: string
+                  plan:
+                    default: []
+                    description: The ordered plan items.
+                    items:
+                      type: string
+                    type: array
+                  step:
+                    description: The step in progress, if any.
+                    nullable: true
+                    properties:
+                      item:
+                        description: The plan item being run.
+                        type: string
+                      phase:
+                        description: The phase inside the item (for example `prepare`, `apply`, `verify`).
+                        type: string
+                      since:
+                        description: When the step started.
+                        format: date-time
+                        type: string
+                    required:
+                    - item
+                    - phase
+                    - since
+                    type: object
+                required:
+                - id
+                - kind
+                type: object
+              summary:
+                description: A one-line summary for `kubectl get`.
+                nullable: true
+                type: string
+            type: object
+        required:
+        - spec
+        title: LoamsCluster
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

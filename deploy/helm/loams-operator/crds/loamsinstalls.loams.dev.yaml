@@ -1,0 +1,302 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: loamsinstalls.loams.dev
+spec:
+  group: loams.dev
+  names:
+    categories: []
+    kind: LoamsInstall
+    plural: loamsinstalls
+    shortNames:
+    - li
+    singular: loamsinstall
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.summary
+      name: Summary
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for LoamsInstallSpec via `CustomResource`
+        properties:
+          spec:
+            description: A listing installed into a home, in its own namespace.
+            properties:
+              approvedClusterScoped:
+                description: |-
+                  The digest of the cluster-scoped manifest the user confirmed
+                  (`sha256:<hex>`, from `status.clusterScoped.digest`).
+                nullable: true
+                type: string
+              cluster:
+                description: Name of the home `LoamsCluster` in the same namespace.
+                type: string
+              exposure:
+                default:
+                  mode: none
+                description: Exposure (default `none`).
+                properties:
+                  mode:
+                    default: none
+                    description: '`none` (default), `tailnet`, `internal` or `gateway-edge`.'
+                    enum:
+                    - tailnet
+                    - internal
+                    - none
+                    - gateway-edge
+                    type: string
+                type: object
+              listing:
+                description: The listing to install.
+                properties:
+                  id:
+                    description: The listing id, `<namespace>/<name>`. Cannot change after creation.
+                    type: string
+                  version:
+                    description: The listing version. Changing it is an upgrade.
+                    type: string
+                required:
+                - id
+                - version
+                type: object
+                x-kubernetes-validations:
+                - message: listing.id is immutable
+                  rule: self.id == oldSelf.id
+              project:
+                default: default
+                description: The Access project the install belongs to.
+                type: string
+              sandbox:
+                default:
+                  allowWithoutGvisor: false
+                description: Sandbox choices.
+                properties:
+                  allowWithoutGvisor:
+                    default: false
+                    description: |-
+                      Allow a Community listing to run without gVisor. The install then
+                      reports `Sandboxed=False` and a Warning.
+                    type: boolean
+                type: object
+              storage:
+                default: []
+                description: Storage bindings the listing needs.
+                items:
+                  description: A storage need of the listing, wired to a StorageBinding.
+                  properties:
+                    binding:
+                      description: Name of the StorageBinding in the same namespace.
+                      type: string
+                    name:
+                      description: The listing's name for this storage.
+                      type: string
+                  required:
+                  - binding
+                  - name
+                  type: object
+                type: array
+              values:
+                default: {}
+                description: Values for the listing; checked against its `values_schema`.
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+            required:
+            - cluster
+            - listing
+            type: object
+          status:
+            description: Observed state of a `LoamsInstall`.
+            nullable: true
+            properties:
+              access:
+                description: Access objects (identity, tuples, Meter subject).
+                nullable: true
+                properties:
+                  identityId:
+                    description: Id of the machine identity.
+                    nullable: true
+                    type: string
+                  meterSubject:
+                    description: The Meter subject (the Access subject id).
+                    nullable: true
+                    type: string
+                  tuplesWritten:
+                    default: false
+                    description: Whether the OpenFGA tuples are written.
+                    type: boolean
+                type: object
+              clusterScoped:
+                description: Cluster-scoped objects awaiting confirmation.
+                nullable: true
+                properties:
+                  digest:
+                    description: '`sha256:<hex>` of the manifest in ConfigMap `cluster-scoped`.'
+                    type: string
+                  objects:
+                    default: []
+                    description: The objects, for review.
+                    items:
+                      description: A cluster-scoped object an install needs.
+                      properties:
+                        apiVersion:
+                          type: string
+                        kind:
+                          type: string
+                        name:
+                          type: string
+                      required:
+                      - apiVersion
+                      - kind
+                      - name
+                      type: object
+                    type: array
+                required:
+                - digest
+                type: object
+              conditions:
+                default: []
+                description: Conditions; `Ready` is the one to wait for.
+                items:
+                  description: Condition contains details for one aspect of the current state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: lastTransitionTime is the last time the condition transitioned from one status to another. This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: message is a human readable message indicating details about the transition. This may be an empty string.
+                      type: string
+                    observedGeneration:
+                      description: observedGeneration represents the .metadata.generation that the condition was set based upon. For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date with respect to the current state of the instance.
+                      format: int64
+                      type: integer
+                    reason:
+                      description: reason contains a programmatic identifier indicating the reason for the condition's last transition. Producers of specific condition types may define expected values and meanings for this field, and whether the values are considered a guaranteed API. The value should be a CamelCase string. This field may not be empty.
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              dependencies:
+                default: []
+                description: The dependencies and the installs that provide them.
+                items:
+                  description: A dependency the operator resolved.
+                  properties:
+                    id:
+                      description: The dependency's listing id.
+                      type: string
+                    install:
+                      description: Name of the `LoamsInstall` that provides it.
+                      type: string
+                    version:
+                      description: The version chosen.
+                      type: string
+                  required:
+                  - id
+                  - install
+                  - version
+                  type: object
+                type: array
+              listing:
+                description: The resolved listing.
+                nullable: true
+                properties:
+                  digest:
+                    description: '`sha256:<hex>` of the verified listing.'
+                    type: string
+                  tier:
+                    description: The trust tier (`community`, `verified`, `first-party`).
+                    type: string
+                required:
+                - digest
+                - tier
+                type: object
+              namespace:
+                description: The install namespace.
+                nullable: true
+                type: string
+              observedGeneration:
+                description: The spec generation the conditions describe.
+                format: int64
+                nullable: true
+                type: integer
+              operation:
+                description: The journal of the operation in progress.
+                nullable: true
+                properties:
+                  done:
+                    default: []
+                    description: The plan items already done.
+                    items:
+                      type: string
+                    type: array
+                  fence:
+                    default: 0
+                    description: Fence token of the leader that wrote this journal.
+                    format: int32
+                    type: integer
+                  id:
+                    description: Operation id, stable across restarts.
+                    type: string
+                  kind:
+                    description: Operation kind (for example `install`, `upgrade`, `delete`).
+                    type: string
+                  plan:
+                    default: []
+                    description: The ordered plan items.
+                    items:
+                      type: string
+                    type: array
+                  step:
+                    description: The step in progress, if any.
+                    nullable: true
+                    properties:
+                      item:
+                        description: The plan item being run.
+                        type: string
+                      phase:
+                        description: The phase inside the item (for example `prepare`, `apply`, `verify`).
+                        type: string
+                      since:
+                        description: When the step started.
+                        format: date-time
+                        type: string
+                    required:
+                    - item
+                    - phase
+                    - since
+                    type: object
+                required:
+                - id
+                - kind
+                type: object
+              summary:
+                description: A one-line summary for `kubectl get`.
+                nullable: true
+                type: string
+            type: object
+        required:
+        - spec
+        title: LoamsInstall
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
