@@ -493,6 +493,46 @@ fn shared_dependencies_appear_once() {
 }
 
 #[test]
+fn compatible_diamond_resolves_to_one_version() {
+    // a → b → d ^1, a → c → d >=1.1: d@1.4.0 (chosen via b) matches both.
+    let index = signed(
+        &[
+            app_needing("acme/a", "1.0.0", &[("acme/b", "^1"), ("acme/c", "^1")]),
+            app_needing("acme/b", "1.0.0", &[("acme/d", "^1")]),
+            app_needing("acme/c", "1.0.0", &[("acme/d", ">=1.1")]),
+            app("acme/d", "1.0.0"),
+            app("acme/d", "1.4.0"),
+        ],
+        &no_revocations(),
+    );
+    let root = verify_listing(&index, "acme/a", &v("1.0.0")).unwrap();
+    assert_eq!(
+        ids(&resolve_depends_on(&index, &root).unwrap()),
+        ["acme/d@1.4.0", "acme/b@1.0.0", "acme/c@1.0.0"]
+    );
+}
+
+#[test]
+fn incompatible_diamond_refused() {
+    // b takes d@1.4.0; c needs d ^2, which d@1.4.0 does not match.
+    let index = signed(
+        &[
+            app_needing("acme/a", "1.0.0", &[("acme/b", "^1"), ("acme/c", "^1")]),
+            app_needing("acme/b", "1.0.0", &[("acme/d", "^1")]),
+            app_needing("acme/c", "1.0.0", &[("acme/d", "^2")]),
+            app("acme/d", "1.4.0"),
+            app("acme/d", "2.0.0"),
+        ],
+        &no_revocations(),
+    );
+    let root = verify_listing(&index, "acme/a", &v("1.0.0")).unwrap();
+    assert!(matches!(
+        resolve_depends_on(&index, &root),
+        Err(VerifyError::Dependency { id, .. }) if id == "acme/d"
+    ));
+}
+
+#[test]
 fn dependency_only_revoked_versions_refused() {
     let index = signed(
         &[
@@ -602,8 +642,70 @@ fn index_v1_still_verifies() {
 
 #[test]
 fn v1_parser_reads_built_index_json() {
-    let parsed = index::parse(&read("testdata/index-v2/index.json")).unwrap();
+    // The 0.1.x contract: what agentd's `Marketplace` reads `index.json` with.
+    let parsed = index::parse_v1_strict(&read("testdata/index-v2/index.json")).unwrap();
     assert!(!parsed.listings.is_empty());
+    // It refuses index v2, even though `parse` takes it.
+    let v2 = read("testdata/index-v2/index.v2.json");
+    index::parse(&v2).unwrap();
+    assert!(matches!(
+        index::parse_v1_strict(&v2),
+        Err(index::IndexError::NotV1(_))
+    ));
+}
+
+#[test]
+fn strict_v1_refuses_what_0_1_agentd_cannot_read() {
+    let v1: Value = serde_json::from_slice(&read("testdata/index-v2/index.json")).unwrap();
+    let strict = |doc: &Value| index::parse_v1_strict(&serde_json::to_vec(doc).unwrap());
+    strict(&v1).unwrap();
+
+    // An app kind in index v1.
+    let mut doc = v1.clone();
+    doc["listings"][0]["kind"] = json!("app");
+    assert!(matches!(strict(&doc), Err(index::IndexError::NotV1(_))));
+
+    // A per-version tier (index v1's schema forbids it).
+    let mut doc = v1.clone();
+    doc["listings"][0]["versions"][0]["tier"] = json!("community");
+    assert!(matches!(strict(&doc), Err(index::IndexError::NotV1(_))));
+
+    // A listing v2 inside index v1.
+    let mut doc = v1.clone();
+    let app: Value = serde_json::from_slice(&index_v2(&[app("acme/a", "1.0.0")])).unwrap();
+    let mut entry = app["listings"][0].clone();
+    entry["kind"] = json!("agent");
+    entry["versions"][0].as_object_mut().unwrap().remove("tier");
+    doc["listings"].as_array_mut().unwrap().push(entry);
+    assert!(matches!(strict(&doc), Err(index::IndexError::NotV1(_))));
+
+    // A listing that breaks schema v1.
+    let mut doc = v1;
+    doc["listings"][0]["versions"][0]["listing"]["pricing"] = json!("paid");
+    assert!(strict(&doc).is_err());
+}
+
+#[test]
+fn duplicate_ids_and_versions_refused() {
+    let one: Value = serde_json::from_slice(&index_v2(&[app("acme/a", "1.0.0")])).unwrap();
+    let mut twice = one.clone();
+    let entry = twice["listings"][0].clone();
+    twice["listings"].as_array_mut().unwrap().push(entry);
+    assert!(matches!(
+        index::parse(&serde_json::to_vec(&twice).unwrap()),
+        Err(index::IndexError::Duplicate(id)) if id == "acme/a"
+    ));
+
+    let mut doubled = one;
+    let row = doubled["listings"][0]["versions"][0].clone();
+    doubled["listings"][0]["versions"]
+        .as_array_mut()
+        .unwrap()
+        .push(row);
+    assert!(matches!(
+        index::parse(&serde_json::to_vec(&doubled).unwrap()),
+        Err(index::IndexError::Duplicate(at)) if at == "acme/a@1.0.0"
+    ));
 }
 
 #[test]

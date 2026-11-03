@@ -261,8 +261,12 @@ pub fn verify_listing(
 /// dependencies), duplicates removed, `root` excluded. Each dependency is
 /// the highest version that matches its range, is not a prerelease, and
 /// that [`verify_listing`] accepts. A cycle, a missing listing, no
-/// acceptable version, two versions of one listing, or a chain deeper than
-/// 8 is [`VerifyError::Dependency`].
+/// acceptable version, or a chain deeper than 8 is
+/// [`VerifyError::Dependency`].
+///
+/// One version per id: a listing reached again (a diamond) keeps the version
+/// chosen when it was first reached, which must match the later range too;
+/// otherwise that is [`VerifyError::Dependency`] as well.
 pub fn resolve_depends_on(
     index: &SignedIndex,
     root: &VerifiedListing,
@@ -301,21 +305,23 @@ impl Resolver<'_> {
                     reason: format!("deeper than {MAX_DEPENDENCY_DEPTH} levels"),
                 });
             }
-            let chosen = self.choose(&dep.id, &dep.version)?;
             if self.done.contains(&dep.id) {
+                // One version per id: the one chosen first must satisfy
+                // every later range too.
                 if let Some(earlier) = self.order.iter().find(|v| v.listing.id == dep.id)
-                    && earlier.listing.version != chosen.listing.version
+                    && !dep.version.matches(&earlier.listing.version)
                 {
                     return Err(VerifyError::Dependency {
                         id: dep.id.clone(),
                         reason: format!(
-                            "needed at both {} and {}",
-                            earlier.listing.version, chosen.listing.version
+                            "{} needs {}, but {} was chosen",
+                            listing.id, dep.version, earlier.listing.version
                         ),
                     });
                 }
                 continue;
             }
+            let chosen = self.choose(&dep.id, &dep.version)?;
             self.stack.push(dep.id.clone());
             self.visit(&chosen.listing, depth + 1)?;
             self.stack.pop();

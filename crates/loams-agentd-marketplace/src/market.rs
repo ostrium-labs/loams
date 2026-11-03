@@ -258,7 +258,7 @@ impl<F: Fetcher, V: SignatureVerifier> Marketplace<F, V> {
                     error,
                 })?;
         }
-        let index = index::parse(&files.index).map_err(|e| MarketError::Index {
+        let index = index::parse_v1_strict(&files.index).map_err(|e| MarketError::Index {
             source_name: source.name.clone(),
             error: e.to_string(),
         })?;

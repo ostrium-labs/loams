@@ -392,12 +392,6 @@ impl std::fmt::Debug for TestKey {
     }
 }
 
-/// `SubjectPublicKeyInfo` DER of a P-256 key, before its 65-byte point.
-const P256_SPKI_PREFIX: [u8; 26] = [
-    0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a,
-    0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,
-];
-
 impl TestKey {
     pub fn generate() -> TestKey {
         use ring::signature::{ECDSA_P256_SHA256_ASN1_SIGNING, EcdsaKeyPair};
@@ -410,7 +404,7 @@ impl TestKey {
 
     fn spki_der(&self) -> Vec<u8> {
         use ring::signature::KeyPair as _;
-        let mut der = P256_SPKI_PREFIX.to_vec();
+        let mut der = crate::verify::P256_SPKI_PREFIX.to_vec();
         der.extend_from_slice(self.pair.public_key().as_ref());
         der
     }
