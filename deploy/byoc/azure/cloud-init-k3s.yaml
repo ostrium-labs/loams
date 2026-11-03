@@ -199,15 +199,20 @@ write_files:
       say() { echo "loams-k3s-bootstrap: $*"; }
       die() { echo "loams-k3s-bootstrap: $*" >&2; exit 1; }
 
-      # k3s's default pod network. Pods cannot take the VM's cloud role through the
-      # metadata service: their traffic to it is dropped in a chain jumped to first from FORWARD.
+      # k3s's default pod network. Pods must not take the VM's cloud role through the
+      # metadata service (Review Focus 5), so their traffic to it is dropped in the raw
+      # table's PREROUTING, the first hook a packet from a pod meets. Nothing in the filter
+      # table's FORWARD (where kube-router's chains can ACCEPT a pod's traffic ahead of any
+      # rule of ours) or in k3s's own chains can reorder or bypass it, and it does not depend
+      # on k3s having started. The unit that runs this is ordered before k3s.service, so there
+      # is no boot window either. Each rule is checked before it is added: a rerun adds nothing.
       pod_cidr="10.42.0.0/16"
       imds_block() {
-        iptables -w -N LOAMS-IMDS 2>/dev/null || true
-        iptables -w -F LOAMS-IMDS
-        iptables -w -I LOAMS-IMDS -s "$pod_cidr" -d 169.254.169.254 -j DROP
-        while iptables -w -D FORWARD -j LOAMS-IMDS 2>/dev/null; do :; done
-        iptables -w -I FORWARD 1 -j LOAMS-IMDS
+        iptables -w -t raw -N LOAMS-IMDS 2>/dev/null || true
+        iptables -w -t raw -C LOAMS-IMDS -s "$pod_cidr" -d 169.254.169.254 -j DROP 2>/dev/null \
+          || iptables -w -t raw -A LOAMS-IMDS -s "$pod_cidr" -d 169.254.169.254 -j DROP
+        iptables -w -t raw -C PREROUTING -j LOAMS-IMDS 2>/dev/null \
+          || iptables -w -t raw -I PREROUTING 1 -j LOAMS-IMDS
       }
       if [[ "${1:-}" == "--imds-block" ]]; then
         imds_block
@@ -390,6 +395,32 @@ write_files:
         printf '%s' "$ca_json" | jq -er --arg k "$k" '.[$k]' >"$tls/$f"
       done
       unset ca_json
+      # Pod Security: baseline is enforced in every namespace except the two the platform
+      # itself runs in. It forbids hostNetwork, hostPID and privileged pods, so a pod cannot
+      # reach the cloud metadata service from the host's network namespace, where the rule
+      # in step 5 (which matches pod-network sources) does not see it (Review Focus 5). The
+      # file must exist before k3s first starts; the flag in step 4 points the API server at it.
+      cat >"$work/psa.yaml" <<'YAML'
+      apiVersion: apiserver.config.k8s.io/v1
+      kind: AdmissionConfiguration
+      plugins:
+        - name: PodSecurity
+          configuration:
+            apiVersion: pod-security.admission.config.k8s.io/v1
+            kind: PodSecurityConfiguration
+            defaults:
+              enforce: baseline
+              enforce-version: latest
+              audit: restricted
+              audit-version: latest
+              warn: restricted
+              warn-version: latest
+            exemptions:
+              usernames: []
+              runtimeClasses: []
+              namespaces: [kube-system, loams-system]
+      YAML
+      install -m 0600 "$work/psa.yaml" "$root/var/lib/rancher/k3s/server/psa.yaml"
 
       # --- 3. k3s and its install script, at the pinned tag, checked ---------------------------
       etag="${K3S_VERSION//+/%2B}"
@@ -400,15 +431,18 @@ write_files:
       mkdir -p "$root/usr/local/bin"
       install -m 0755 "$work/k3s" "$root/usr/local/bin/k3s"
 
-      # --- 4. k3s: no Traefik, secrets encrypted, kubeconfig for root only ----------------------
-      say "installing k3s $K3S_VERSION"
-      INSTALL_K3S_SKIP_DOWNLOAD=true \
-      INSTALL_K3S_EXEC="server --disable traefik --secrets-encryption --write-kubeconfig-mode 0600 --tls-san $TS_HOSTNAME --tls-san $TS_HOSTNAME.$TAILNET_DOMAIN" \
-        sh "$work/install.sh"
-
-      # --- 5. pods stay off the metadata service, before anything runs in them ------------------
+      # --- 5. pods stay off the metadata service, before k3s starts: the unit is ordered before
+      # k3s.service and wanted by it (this amends the brief, which started it after k3s; see Review
+      # Focus 5: iptables rules do not persist, so a rule added after k3s leaves a window) --------
       systemctl daemon-reload
       systemctl enable --now loams-k3s-imds-block.service
+
+      # --- 4. k3s: no Traefik, secrets encrypted, kubeconfig for root only, Pod Security --------
+      # The flags are the brief's, plus the Pod Security config file (Review Focus 5, see step 2).
+      say "installing k3s $K3S_VERSION"
+      INSTALL_K3S_SKIP_DOWNLOAD=true \
+      INSTALL_K3S_EXEC="server --disable traefik --secrets-encryption --write-kubeconfig-mode 0600 --tls-san $TS_HOSTNAME --tls-san $TS_HOSTNAME.$TAILNET_DOMAIN --kube-apiserver-arg=admission-control-config-file=/var/lib/rancher/k3s/server/psa.yaml" \
+        sh "$work/install.sh"
 
       # --- 6. the operator chart, from GHCR's registry API ---------------------------------------
       chart_repo="ostrium-labs/charts/loams-operator"
@@ -802,9 +836,9 @@ write_files:
     content: |
       [Unit]
       Description=Keep pods off the cloud metadata service (169.254.169.254)
-      # k3s sets up the forwarding rules this chain sits in front of.
-      After=k3s.service network-online.target
-      PartOf=k3s.service
+      # Before k3s starts a single pod: the rule is in the raw table, which does not depend on
+      # k3s's own chains, and iptables rules do not survive a reboot, so this runs at every boot.
+      Before=k3s.service
 
       [Service]
       Type=oneshot
@@ -812,7 +846,7 @@ write_files:
       ExecStart=/usr/local/bin/loams-k3s-bootstrap --imds-block
 
       [Install]
-      WantedBy=multi-user.target
+      WantedBy=k3s.service multi-user.target
 runcmd:
   - [ systemctl, daemon-reload ]
   - [ systemctl, enable, --now, --no-block, loams-k3s.service ]

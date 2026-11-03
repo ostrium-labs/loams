@@ -177,31 +177,52 @@ case "$1" in
     touch "$log/ts-up" ;;
 esac
 SH
-cat >"$tmp/bin/iptables" <<'SH'
-#!/usr/bin/env bash
-# state: "chain C" and "rule C <args>" lines; positions are ignored
-st="${LOAMS_TEST_LOG:?}/ipt"; touch "$st"
-[[ "$1" == -w ]] && shift
-op="$1"; chain="$2"; shift 2
-case "$op" in
-  -N) grep -qxF "chain $chain" "$st" && { echo "iptables: Chain already exists." >&2; exit 1; }; echo "chain $chain" >>"$st" ;;
-  -F) grep -vxE "rule $chain .*" "$st" >"$st.new" || true; mv "$st.new" "$st" ;;
-  -C) grep -qxF "rule $chain $*" "$st" ;;
-  -D) grep -qxF "rule $chain $*" "$st" || exit 1
-      awk -v l="rule $chain $*" '$0==l && !d {d=1; next} {print}' "$st" >"$st.new"; mv "$st.new" "$st" ;;
-  -I|-A) [[ "${1:-}" =~ ^[0-9]+$ ]] && shift; echo "rule $chain $*" >>"$st" ;;
-  *) echo "fake iptables: $op" >&2; exit 2 ;;
-esac
-SH
+cat >"$tmp/bin/iptables" <<'PY'
+#!/usr/bin/env python3
+# state file lines, in order: "chain <table> <name>" and "rule <table> <chain> <args>";
+# -I <chain> <n> inserts as the n-th rule of that table and chain
+import os, sys
+st = os.environ["LOAMS_TEST_LOG"] + "/ipt"
+a = sys.argv[1:]
+if a[0] == "-w":
+    a = a[1:]
+table = "filter"
+if a[0] == "-t":
+    table, a = a[1], a[2:]
+op, chain, rest = a[0], a[1], a[2:]
+lines = open(st).read().splitlines() if os.path.exists(st) else []
+def save():
+    open(st, "w").write("".join(l + "\n" for l in lines))
+prefix = f"rule {table} {chain} "
+idx = [i for i, l in enumerate(lines) if l.startswith(prefix)]
+if op == "-N":
+    if f"chain {table} {chain}" in lines:
+        sys.exit("iptables: Chain already exists.")
+    lines.append(f"chain {table} {chain}")
+elif op == "-C":
+    sys.exit(0 if prefix + " ".join(rest) in lines else 1)
+elif op == "-D":
+    if prefix + " ".join(rest) not in lines:
+        sys.exit(1)
+    lines.remove(prefix + " ".join(rest))
+elif op in ("-I", "-A"):
+    pos = None
+    if rest and rest[0].isdigit():
+        pos, rest = int(rest[0]), rest[1:]
+    new = prefix + " ".join(rest)
+    if op == "-A" or not idx or pos is None or pos > len(idx):
+        at = (idx[-1] + 1) if idx else len(lines)
+    else:
+        at = idx[pos - 1]
+    lines.insert(at, new)
+else:
+    sys.exit(f"fake iptables: {op}")
+save()
+PY
 cat >"$tmp/bin/systemctl" <<'SH'
 #!/usr/bin/env bash
 log="${LOAMS_TEST_LOG:?}"
 echo "$*" >>"$log/systemctl.log"
-if [[ "$*" == *loams-k3s-imds-block.service* && "$1" == enable ]]; then
-  m="$LOAMS_K3S_ROOT/var/lib/rancher/k3s/server/manifests/loams-home.yaml"
-  [[ -e "$m" ]] && echo "imds_before_manifest=no" >>"$log/systemctl.log" || echo "imds_before_manifest=yes" >>"$log/systemctl.log"
-  [[ -e "$LOAMS_K3S_ROOT/var/lib/rancher/k3s/server/tls/server-ca.crt" ]] && echo "k3s_ca_first=yes" >>"$log/systemctl.log"
-fi
 exit 0
 SH
 chmod +x "$tmp/bin/"*
@@ -220,6 +241,8 @@ r="$LOAMS_K3S_ROOT"
   echo "exec=$INSTALL_K3S_EXEC"
   if [ -f "$r/var/lib/rancher/k3s/server/tls/server-ca.crt" ] && [ -f "$r/var/lib/rancher/k3s/server/tls/client-ca.key" ]; then echo ca_present=yes; else echo ca_present=no; fi
   if [ -x "$r/usr/local/bin/k3s" ]; then echo k3s_present=yes; else echo k3s_present=no; fi
+  if grep -qx 'enable --now loams-k3s-imds-block.service' "$LOAMS_TEST_LOG/systemctl.log" 2>/dev/null; then echo imds_enabled=yes; else echo imds_enabled=no; fi
+  if [ -f "$r/var/lib/rancher/k3s/server/psa.yaml" ]; then echo psa_present=yes; else echo psa_present=no; fi
   if [ -e "$r/var/lib/rancher/k3s/server/manifests/loams-home.yaml" ]; then echo manifest_present=yes; else echo manifest_present=no; fi
 } >>"$LOAMS_TEST_LOG/install.log"
 SH
@@ -296,6 +319,24 @@ nothing_installed() {  # name: no manifest, no done marker
   [[ ! -e "$(manifest "$1")" && ! -e "$(r "$1")/var/lib/loams-k3s/done" ]]
 }
 
+psa_checks() {  # root log: the Pod Security config file is in place before k3s starts, with the right content
+  local f="$1/var/lib/rancher/k3s/server/psa.yaml"
+  grep -qx 'psa_present=yes' "$2/install.log" && [[ "$(stat -c %a "$f")" == 600 ]] || { echo "psa.yaml missing before install.sh, or not 0600"; return 1; }
+  python3 -I -c '
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+assert d["apiVersion"] == "apiserver.config.k8s.io/v1" and d["kind"] == "AdmissionConfiguration", d
+(p,) = d["plugins"]
+assert p["name"] == "PodSecurity", p
+c = p["configuration"]
+assert c["apiVersion"] == "pod-security.admission.config.k8s.io/v1" and c["kind"] == "PodSecurityConfiguration", c
+dflt = c["defaults"]
+assert dflt["enforce"] == "baseline" and dflt["enforce-version"] == "latest", dflt
+assert dflt["audit"] == "restricted" and dflt["warn"] == "restricted", dflt
+assert sorted(c["exemptions"]["namespaces"]) == ["kube-system", "loams-system"], c["exemptions"]
+' "$f"
+}
+
 # 1. a good local run: every step, in order
 scene local; mkconfig "$tmp/local.env" loams/t local
 if boot_run local "$tmp/local.env"; then
@@ -309,10 +350,11 @@ if boot_run local "$tmp/local.env"; then
     && [[ "$(stat -c %a "$tls/server-ca.key")$(stat -c %a "$tls/client-ca.key")" == 600600 ]] && ok "step 2: both CAs are in the tls directory, keys mode 600" || bad "CA files"
   grep -qx 'ca_present=yes' "$l/install.log" && grep -qx 'k3s_present=yes' "$l/install.log" && grep -qx 'manifest_present=no' "$l/install.log" && ok "the CAs and the binary are in place before install.sh starts k3s" || bad "order: $(cat "$l/install.log")"
   [[ "$(cat "$root/usr/local/bin/k3s")" == fake-k3s-amd64 ]] && grep -qx 'skip_download=true' "$l/install.log" \
-    && grep -qx 'exec=server --disable traefik --secrets-encryption --write-kubeconfig-mode 0600 --tls-san loams-t --tls-san loams-t.tail1234.ts.net' "$l/install.log" \
-    && ok "steps 3 and 4: the checked binary, install.sh with the exact server flags" || bad "install: $(cat "$l/install.log")"
-  grep -qx 'enable --now loams-k3s-imds-block.service' "$l/systemctl.log" && grep -qx 'imds_before_manifest=yes' "$l/systemctl.log" && grep -qx 'k3s_ca_first=yes' "$l/systemctl.log" \
-    && ok "step 5: the IMDS block starts after k3s is installed and before the home manifest" || bad "imds unit: $(cat "$l/systemctl.log")"
+    && grep -qx 'exec=server --disable traefik --secrets-encryption --write-kubeconfig-mode 0600 --tls-san loams-t --tls-san loams-t.tail1234.ts.net --kube-apiserver-arg=admission-control-config-file=/var/lib/rancher/k3s/server/psa.yaml' "$l/install.log" \
+    && ok "steps 3 and 4: the checked binary, install.sh with the server flags (the brief's, plus the PSA config file)" || bad "install: $(cat "$l/install.log")"
+  grep -qx 'enable --now loams-k3s-imds-block.service' "$l/systemctl.log" && grep -qx 'imds_enabled=yes' "$l/install.log" \
+    && ok "step 5: the IMDS block is enabled and started before install.sh starts k3s (no window with unblocked pods)" || bad "imds unit: $(cat "$l/systemctl.log") $(cat "$l/install.log")"
+  psa_checks "$root" "$l" && ok "psa_baseline_enforced_with_exemptions" || bad "psa_baseline_enforced_with_exemptions"
   cmp -s "$root/var/lib/rancher/k3s/server/static/charts/loams-operator-$rel.tgz" "$tmp/chart.tgz" && ok "step 6: the chart is in k3s's static charts directory" || bad "chart file"
   ! grep -rq PLANTED "$tmp/out-local" && ok "no secret value in the bootstrap's output" || bad "a secret in the output"
   [[ "$(stat -c %a "$(manifest local)")" == 600 ]] && ok "the home manifest is mode 600 (it holds the DSNs)" || bad "manifest mode"
@@ -421,14 +463,20 @@ else bad "the server run failed: $(cat "$tmp/out-server")"; fi
 imds_checks() {
   local l="$tmp/log-imds"; rm -rf "$l"; mkdir -p "$l"
   local run=(env PATH="$tmp/bin:$PATH" LOAMS_TEST_LOG="$l" "$boot" --imds-block)
+  # another rule first in the table, as k3s or a user might leave: ours is inserted at position 1
+  printf 'chain raw LOAMS-OTHER\nrule raw PREROUTING -j LOAMS-OTHER\n' >"$l/ipt"
   "${run[@]}" >/dev/null && "${run[@]}" >/dev/null || { echo "the block failed"; return 1; }
-  [[ "$(grep -cxF 'rule LOAMS-IMDS -s 10.42.0.0/16 -d 169.254.169.254 -j DROP' "$l/ipt")" == 1 ]] || { echo "drop rule: $(cat "$l/ipt")"; return 1; }
-  [[ "$(grep -cxF 'rule FORWARD -j LOAMS-IMDS' "$l/ipt")" == 1 ]] || { echo "jump rule: $(cat "$l/ipt")"; return 1; }
-  grep -qxF 'chain LOAMS-IMDS' "$l/ipt" || { echo "no chain"; return 1; }
+  [[ "$(grep -cxF 'rule raw LOAMS-IMDS -s 10.42.0.0/16 -d 169.254.169.254 -j DROP' "$l/ipt")" == 1 ]] || { echo "drop rule: $(cat "$l/ipt")"; return 1; }
+  [[ "$(grep -cxF 'rule raw PREROUTING -j LOAMS-IMDS' "$l/ipt")" == 1 ]] || { echo "jump rule: $(cat "$l/ipt")"; return 1; }
+  [[ "$(grep '^rule raw PREROUTING ' "$l/ipt" | head -1)" == 'rule raw PREROUTING -j LOAMS-IMDS' ]] || { echo "the jump is not first in raw PREROUTING: $(cat "$l/ipt")"; return 1; }
+  grep -qxF 'chain raw LOAMS-IMDS' "$l/ipt" || { echo "no raw chain"; return 1; }
+  # not in the filter table, where kube-router's chains can accept traffic ahead of it
+  ! grep -q '^rule filter ' "$l/ipt" || { echo "a filter-table rule: $(cat "$l/ipt")"; return 1; }
   local u="$byoc/lib/loams-k3s-imds-block.service"
-  grep -q '^After=.*k3s.service' "$u" && grep -qx 'ExecStart=/usr/local/bin/loams-k3s-bootstrap --imds-block' "$u" && grep -q '^WantedBy=multi-user.target' "$u" && grep -q '^Type=oneshot' "$u" || { echo "unit"; return 1; }
+  grep -qx 'Before=k3s.service' "$u" && ! grep -qE '^(After|PartOf)=.*k3s.service' "$u" && grep -qx 'ExecStart=/usr/local/bin/loams-k3s-bootstrap --imds-block' "$u" \
+    && grep -qx 'WantedBy=k3s.service multi-user.target' "$u" && grep -qx 'Type=oneshot' "$u" || { echo "unit"; return 1; }
 }
-t "imds_block_rule_inserted (twice: no duplicates; the unit runs it after k3s at every boot)" imds_checks
+t "imds_block_rule_inserted (raw PREROUTING, first, no duplicates; the unit runs before k3s at every boot)" imds_checks
 
 # 3. a rerun is a no-op: no secret store, no tailscale, no install
 rm -rf "$tmp/log-local"; mkdir -p "$tmp/log-local"
