@@ -39,7 +39,7 @@ fn crds_dir() -> PathBuf {
 #[test]
 fn crds_match_checked_in() {
     let crds = all_crds();
-    assert_eq!(crds.len(), 3);
+    assert_eq!(crds.len(), 5);
     for crd in &crds {
         let name = crd.metadata.name.clone().expect("crd name");
         let path = crds_dir().join(format!("{name}.yaml"));
@@ -88,6 +88,8 @@ fn names_and_short_names() {
         ("LoamsCluster", "loamsclusters", "lc"),
         ("LoamsInstall", "loamsinstalls", "li"),
         ("StorageBinding", "storagebindings", "sb"),
+        ("LoamsDevice", "loamsdevices", "ldev"),
+        ("LoamsFleet", "loamsfleets", "lfleet"),
     ];
     for (kind, plural, short) in want {
         assert!(
@@ -156,7 +158,8 @@ fn unknown_cluster_exposure_is_rejected_by_the_type() {
 }
 
 /// Walks a schema; a property named like a secret value is allowed only
-/// inside `SecretRef`.
+/// inside `SecretRef` and inside a label selector requirement (its `key`
+/// is a label key).
 fn walk(v: &Value, path: &str, in_secret_ref: bool, bad: &mut Vec<String>) {
     const FORBIDDEN: [&str; 4] = ["password", "token", "key", "dsn"];
     let Value::Object(map) = v else {
@@ -170,7 +173,11 @@ fn walk(v: &Value, path: &str, in_secret_ref: bool, bad: &mut Vec<String>) {
     if let Some(Value::Object(props)) = map.get("properties") {
         // The SecretRef object is the one with a `name` and an optional `key`.
         let is_secret_ref =
-            props.contains_key("name") && props.contains_key("key") && props.len() == 2;
+            (props.contains_key("name") && props.contains_key("key") && props.len() == 2)
+                || (props.contains_key("key")
+                    && props.contains_key("operator")
+                    && props.contains_key("values")
+                    && props.len() == 3);
         for (name, sub) in props {
             let p = format!("{path}.{name}");
             if !is_secret_ref && !in_secret_ref && FORBIDDEN.contains(&name.to_lowercase().as_str())
@@ -214,4 +221,52 @@ fn cel_rules_present() {
     ] {
         assert!(text.contains(msg), "missing CEL message: {msg}");
     }
+}
+
+#[test]
+fn device_kinds_in_all_crds() {
+    let names: Vec<String> = all_crds()
+        .into_iter()
+        .filter_map(|c| c.metadata.name)
+        .collect();
+    for want in ["loamsdevices.loams.dev", "loamsfleets.loams.dev"] {
+        assert!(names.iter().any(|n| n == want), "{want} missing: {names:?}");
+    }
+}
+
+/// Collects every `required` list under a schema node.
+fn required_lists(v: &Value, out: &mut Vec<Vec<String>>) {
+    match v {
+        Value::Object(map) => {
+            if let Some(Value::Array(a)) = map.get("required") {
+                out.push(
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(str::to_owned))
+                        .collect(),
+                );
+            }
+            for sub in map.values() {
+                required_lists(sub, out);
+            }
+        }
+        Value::Array(a) => a.iter().for_each(|x| required_lists(x, out)),
+        _ => {}
+    }
+}
+
+#[test]
+fn device_key_fingerprint_required() {
+    let crd = all_crds()
+        .into_iter()
+        .find(|c| c.metadata.name.as_deref() == Some("loamsdevices.loams.dev"))
+        .expect("LoamsDevice crd");
+    let v = serde_json::to_value(&crd).unwrap();
+    let mut lists = Vec::new();
+    required_lists(&v, &mut lists);
+    assert!(
+        lists
+            .iter()
+            .any(|l| l.iter().any(|n| n == "keyFingerprint")),
+        "keyFingerprint not required: {lists:?}"
+    );
 }
