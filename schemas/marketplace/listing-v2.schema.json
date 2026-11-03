@@ -1,0 +1,303 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/listing/v2.json",
+  "title": "Loams Marketplace listing, v2",
+  "description": "One version of one listing in the open Loams Marketplace (design 86, plan OP2-B, D2605). v2 adds the app and engine kinds, installable packages (oci, helm, kustomize, wasm, binary), what a listing requires, where it runs, what it depends on, a schema for its values, a cost hint and how an OCI app or engine runs. Every v1 field keeps its v1 definition, by $ref to the v1 schema (https://loams.dev/schemas/listing/v1.json), and agent kinds keep v1's per-kind rules. A validator loads both resources. A v2 document names this schema in $schema; v1 stays as it was and is not checked here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "id", "kind", "version", "title", "summary", "licence", "source", "publisher", "pricing"],
+  "properties": {
+    "$schema": { "const": "https://loams.dev/schemas/listing/v2.json" },
+    "id": { "$ref": "https://loams.dev/schemas/listing/v1.json#/properties/id" },
+    "kind": { "$ref": "#/$defs/kind" },
+    "version": { "$ref": "https://loams.dev/schemas/listing/v1.json#/$defs/semver" },
+    "title": { "$ref": "https://loams.dev/schemas/listing/v1.json#/properties/title" },
+    "summary": { "$ref": "https://loams.dev/schemas/listing/v1.json#/properties/summary" },
+    "description": { "$ref": "https://loams.dev/schemas/listing/v1.json#/properties/description" },
+    "icon": { "$ref": "https://loams.dev/schemas/listing/v1.json#/properties/icon" },
+    "licence": { "$ref": "https://loams.dev/schemas/listing/v1.json#/properties/licence" },
+    "source": { "$ref": "https://loams.dev/schemas/listing/v1.json#/$defs/source" },
+    "publisher": { "$ref": "https://loams.dev/schemas/listing/v1.json#/$defs/publisher" },
+    "support": { "$ref": "https://loams.dev/schemas/listing/v1.json#/$defs/https_url" },
+    "security_contact": { "$ref": "https://loams.dev/schemas/listing/v1.json#/properties/security_contact" },
+    "framework": { "$ref": "https://loams.dev/schemas/listing/v1.json#/$defs/framework" },
+    "language": { "$ref": "https://loams.dev/schemas/listing/v1.json#/$defs/language" },
+    "artifact": { "$ref": "https://loams.dev/schemas/listing/v1.json#/$defs/artifact" },
+    "provenance": { "$ref": "https://loams.dev/schemas/listing/v1.json#/$defs/provenance" },
+    "runtime": { "$ref": "https://loams.dev/schemas/listing/v1.json#/$defs/runtime" },
+    "entrypoint": { "$ref": "https://loams.dev/schemas/listing/v1.json#/properties/entrypoint" },
+    "targets": {
+      "description": "Where the listing runs: a Kubernetes cluster (cluster), agentd on a laptop or server (node-laptop), or a device (node-device). v1's agentd, byoc-server and app-byoc map onto these (D2605).",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/target" }
+    },
+    "surfaces": { "$ref": "https://loams.dev/schemas/listing/v1.json#/$defs/surfaces" },
+    "loams": { "$ref": "https://loams.dev/schemas/listing/v1.json#/$defs/loams_capabilities" },
+    "connectors": { "$ref": "https://loams.dev/schemas/listing/v1.json#/properties/connectors" },
+    "mcp_servers": { "$ref": "https://loams.dev/schemas/listing/v1.json#/properties/mcp_servers" },
+    "tools": { "$ref": "https://loams.dev/schemas/listing/v1.json#/properties/tools" },
+    "place": { "$ref": "https://loams.dev/schemas/listing/v1.json#/$defs/place_template" },
+    "models": { "$ref": "https://loams.dev/schemas/listing/v1.json#/$defs/models" },
+    "cost": { "$ref": "https://loams.dev/schemas/listing/v1.json#/$defs/cost_profile" },
+    "config": { "$ref": "https://loams.dev/schemas/listing/v1.json#/properties/config" },
+    "conformance": { "$ref": "https://loams.dev/schemas/listing/v1.json#/$defs/conformance" },
+    "harness": { "$ref": "https://loams.dev/schemas/listing/v1.json#/$defs/harness" },
+    "mcp_server": { "$ref": "https://loams.dev/schemas/listing/v1.json#/$defs/mcp_server" },
+    "pricing": { "$ref": "https://loams.dev/schemas/listing/v1.json#/properties/pricing" },
+    "package": { "$ref": "#/$defs/package" },
+    "requires": { "$ref": "#/$defs/requires" },
+    "depends_on": {
+      "description": "Other listings this one needs installed first, by id and version range.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/dependency" }
+    },
+    "values_schema": {
+      "description": "A JSON Schema (2020-12) for the values an install may set. At most 64 KiB, with local (#...) $refs only; both are checked by the listing parser and the linter, not here.",
+      "type": "object"
+    },
+    "cost_hint": { "$ref": "#/$defs/cost_hint" },
+    "run": { "$ref": "#/$defs/run" }
+  },
+  "allOf": [
+    {
+      "description": "An app or an engine is installed from a package, says what it costs to run and where it runs.",
+      "if": { "properties": { "kind": { "enum": ["app", "engine"] } }, "required": ["kind"] },
+      "then": {
+        "required": ["package", "cost_hint", "targets"],
+        "not": {
+          "anyOf": [
+            { "required": ["artifact"] },
+            { "required": ["runtime"] },
+            { "required": ["harness"] },
+            { "required": ["mcp_server"] },
+            { "required": ["surfaces"] }
+          ]
+        }
+      }
+    },
+    {
+      "description": "A package is installed only with its provenance, and names where it runs.",
+      "if": { "required": ["package"] },
+      "then": { "required": ["provenance", "targets"] }
+    },
+    {
+      "description": "wasm and binary packages run on nodes, never on a cluster.",
+      "if": {
+        "properties": { "package": { "properties": { "type": { "enum": ["wasm", "binary"] } }, "required": ["type"] } },
+        "required": ["package"]
+      },
+      "then": { "properties": { "targets": { "not": { "contains": { "const": "cluster" } } } } }
+    },
+    {
+      "description": "cosign provenance is for OCI packages only.",
+      "if": {
+        "properties": { "provenance": { "properties": { "type": { "const": "cosign" } }, "required": ["type"] } },
+        "required": ["provenance", "package"]
+      },
+      "then": { "properties": { "package": { "properties": { "type": { "const": "oci" } } } } }
+    },
+    {
+      "description": "run describes how an OCI app or engine runs; other packages bring their own manifests.",
+      "if": { "required": ["run"] },
+      "then": {
+        "required": ["package"],
+        "properties": {
+          "kind": { "enum": ["app", "engine"] },
+          "package": { "properties": { "type": { "const": "oci" } } }
+        }
+      }
+    },
+    { "description": "Agent kinds keep v1's rules: an agent.", "$ref": "https://loams.dev/schemas/listing/v1.json#/allOf/0" },
+    { "description": "A harness.", "$ref": "https://loams.dev/schemas/listing/v1.json#/allOf/1" },
+    { "description": "An MCP server.", "$ref": "https://loams.dev/schemas/listing/v1.json#/allOf/2" },
+    { "description": "An ACP harness has an artifact.", "$ref": "https://loams.dev/schemas/listing/v1.json#/allOf/3" },
+    { "description": "A native harness is first-party and has none.", "$ref": "https://loams.dev/schemas/listing/v1.json#/allOf/4" },
+    { "description": "A local MCP server has an artifact.", "$ref": "https://loams.dev/schemas/listing/v1.json#/allOf/5" },
+    { "description": "A remote MCP server has none.", "$ref": "https://loams.dev/schemas/listing/v1.json#/allOf/6" },
+    { "description": "Each runtime takes its own artifact type.", "$ref": "https://loams.dev/schemas/listing/v1.json#/allOf/7" },
+    { "description": "An artifact needs provenance.", "$ref": "https://loams.dev/schemas/listing/v1.json#/allOf/8" },
+    { "description": "No artifact or entrypoint without a runtime.", "$ref": "https://loams.dev/schemas/listing/v1.json#/allOf/9" }
+  ],
+  "$defs": {
+    "kind": {
+      "type": "string",
+      "enum": ["agent", "harness", "mcp-server", "app", "engine"]
+    },
+    "target": {
+      "type": "string",
+      "enum": ["cluster", "node-laptop", "node-device"]
+    },
+    "digest": {
+      "description": "A SHA-256 digest: an OCI manifest digest, or a file's SHA-256.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "package": {
+      "description": "What an install pulls, by digest. Tagged by type.",
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "enum": ["oci", "helm", "kustomize", "wasm", "binary"] }
+      },
+      "allOf": [
+        { "if": { "properties": { "type": { "const": "oci" } } }, "then": { "$ref": "#/$defs/package_oci" } },
+        { "if": { "properties": { "type": { "const": "helm" } } }, "then": { "$ref": "#/$defs/package_helm" } },
+        { "if": { "properties": { "type": { "const": "kustomize" } } }, "then": { "$ref": "#/$defs/package_kustomize" } },
+        { "if": { "properties": { "type": { "const": "wasm" } } }, "then": { "$ref": "#/$defs/package_wasm" } },
+        { "if": { "properties": { "type": { "const": "binary" } } }, "then": { "$ref": "#/$defs/package_binary" } }
+      ]
+    },
+    "package_oci": {
+      "additionalProperties": false,
+      "required": ["type", "image", "digest"],
+      "properties": {
+        "type": { "const": "oci" },
+        "image": {
+          "description": "The image repository without a tag or digest, such as ghcr.io/acme/notes; the digest pins it.",
+          "type": "string",
+          "pattern": "^[a-z0-9][^@\\s]*$",
+          "not": { "pattern": ":[^/]+$" }
+        },
+        "digest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "package_helm": {
+      "additionalProperties": false,
+      "required": ["type", "chart", "version", "digest"],
+      "properties": {
+        "type": { "const": "helm" },
+        "chart": {
+          "description": "An OCI chart (oci://..., digest is the manifest digest) or an https chart archive (.tgz, digest is the file's SHA-256).",
+          "type": "string",
+          "pattern": "^(oci://\\S+|https://\\S+\\.tgz)$"
+        },
+        "version": { "$ref": "https://loams.dev/schemas/listing/v1.json#/$defs/semver" },
+        "digest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "package_kustomize": {
+      "additionalProperties": false,
+      "required": ["type", "url", "digest"],
+      "properties": {
+        "type": { "const": "kustomize" },
+        "url": { "description": "An https tarball of the kustomization directory.", "$ref": "https://loams.dev/schemas/listing/v1.json#/$defs/https_url" },
+        "digest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "package_wasm": {
+      "additionalProperties": false,
+      "required": ["type", "url", "digest"],
+      "properties": {
+        "type": { "const": "wasm" },
+        "url": { "$ref": "https://loams.dev/schemas/listing/v1.json#/$defs/https_url" },
+        "digest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "package_binary": {
+      "additionalProperties": false,
+      "required": ["type", "targets"],
+      "properties": {
+        "type": { "const": "binary" },
+        "targets": {
+          "description": "One file per Rust target triple.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/binary_target" }
+        }
+      }
+    },
+    "binary_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["triple", "url", "digest"],
+      "properties": {
+        "triple": { "type": "string", "pattern": "^[a-z0-9_]+(-[a-z0-9_.]+){2,3}$" },
+        "url": { "$ref": "https://loams.dev/schemas/listing/v1.json#/$defs/https_url" },
+        "digest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "storage_kind": {
+      "type": "string",
+      "enum": ["object", "sql-mysql", "sql-postgres", "kafka", "kv"]
+    },
+    "requires": {
+      "description": "What an install needs from its cluster or node.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storage": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/storage_kind" } },
+        "cpu_millis": { "type": "integer", "minimum": 1 },
+        "memory_mib": { "type": "integer", "minimum": 1 },
+        "gpu": { "$ref": "#/$defs/gpu" }
+      }
+    },
+    "gpu": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "vendor"],
+      "properties": {
+        "count": { "type": "integer", "minimum": 1 },
+        "vendor": { "type": "string", "enum": ["nvidia", "amd", "any"] }
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "$ref": "https://loams.dev/schemas/listing/v1.json#/properties/id" },
+        "version": {
+          "description": "A Cargo-style semver range, such as ^16, ~1.2 or >=1.0, <2.",
+          "type": "string",
+          "pattern": "^\\s*(\\*|(=|>=|<=|>|<|~|\\^)?\\s*(0|[1-9]\\d*)(\\.(0|[1-9]\\d*|\\*)(\\.(0|[1-9]\\d*|\\*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?)?)?)(\\s*,\\s*(=|>=|<=|>|<|~|\\^)?\\s*(0|[1-9]\\d*)(\\.(0|[1-9]\\d*|\\*)(\\.(0|[1-9]\\d*|\\*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?)?)?)*\\s*$"
+        }
+      }
+    },
+    "cost_hint": {
+      "description": "What one install typically uses, so the console can price it on the person's own cloud (design 84). managed lists the storage kinds it expects a managed service for.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cpu_millis", "memory_mib", "storage_gib", "egress_gib_per_month"],
+      "properties": {
+        "cpu_millis": { "type": "integer", "minimum": 0 },
+        "memory_mib": { "type": "integer", "minimum": 0 },
+        "storage_gib": { "type": "integer", "minimum": 0 },
+        "egress_gib_per_month": { "type": "integer", "minimum": 0 },
+        "managed": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/storage_kind" } }
+      }
+    },
+    "run": {
+      "description": "How an OCI app or engine runs: its ports, its health check and its arguments.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ports"],
+      "properties": {
+        "ports": { "type": "array", "items": { "$ref": "#/$defs/port" } },
+        "health": { "$ref": "#/$defs/health" },
+        "args": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "port": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "port", "protocol"],
+      "properties": {
+        "name": { "description": "A Kubernetes port name.", "type": "string", "pattern": "^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$" },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "protocol": { "type": "string", "enum": ["tcp", "udp"] }
+      }
+    },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["http_path", "port"],
+      "properties": {
+        "http_path": { "type": "string", "pattern": "^/\\S*$" },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+      }
+    }
+  }
+}

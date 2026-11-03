@@ -1,0 +1,46 @@
+{
+  "$schema": "https://loams.dev/schemas/listing/v2.json",
+  "id": "loams/house-engine",
+  "kind": "engine",
+  "version": "0.2.0",
+  "title": "House",
+  "summary": "The ClickHouse-compatible analytics engine on Iceberg.",
+  "licence": "Apache-2.0",
+  "source": {
+    "repository": "https://github.com/ostrium-labs/loams-house",
+    "commit": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "publisher": {
+    "name": "Loams",
+    "url": "https://loams.example"
+  },
+  "security_contact": "security@loams.example",
+  "package": {
+    "type": "kustomize",
+    "url": "https://github.com/ostrium-labs/loams-house/releases/download/v0.2.0/kustomize.tar.gz",
+    "digest": "sha256:20a62c10ee2f7c040afc64f48a82e2c0d4ed1a1df7f2d6a4a3484e7e9adb3474"
+  },
+  "provenance": {
+    "type": "github-attestation",
+    "ref": "https://api.github.com/repos/ostrium-labs/loams-house/attestations"
+  },
+  "targets": [
+    "cluster"
+  ],
+  "requires": {
+    "storage": [
+      "object",
+      "kv"
+    ],
+    "cpu_millis": 2000,
+    "memory_mib": 4096
+  },
+  "cost_hint": {
+    "cpu_millis": 2000,
+    "memory_mib": 4096,
+    "storage_gib": 100,
+    "egress_gib_per_month": 20,
+    "managed": []
+  },
+  "pricing": "free"
+}

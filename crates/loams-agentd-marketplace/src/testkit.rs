@@ -3,30 +3,47 @@
 //! the way Sigstore checks real ones, npm tarballs with matching integrity
 //! and provenance, and an npm that lays the package out. agentd's sessions
 //! and Connect tests use it, so they need neither the network nor Sigstore.
+//!
+//! Without `agentd` only the signing half is here: [`sign`] and
+//! [`FakeVerifier`], and with `fetch` the [`FakeFetcher`] (OP2-B Task 1).
 #![allow(clippy::unwrap_used, clippy::expect_used, missing_docs)]
 
+#[cfg(feature = "fetch")]
 use std::collections::HashMap;
+#[cfg(feature = "agentd")]
 use std::path::{Path, PathBuf};
+#[cfg(feature = "fetch")]
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "agentd")]
 use base64::Engine as _;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256, Sha512};
+#[cfg(feature = "agentd")]
+use sha2::Sha512;
+use sha2::{Digest, Sha256};
 
+#[cfg(feature = "fetch")]
+use crate::fetch::Fetcher;
+#[cfg(feature = "agentd")]
 use crate::install::Npm;
-use crate::market::Fetcher;
+#[cfg(feature = "agentd")]
 use crate::provenance::{SLSA_V1, npm_integrity};
+#[cfg(feature = "agentd")]
 use crate::service::{Deps, MemoryVault, NPM_REGISTRY, attestations_url, tarball_url};
+#[cfg(feature = "agentd")]
 use crate::sources::OFFICIAL_IDENTITY;
 use crate::verify::{GITHUB_ACTIONS_ISSUER, Identity, SignatureError, SignatureVerifier};
 
 pub const OFFICIAL_BASE: &str = "https://ostrium-labs.github.io/loams-marketplace";
+#[cfg(feature = "agentd")]
 /// The ACP harness listing [`World`] serves.
 pub const HARNESS_ID: &str = "testkit/echo-acp";
+#[cfg(feature = "agentd")]
 /// The local MCP server listing [`World`] serves (one secret, `token`).
 pub const MCP_ID: &str = "testkit/notes-mcp";
 pub const REPOSITORY: &str = "https://github.com/ostrium-labs/testkit";
 
+#[cfg(feature = "agentd")]
 fn fixture(name: &str) -> Vec<u8> {
     std::fs::read(
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -81,6 +98,7 @@ impl SignatureVerifier for FakeVerifier {
     }
 }
 
+#[cfg(feature = "fetch")]
 /// Serves bytes by URL and counts requests.
 #[derive(Clone, Default)]
 pub struct FakeFetcher {
@@ -88,12 +106,14 @@ pub struct FakeFetcher {
     calls: Arc<Mutex<HashMap<String, usize>>>,
 }
 
+#[cfg(feature = "fetch")]
 impl std::fmt::Debug for FakeFetcher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FakeFetcher").finish_non_exhaustive()
     }
 }
 
+#[cfg(feature = "fetch")]
 impl FakeFetcher {
     pub fn put(&self, url: &str, bytes: Vec<u8>) {
         self.files.lock().unwrap().insert(url.into(), bytes);
@@ -119,6 +139,7 @@ impl FakeFetcher {
     }
 }
 
+#[cfg(feature = "fetch")]
 #[async_trait::async_trait]
 impl Fetcher for FakeFetcher {
     async fn get(&self, url: &str) -> Result<Vec<u8>, String> {
@@ -132,6 +153,7 @@ impl Fetcher for FakeFetcher {
     }
 }
 
+#[cfg(feature = "agentd")]
 /// Lays out `node_modules/<name>/` with a `package.json` and the entrypoint,
 /// as npm would for a package with no dependencies.
 #[derive(Debug, Default)]
@@ -140,6 +162,7 @@ pub struct FakeNpm {
     pub packages: HashMap<String, String>,
 }
 
+#[cfg(feature = "agentd")]
 impl Npm for FakeNpm {
     fn install(&self, tarball: &Path, prefix: &Path) -> Result<(), String> {
         let bytes = std::fs::read(tarball).map_err(|e| e.to_string())?;
@@ -162,11 +185,13 @@ impl Npm for FakeNpm {
     }
 }
 
+#[cfg(feature = "agentd")]
 /// The tarball bytes of npm package `name`.
 pub fn tarball(name: &str) -> Vec<u8> {
     format!("testkit tarball {name}\n").into_bytes()
 }
 
+#[cfg(feature = "agentd")]
 /// A stand-in SLSA provenance bundle for `bytes`, built from `repository`.
 pub fn provenance_bundle(bytes: &[u8], repository: &str) -> Value {
     let statement = json!({
@@ -187,6 +212,7 @@ pub fn provenance_bundle(bytes: &[u8], repository: &str) -> Value {
     })
 }
 
+#[cfg(feature = "agentd")]
 fn npm_listing(id: &str, kind: &str, package: &str, entry: &str, version: &str) -> Value {
     let bytes = tarball(package);
     json!({
@@ -206,11 +232,13 @@ fn npm_listing(id: &str, kind: &str, package: &str, entry: &str, version: &str) 
     })
 }
 
+#[cfg(feature = "agentd")]
 /// An ACP harness on the node runtime, version 1.0.0.
 pub fn harness_listing() -> Value {
     harness_listing_at("1.0.0")
 }
 
+#[cfg(feature = "agentd")]
 /// The harness at `version`; 1.1.0 also reaches `api.example.com`, so an
 /// update to it widens the plan.
 pub fn harness_listing_at(version: &str) -> Value {
@@ -225,9 +253,11 @@ pub fn harness_listing_at(version: &str) -> Value {
     listing
 }
 
+#[cfg(feature = "agentd")]
 /// Every version of the harness, ascending.
 pub const HARNESS_VERSIONS: &[&str] = &["1.0.0", "1.1.0"];
 
+#[cfg(feature = "agentd")]
 /// A local MCP server on the node runtime, with a required secret.
 pub fn mcp_listing() -> Value {
     let mut listing = npm_listing(MCP_ID, "mcp-server", "notes-mcp", "bin/notes.js", "1.0.0");
@@ -244,10 +274,12 @@ pub fn mcp_listing() -> Value {
     listing
 }
 
+#[cfg(feature = "agentd")]
 fn sha256_hex(text: &str) -> String {
     hex::encode(Sha256::digest(text.as_bytes()))
 }
 
+#[cfg(feature = "agentd")]
 /// The fixture index (`testdata/index`) with the testkit listings added.
 pub fn index_bytes() -> Vec<u8> {
     let mut index: Value = serde_json::from_slice(&fixture("index.json")).unwrap();
@@ -275,6 +307,7 @@ pub fn index_bytes() -> Vec<u8> {
     serde_json::to_vec_pretty(&index).unwrap()
 }
 
+#[cfg(feature = "agentd")]
 /// A data directory, the official source served and signed, and the
 /// testkit packages on the fake registry.
 #[derive(Debug, Clone)]
@@ -283,6 +316,7 @@ pub struct World {
     pub fetcher: FakeFetcher,
 }
 
+#[cfg(feature = "agentd")]
 impl World {
     pub fn new(data_dir: &Path) -> Self {
         let fetcher = FakeFetcher::default();

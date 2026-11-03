@@ -17,6 +17,9 @@ cargo_package(
         "CARGO_PKG_RUST_VERSION": "1.97",
     },
     features = [
+        "agentd",
+        "default",
+        "fetch",
         "testkit",
     ],
     lib = {
@@ -72,6 +75,11 @@ cargo_package(
             "root": "tests/schema.rs",
         },
         {
+            "name": "schema_v2",
+            "crate": "schema_v2",
+            "root": "tests/schema_v2.rs",
+        },
+        {
             "name": "sigstore",
             "crate": "sigstore",
             "root": "tests/sigstore.rs",
@@ -111,6 +119,7 @@ cargo_package(
     ],
     extra_srcs = {
         "schemas/marketplace/conformance-report.v1.json": "//:file=schemas+marketplace+conformance-report.v1.json",
+        "schemas/marketplace/listing-v2.schema.json": "//:file=schemas+marketplace+listing-v2.schema.json",
         "schemas/marketplace/listing.v1.json": "//:file=schemas+marketplace+listing.v1.json",
     },
     rustc_flags = [

@@ -1,11 +1,17 @@
-//! agentd's [`Fetcher`]: HTTPS only, with a size cap and a timeout (MK1 Task
-//! 4b). The marketplace reads every byte it uses through the `Fetcher` trait,
-//! so another location (MS1 Task 5's Walrus aggregators) is a second
+//! The [`Fetcher`] trait and its HTTPS client, [`HttpsFetcher`]: HTTPS
+//! only, with a size cap and a timeout (MK1 Task 4b; feature `fetch`, OP2-B
+//! Task 1). The marketplace reads every byte it uses through the `Fetcher`
+//! trait, so another location (MS1 Task 5's Walrus aggregators) is a second
 //! implementation behind the same trait, never a change here.
 
 use std::time::Duration;
 
-use crate::market::Fetcher;
+/// Fetches a URL's bytes. agentd's implementation is an HTTPS client; tests
+/// serve fixtures.
+#[async_trait::async_trait]
+pub trait Fetcher: Send + Sync {
+    async fn get(&self, url: &str) -> Result<Vec<u8>, String>;
+}
 
 /// The largest body the fetcher reads: an npm tarball of the biggest agent
 /// we expect, with room. Indexes and bundles are far smaller.

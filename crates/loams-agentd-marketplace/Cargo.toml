@@ -8,39 +8,63 @@ license.workspace = true
 publish = false
 
 [features]
-# A signed fake world for agentd's tests (`testkit`).
+default = ["agentd"]
+# agentd's half: the marketplace service and its installers, the engine
+# probe, installed agents' identities, consent plans, provenance checks, the
+# conformance runner and Walrus artifact reads. Without it the crate is the
+# listing core (schemas v1 and v2, the index, sources, revocations and
+# signature verification), which the operator and one-click deploy build on
+# (OP2-B Task 1, D2605).
+agentd = [
+    "fetch",
+    "dep:base64",
+    "dep:loams-agentd-harness",
+    "dep:loams-walrus",
+    "dep:loams-zitadel",
+    "dep:rustix",
+    "dep:time",
+    "dep:tokio",
+    "dep:tracing",
+]
+# The `Fetcher` trait and its HTTPS client.
+fetch = ["dep:async-trait", "dep:reqwest"]
+# A signed fake world for tests (`testkit`); its agentd half needs `agentd`.
 testkit = []
 
 [dependencies]
-async-trait.workspace = true
-base64.workspace = true
+# The listing core.
+hex.workspace = true
 jsonschema.workspace = true
-# Walrus artifact locations (MS1 Task 5, D1812): verified, hedged reads.
-loams-walrus = { path = "../loams-walrus" }
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-hex.workspace = true
 sigstore-verify.workspace = true
 thiserror.workspace = true
-# The daemon side (MK1 Task 4b): the HTTPS fetcher (reqwest 0.12 on rustls,
-# as the other agentd crates fetch), the refresh timer and the registration
-# watch, and logs.
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "system-proxy"] }
-tracing.workspace = true
+
+# `fetch`: the HTTPS fetcher (reqwest 0.12 on rustls, as the other agentd
+# crates fetch).
+async-trait = { workspace = true, optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "system-proxy"], optional = true }
+
+# `agentd`.
+base64 = { workspace = true, optional = true }
+# Walrus artifact locations (MS1 Task 5, D1812): verified, hedged reads.
+loams-walrus = { path = "../loams-walrus", optional = true }
+# The refresh timer and the registration watch, and logs.
+tracing = { workspace = true, optional = true }
 # An installed agent's identity (IA4 Task 3, D1618, D1629): its Zitadel machine key's RFC 7523
 # assertion, and the assertion's clock.
-loams-zitadel.workspace = true
-time.workspace = true
+loams-zitadel = { workspace = true, optional = true }
+time = { workspace = true, optional = true }
 # The conformance runner (MK1 Task 8): agentd's ACP JSON-RPC client, and the
 # agent process, its loopback world and the signals that stop it. The
 # workspace tokio has "full", which covers both.
-loams-agentd-harness.workspace = true
-tokio = { workspace = true, features = ["sync", "time", "rt"] }
+loams-agentd-harness = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["sync", "time", "rt"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
-rustix = { workspace = true, features = ["process"] }
+rustix = { workspace = true, features = ["process"], optional = true }
 
 [dev-dependencies]
 # The mock Walrus aggregator and HTTPS registry of tests/walrus.rs.

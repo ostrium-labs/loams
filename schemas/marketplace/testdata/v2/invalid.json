@@ -1,0 +1,430 @@
+{
+  "description": "Invalid v2 listings, each a valid v2 fixture with one rule broken, and the JSON Pointer of the value the validator must name. Applied by v2_schema_rejects_each_invalid_fixture (crates/loams-agentd-marketplace) and by the index's lint. op is set (add or replace) or remove; paths are JSON Pointers.",
+  "cases": [
+    {
+      "name": "wasm-with-cluster",
+      "rule": "A wasm package runs on nodes, never on a cluster.",
+      "base": "valid/device-wasm.json",
+      "pointer": "/targets",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/targets",
+          "value": [
+            "node-device",
+            "cluster"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "binary-with-cluster",
+      "rule": "A binary package runs on nodes, never on a cluster.",
+      "base": "valid/laptop-binary.json",
+      "pointer": "/targets",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/targets",
+          "value": [
+            "cluster"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "app-without-package",
+      "rule": "An app is installed from a package.",
+      "base": "valid/app-oci.json",
+      "pointer": "",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/package"
+        },
+        {
+          "op": "remove",
+          "path": "/run"
+        }
+      ]
+    },
+    {
+      "name": "engine-with-wasm-on-cluster",
+      "rule": "An engine cannot put a wasm package on a cluster.",
+      "base": "valid/engine-kustomize.json",
+      "pointer": "/targets",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/package",
+          "value": {
+            "type": "wasm",
+            "url": "https://github.com/ostrium-labs/loams-house/releases/download/v0.2.0/house.wasm",
+            "digest": "sha256:abababababababababababababababababababababababababababababababab"
+          }
+        }
+      ]
+    },
+    {
+      "name": "oci-image-with-tag",
+      "rule": "An OCI image is named without a tag; the digest pins it.",
+      "base": "valid/app-oci.json",
+      "pointer": "/package/image",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/package/image",
+          "value": "ghcr.io/acme/notes:1.2.0"
+        }
+      ]
+    },
+    {
+      "name": "oci-image-with-digest",
+      "rule": "An OCI image is named without @digest; digest is its own field.",
+      "base": "valid/app-oci.json",
+      "pointer": "/package/image",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/package/image",
+          "value": "ghcr.io/acme/notes@sha256:abababababababababababababababababababababababababababababababab"
+        }
+      ]
+    },
+    {
+      "name": "digest-not-sha256",
+      "rule": "Digests are sha256:<64 lowercase hex>.",
+      "base": "valid/app-oci.json",
+      "pointer": "/package/digest",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/package/digest",
+          "value": "sha512:abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+        }
+      ]
+    },
+    {
+      "name": "digest-uppercase",
+      "rule": "Digests are lower case.",
+      "base": "valid/laptop-binary.json",
+      "pointer": "/package/targets/0/digest",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/package/targets/0/digest",
+          "value": "sha256:ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+        }
+      ]
+    },
+    {
+      "name": "package-without-provenance",
+      "rule": "A package is installed only with its provenance.",
+      "base": "valid/app-helm.json",
+      "pointer": "",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/provenance"
+        }
+      ]
+    },
+    {
+      "name": "app-without-cost-hint",
+      "rule": "An app says what it costs to run (D2615).",
+      "base": "valid/app-oci.json",
+      "pointer": "",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/cost_hint"
+        }
+      ]
+    },
+    {
+      "name": "engine-without-cost-hint",
+      "rule": "An engine says what it costs to run (D2615).",
+      "base": "valid/engine-kustomize.json",
+      "pointer": "",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/cost_hint"
+        }
+      ]
+    },
+    {
+      "name": "bad-storage-kind",
+      "rule": "Storage kinds are object, sql-mysql, sql-postgres, kafka or kv.",
+      "base": "valid/app-oci.json",
+      "pointer": "/requires/storage/0",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/requires/storage",
+          "value": [
+            "s3"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "depends-on-bad-range",
+      "rule": "depends_on versions are semver ranges.",
+      "base": "valid/app-oci.json",
+      "pointer": "/depends_on/0/version",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/depends_on/0/version",
+          "value": "latest"
+        }
+      ]
+    },
+    {
+      "name": "pricing-not-free",
+      "rule": "Listings are free (D2610).",
+      "base": "valid/app-oci.json",
+      "pointer": "/pricing",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/pricing",
+          "value": "paid"
+        }
+      ]
+    },
+    {
+      "name": "run-on-helm",
+      "rule": "run is for OCI packages only.",
+      "base": "valid/app-helm.json",
+      "pointer": "/package/type",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/run",
+          "value": {
+            "ports": [
+              {
+                "name": "http",
+                "port": 8080,
+                "protocol": "tcp"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "run-on-agent",
+      "rule": "run is for apps and engines only.",
+      "base": "valid/agent-v2.json",
+      "pointer": "/kind",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/run",
+          "value": {
+            "ports": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "http-url",
+      "rule": "URLs are https only.",
+      "base": "valid/engine-kustomize.json",
+      "pointer": "/package/url",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/package/url",
+          "value": "http://github.com/ostrium-labs/loams-house/releases/download/v0.2.0/kustomize.tar.gz"
+        }
+      ]
+    },
+    {
+      "name": "helm-chart-http",
+      "rule": "A Helm chart is oci:// or an https .tgz.",
+      "base": "valid/app-helm.json",
+      "pointer": "/package/chart",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/package/chart",
+          "value": "http://charts.acme.example/wiki-3.1.0.tgz"
+        }
+      ]
+    },
+    {
+      "name": "unknown-package-type",
+      "rule": "Package types are oci, helm, kustomize, wasm or binary.",
+      "base": "valid/app-oci.json",
+      "pointer": "/package/type",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/package",
+          "value": {
+            "type": "zip",
+            "url": "https://acme.example/notes.zip",
+            "digest": "sha256:abababababababababababababababababababababababababababababababab"
+          }
+        }
+      ]
+    },
+    {
+      "name": "package-extra-field",
+      "rule": "A package has only its type's fields.",
+      "base": "valid/app-oci.json",
+      "pointer": "/package",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/package/url",
+          "value": "https://acme.example/notes"
+        }
+      ]
+    },
+    {
+      "name": "unknown-target",
+      "rule": "Targets are cluster, node-laptop or node-device.",
+      "base": "valid/app-oci.json",
+      "pointer": "/targets/0",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/targets",
+          "value": [
+            "agentd"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "cosign-on-wasm",
+      "rule": "cosign provenance is for OCI packages only.",
+      "base": "valid/device-wasm.json",
+      "pointer": "/package/type",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/provenance",
+          "value": {
+            "type": "cosign",
+            "ref": "https://github.com/acme/sensor-filter/releases/download/v0.1.0/filter.wasm.sig"
+          }
+        }
+      ]
+    },
+    {
+      "name": "app-with-artifact",
+      "rule": "An app is installed from its package, not a v1 artifact.",
+      "base": "valid/app-oci.json",
+      "pointer": "",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/artifact",
+          "value": {
+            "type": "oci",
+            "name": "ghcr.io/acme/notes",
+            "version": "1.2.0",
+            "integrity": "sha256:abababababababababababababababababababababababababababababababab"
+          }
+        }
+      ]
+    },
+    {
+      "name": "values-schema-not-object",
+      "rule": "values_schema is a JSON Schema object.",
+      "base": "valid/app-helm.json",
+      "pointer": "/values_schema",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/values_schema",
+          "value": true
+        }
+      ]
+    },
+    {
+      "name": "gpu-unknown-vendor",
+      "rule": "GPU vendors are nvidia, amd or any.",
+      "base": "valid/app-oci.json",
+      "pointer": "/requires/gpu/vendor",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/requires/gpu",
+          "value": {
+            "count": 1,
+            "vendor": "intel"
+          }
+        }
+      ]
+    },
+    {
+      "name": "port-out-of-range",
+      "rule": "Ports are 1 to 65535.",
+      "base": "valid/app-oci.json",
+      "pointer": "/run/ports/0/port",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/run/ports/0/port",
+          "value": 70000
+        }
+      ]
+    },
+    {
+      "name": "missing-schema",
+      "rule": "A v2 listing names the v2 schema.",
+      "base": "valid/app-oci.json",
+      "pointer": "",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/$schema"
+        }
+      ]
+    },
+    {
+      "name": "v1-schema-url",
+      "rule": "A v2 listing names the v2 schema, not v1's.",
+      "base": "valid/app-oci.json",
+      "pointer": "/$schema",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/$schema",
+          "value": "https://loams.dev/schemas/listing/v1.json"
+        }
+      ]
+    },
+    {
+      "name": "agent-without-surfaces",
+      "rule": "Agent kinds keep v1's rules: an agent serves ACP or A2A.",
+      "base": "valid/agent-v2.json",
+      "pointer": "",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/surfaces"
+        }
+      ]
+    },
+    {
+      "name": "mcp-local-without-artifact",
+      "rule": "Agent kinds keep v1's rules: a local MCP server has an artifact.",
+      "base": "valid/mcp-server-v2.json",
+      "pointer": "",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/artifact"
+        }
+      ]
+    }
+  ]
+}

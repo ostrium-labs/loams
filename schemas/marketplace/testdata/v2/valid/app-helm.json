@@ -1,0 +1,64 @@
+{
+  "$schema": "https://loams.dev/schemas/listing/v2.json",
+  "id": "acme/wiki",
+  "kind": "app",
+  "version": "3.1.0",
+  "title": "Wiki",
+  "summary": "A team wiki, installed from its Helm chart.",
+  "licence": "Apache-2.0",
+  "source": {
+    "repository": "https://github.com/acme/wiki",
+    "commit": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "publisher": {
+    "name": "Acme",
+    "url": "https://acme.example"
+  },
+  "security_contact": "security@acme.example",
+  "package": {
+    "type": "helm",
+    "chart": "oci://ghcr.io/acme/charts/wiki",
+    "version": "3.1.0",
+    "digest": "sha256:81dbecf093e69f87d8cf03a20f139126a46cd2011ca17638ce96a6b989cc810b"
+  },
+  "provenance": {
+    "type": "github-attestation",
+    "ref": "https://api.github.com/repos/acme/wiki/attestations"
+  },
+  "targets": [
+    "cluster"
+  ],
+  "requires": {
+    "storage": [
+      "sql-postgres",
+      "object"
+    ],
+    "cpu_millis": 1000,
+    "memory_mib": 1024
+  },
+  "values_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "replicas": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10
+      },
+      "hostname": {
+        "type": "string"
+      }
+    }
+  },
+  "cost_hint": {
+    "cpu_millis": 1000,
+    "memory_mib": 1024,
+    "storage_gib": 20,
+    "egress_gib_per_month": 10,
+    "managed": [
+      "sql-postgres"
+    ]
+  },
+  "pricing": "free"
+}
