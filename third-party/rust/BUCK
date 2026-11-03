@@ -26063,6 +26063,7 @@ cargo.rust_library(
     features = [
         "default",
         "latest",
+        "schemars",
         "std",
         "v1_35",
     ],
@@ -26071,6 +26072,7 @@ cargo.rust_library(
     deps = [
         ":base64-0.22",
         ":jiff-0.2",
+        ":schemars-1.2.2",
         ":serde-1",
         ":serde_json-1",
     ],
@@ -26102,6 +26104,7 @@ cargo.rust_binary(
     features = [
         "default",
         "latest",
+        "schemars",
         "std",
         "v1_35",
     ],
@@ -26128,6 +26131,7 @@ buildscript_run(
     features = [
         "default",
         "latest",
+        "schemars",
         "std",
         "v1_35",
     ],
@@ -26374,7 +26378,9 @@ cargo.rust_library(
     features = [
         "client",
         "config",
+        "derive",
         "kube-client",
+        "kube-derive",
         "ring",
         "rustls-tls",
     ],
@@ -26383,6 +26389,7 @@ cargo.rust_library(
         ":k8s-openapi-0.27",
         ":kube-client-3",
         ":kube-core-3",
+        ":kube-derive-3",
     ],
 )
 
@@ -26507,6 +26514,10 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
+    features = [
+        "schema",
+        "schemars",
+    ],
     visibility = [],
     deps = [
         ":derive_more-2",
@@ -26514,10 +26525,54 @@ cargo.rust_library(
         ":http-1",
         ":jiff-0.2",
         ":k8s-openapi-0.27",
+        ":schemars-1.2.2",
         ":serde-1",
         ":serde-value-0.7",
         ":serde_json-1",
         ":thiserror-2",
+    ],
+)
+
+http_archive(
+    name = "kube-derive-3.1.0.crate",
+    sha256 = "d6b9b97e121fce957f9cafc6da534abc4276983ab03190b76c09361e2df849fa",
+    strip_prefix = "kube-derive-3.1.0",
+    urls = ["https://static.crates.io/crates/kube-derive/3.1.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "kube-derive-3",
+    srcs = [":kube-derive-3.1.0.crate"],
+    crate = "kube_derive",
+    crate_root = "kube-derive-3.1.0.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "kube_derive",
+        "CARGO_CRATE_NAME": "kube_derive",
+        "CARGO_MANIFEST_DIR": "kube-derive-3.1.0.crate",
+        "CARGO_PKG_AUTHORS": "clux <sszynrae@gmail.com>:Natalie Klestrup Röijezon <nat@nullable.se>:kazk <kazk.dev@gmail.com>",
+        "CARGO_PKG_DESCRIPTION": "Custom derives for the kube kubernetes crates",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "kube-derive",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/kube-rs/kube",
+        "CARGO_PKG_RUST_VERSION": "1.88.0",
+        "CARGO_PKG_VERSION": "3.1.0",
+        "CARGO_PKG_VERSION_MAJOR": "3",
+        "CARGO_PKG_VERSION_MINOR": "1",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    proc_macro = True,
+    visibility = [],
+    deps = [
+        ":darling-0.23",
+        ":proc-macro2-1",
+        ":quote-1",
+        ":serde-1",
+        ":serde_json-1",
+        ":syn-2",
     ],
 )
 
@@ -44785,7 +44840,7 @@ cargo.rust_library(
 )
 
 cargo_alias(
-    name = "schemars",
+    name = "schemars-0_8",
     actual = ":schemars-0.8",
     platforms = [
         "linux-arm64",
@@ -44925,6 +44980,65 @@ buildscript_run(
     version = "0.8.22",
 )
 
+cargo_alias(
+    name = "schemars-1",
+    actual = ":schemars-1.2.2",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+http_archive(
+    name = "schemars-1.2.2.crate",
+    sha256 = "687274d293b6cdc6e73e0fee520bf2049650090d7164f87672d212a3c530cf4a",
+    strip_prefix = "schemars-1.2.2",
+    urls = ["https://static.crates.io/crates/schemars/1.2.2/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "schemars-1.2.2",
+    srcs = [":schemars-1.2.2.crate"],
+    crate = "schemars",
+    crate_root = "schemars-1.2.2.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "schemars",
+        "CARGO_CRATE_NAME": "schemars",
+        "CARGO_MANIFEST_DIR": "schemars-1.2.2.crate",
+        "CARGO_PKG_AUTHORS": "Graham Esau <gesau@hotmail.co.uk>",
+        "CARGO_PKG_DESCRIPTION": "Generate JSON Schemas from Rust code",
+        "CARGO_PKG_HOMEPAGE": "https://graham.cool/schemars/",
+        "CARGO_PKG_NAME": "schemars",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/GREsau/schemars",
+        "CARGO_PKG_RUST_VERSION": "1.74",
+        "CARGO_PKG_VERSION": "1.2.2",
+        "CARGO_PKG_VERSION_MAJOR": "1",
+        "CARGO_PKG_VERSION_MINOR": "2",
+        "CARGO_PKG_VERSION_PATCH": "2",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "default",
+        "derive",
+        "schemars_derive",
+        "std",
+    ],
+    visibility = [],
+    deps = [
+        ":dyn-clone-1",
+        ":ref-cast-1",
+        ":schemars_derive-1",
+        ":serde-1",
+        ":serde_json-1",
+    ],
+)
+
 http_archive(
     name = "schemars_derive-0.8.22.crate",
     sha256 = "32e265784ad618884abaea0600a9adf15393368d840e0222d101a072f3f7534d",
@@ -44963,6 +45077,47 @@ cargo.rust_library(
         ":quote-1",
         ":serde_derive_internals-0.29",
         ":syn-2",
+    ],
+)
+
+http_archive(
+    name = "schemars_derive-1.2.2.crate",
+    sha256 = "d98c67716b46af2f0b8cf752abc930f6f9aecfbf671ecfb531db8a31dbe4e2ba",
+    strip_prefix = "schemars_derive-1.2.2",
+    urls = ["https://static.crates.io/crates/schemars_derive/1.2.2/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "schemars_derive-1",
+    srcs = [":schemars_derive-1.2.2.crate"],
+    crate = "schemars_derive",
+    crate_root = "schemars_derive-1.2.2.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "schemars_derive",
+        "CARGO_CRATE_NAME": "schemars_derive",
+        "CARGO_MANIFEST_DIR": "schemars_derive-1.2.2.crate",
+        "CARGO_PKG_AUTHORS": "Graham Esau <gesau@hotmail.co.uk>",
+        "CARGO_PKG_DESCRIPTION": "Macros for #[derive(JsonSchema)], for use with schemars",
+        "CARGO_PKG_HOMEPAGE": "https://graham.cool/schemars/",
+        "CARGO_PKG_NAME": "schemars_derive",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/GREsau/schemars",
+        "CARGO_PKG_RUST_VERSION": "1.74",
+        "CARGO_PKG_VERSION": "1.2.2",
+        "CARGO_PKG_VERSION_MAJOR": "1",
+        "CARGO_PKG_VERSION_MINOR": "2",
+        "CARGO_PKG_VERSION_PATCH": "2",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    proc_macro = True,
+    visibility = [],
+    deps = [
+        ":proc-macro2-1",
+        ":quote-1",
+        ":serde_derive_internals-0.30",
+        ":syn-3",
     ],
 )
 
@@ -46055,6 +46210,45 @@ cargo.rust_library(
         ":proc-macro2-1",
         ":quote-1",
         ":syn-2",
+    ],
+)
+
+http_archive(
+    name = "serde_derive_internals-0.30.0.crate",
+    sha256 = "f852137cce035d6a4df67ccce505ff6b3e9fd3a10e3e52b24dc71e650bb1a9bd",
+    strip_prefix = "serde_derive_internals-0.30.0",
+    urls = ["https://static.crates.io/crates/serde_derive_internals/0.30.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "serde_derive_internals-0.30",
+    srcs = [":serde_derive_internals-0.30.0.crate"],
+    crate = "serde_derive_internals",
+    crate_root = "serde_derive_internals-0.30.0.crate/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "serde_derive_internals",
+        "CARGO_CRATE_NAME": "serde_derive_internals",
+        "CARGO_MANIFEST_DIR": "serde_derive_internals-0.30.0.crate",
+        "CARGO_PKG_AUTHORS": "Erick Tryzelaar <erick.tryzelaar@gmail.com>:David Tolnay <dtolnay@gmail.com>",
+        "CARGO_PKG_DESCRIPTION": "AST representation used by Serde derive macros. Unstable.",
+        "CARGO_PKG_HOMEPAGE": "https://serde.rs",
+        "CARGO_PKG_NAME": "serde_derive_internals",
+        "CARGO_PKG_README": "",
+        "CARGO_PKG_REPOSITORY": "https://github.com/serde-rs/serde",
+        "CARGO_PKG_RUST_VERSION": "1.71",
+        "CARGO_PKG_VERSION": "0.30.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "30",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [
+        ":proc-macro2-1",
+        ":quote-1",
+        ":syn-3",
     ],
 )
 

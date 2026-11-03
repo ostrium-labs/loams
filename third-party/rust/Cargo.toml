@@ -90,10 +90,10 @@ ignore = { package = "ignore", version = "=0.4.33", default-features = false }
 itertools = { package = "itertools", version = "=0.15.0", default-features = true, features = ["use_alloc", "use_std"] }
 jsonschema = { package = "jsonschema", version = "=0.58.6", default-features = false }
 jsonwebtoken = { package = "jsonwebtoken", version = "=10.4.0", default-features = true, features = ["aws-lc-rs", "aws_lc_rs", "pem", "simple_asn1", "use_pem"] }
-k8s-openapi = { package = "k8s-openapi", version = "=0.27.1", default-features = true, features = ["latest", "std", "v1_35"] }
+k8s-openapi = { package = "k8s-openapi", version = "=0.27.1", default-features = true, features = ["latest", "schemars", "std", "v1_35"] }
 kafka-protocol = { package = "kafka-protocol", version = "=0.18.0", default-features = false }
 keyring = { package = "keyring", version = "=4.2.0", default-features = true, features = ["apple-native-keyring-store", "v1", "windows-native-keyring-store", "zbus-secret-service-keyring-store"] }
-kube = { package = "kube", version = "=3.1.0", default-features = false, features = ["client", "config", "kube-client", "ring", "rustls-tls"] }
+kube = { package = "kube", version = "=3.1.0", default-features = false, features = ["client", "config", "derive", "kube-client", "kube-derive", "ring", "rustls-tls"] }
 lance = { package = "lance", version = "=12.0.0", default-features = false }
 lance-file = { package = "lance-file", version = "=12.0.0", default-features = false }
 lance-index = { package = "lance-index", version = "=12.0.0", default-features = false }
@@ -152,7 +152,8 @@ rustix = { package = "rustix", version = "=1.1.5", default-features = true, feat
 rustls = { package = "rustls", version = "=0.23.46", default-features = true, features = ["aws-lc-rs", "aws_lc_rs", "log", "logging", "prefer-post-quantum", "ring", "std", "tls12"] }
 rustls-native-certs = { package = "rustls-native-certs", version = "=0.8.4", default-features = false }
 rustls-pki-types = { package = "rustls-pki-types", version = "=1.15.1", default-features = true, features = ["alloc", "std", "web", "web-time"] }
-schemars = { package = "schemars", version = "=0.8.22", default-features = true, features = ["chrono", "derive", "indexmap", "indexmap2", "preserve_order", "schemars_derive", "url", "uuid1"] }
+schemars-0_8 = { package = "schemars", version = "=0.8.22", default-features = true, features = ["chrono", "derive", "indexmap", "indexmap2", "preserve_order", "schemars_derive", "url", "uuid1"] }
+schemars-1 = { package = "schemars", version = "=1.2.2", default-features = true, features = ["derive", "schemars_derive", "std"] }
 secrecy = { package = "secrecy", version = "=0.10.3", default-features = false, features = ["serde"] }
 semver = { package = "semver", version = "=1.0.28", default-features = true, features = ["serde", "std"] }
 serde = { package = "serde", version = "=1.0.229", default-features = true, features = ["alloc", "derive", "rc", "serde_derive", "std"] }

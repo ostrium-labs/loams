@@ -23,7 +23,7 @@ fn main() -> ExitCode {
     let mut drift = false;
     for crd in loams_operator_api::all_crds() {
         let name = crd.metadata.name.clone().expect("crd name");
-        let text = serde_yaml::to_string(&crd).expect("serialise crd");
+        let text = serde_yaml_ng::to_string(&crd).expect("serialise crd");
         let path = dir.join(format!("{name}.yaml"));
         if check {
             if std::fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {

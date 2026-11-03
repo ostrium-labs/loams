@@ -10,7 +10,7 @@ use loams_operator_api::{
 use serde_json::Value;
 
 fn from_yaml<T: serde::de::DeserializeOwned>(s: &str) -> T {
-    serde_yaml::from_str(s).expect("valid yaml")
+    serde_yaml_ng::from_str(s).expect("valid yaml")
 }
 
 fn minimal_home() -> LoamsClusterSpec {
@@ -45,7 +45,7 @@ fn crds_match_checked_in() {
         let path = crds_dir().join(format!("{name}.yaml"));
         let on_disk = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("{}: {e}; run crdgen", path.display()));
-        let fresh = serde_yaml::to_string(crd).expect("serialise crd");
+        let fresh = serde_yaml_ng::to_string(crd).expect("serialise crd");
         assert_eq!(on_disk, fresh, "{name} drifted; run crdgen");
     }
     let files = std::fs::read_dir(crds_dir())
@@ -139,7 +139,7 @@ fn marketplace_refresh_is_a_duration_string() {
     let back: LoamsClusterSpec = serde_json::from_value(v).unwrap();
     assert_eq!(back.marketplace.refresh, Duration::from_secs(90));
     let five: LoamsClusterSpec =
-        from_yaml(&serde_yaml::to_string(&serde_json::to_value(minimal_home()).unwrap()).unwrap());
+        from_yaml(&serde_yaml_ng::to_string(&serde_json::to_value(minimal_home()).unwrap()).unwrap());
     assert_eq!(
         serde_json::to_value(&five).unwrap()["marketplace"]["refresh"],
         "5m"
@@ -148,7 +148,7 @@ fn marketplace_refresh_is_a_duration_string() {
 
 #[test]
 fn unknown_cluster_exposure_is_rejected_by_the_type() {
-    let r: Result<LoamsClusterSpec, _> = serde_yaml::from_str(
+    let r: Result<LoamsClusterSpec, _> = serde_yaml_ng::from_str(
         "role: home\nrelease: 0.1.4\nexposure: {mode: public}\nmarketplace: {index: 'https://x/'}\nbase: {access: {org: a, identity: {externalDomain: d, database: {secretRef: {name: s}}}, openfga: {database: {secretRef: {name: s}}}}}",
     );
     assert!(r.is_err());
@@ -203,7 +203,7 @@ fn cel_rules_present() {
     // look for.
     let text: String = all_crds()
         .iter()
-        .map(|c| serde_yaml::to_string(c).unwrap())
+        .map(|c| serde_yaml_ng::to_string(c).unwrap())
         .collect();
     for msg in [
         "listing.id is immutable",
