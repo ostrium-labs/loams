@@ -1,0 +1,64 @@
+#cloud-config
+# Loams on one k3s VM in your own @@CLOUD_NAME@@ account (OP2-C, one-click deploy).
+# GENERATED from deploy/byoc/cloud-init-k3s.tmpl.yaml, lib/, k3s.env, k3s/ and
+# @@CLOUD@@/config.env by deploy/byoc/gen-cloud-init.sh; edit those, not this file.
+# The module (or deploy/byoc/render.sh) fills the @@NAME@@ placeholders.
+#
+# What it does: joins your tailnet, installs k3s and the Loams operator chart
+# from pinned, checked downloads, and writes the manifest that creates the home
+# LoamsCluster. The tailnet key, the cluster CAs and the Access database secret
+# are read from the secret store with the VM's own identity. No port is opened,
+# and pods cannot reach the cloud's metadata service.
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - jq
+write_files:
+  - path: /etc/loams-k3s/config.env
+    permissions: "0600"
+    owner: root:root
+    content: |
+@@CONFIG@@
+      # The k3s home (loams-k3s-bootstrap): the chart tag is LOAMS_VERSION.
+      TAILNET_DOMAIN=@@TAILNET_DOMAIN@@
+      DEPLOYMENT=@@DEPLOYMENT@@
+      ACCESS_DB=@@ACCESS_DB@@
+      HOME_VALUES_B64=@@HOME_VALUES_B64@@
+      HOME_SECRETS_B64=@@HOME_SECRETS_B64@@
+      TARGET_FACTS_B64=@@TARGET_FACTS_B64@@
+      CHART_DIGEST=@@CHART_DIGEST@@
+  - path: /etc/loams-k3s/pins.env
+    permissions: "0644"
+    owner: root:root
+    content: |
+@@K3S_PINS@@
+  - path: /etc/loams-k3s/access-db.yaml.tmpl
+    permissions: "0644"
+    owner: root:root
+    content: |
+@@K3S_ACCESS_DB@@
+  - path: /usr/local/bin/loams-k3s-bootstrap
+    permissions: "0755"
+    owner: root:root
+    content: |
+@@K3S_BOOTSTRAP@@
+  - path: /usr/local/bin/loams-byoc-secrets
+    permissions: "0755"
+    owner: root:root
+    content: |
+@@SECRETS@@
+  - path: /etc/systemd/system/loams-k3s.service
+    permissions: "0644"
+    owner: root:root
+    content: |
+@@K3S_UNIT@@
+  - path: /etc/systemd/system/loams-k3s-imds-block.service
+    permissions: "0644"
+    owner: root:root
+    content: |
+@@K3S_IMDS_UNIT@@
+runcmd:
+  - [ systemctl, daemon-reload ]
+  - [ systemctl, enable, --now, --no-block, loams-k3s.service ]

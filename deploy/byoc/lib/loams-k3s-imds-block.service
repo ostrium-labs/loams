@@ -1,0 +1,13 @@
+[Unit]
+Description=Keep pods off the cloud metadata service (169.254.169.254)
+# k3s sets up the forwarding rules this chain sits in front of.
+After=k3s.service network-online.target
+PartOf=k3s.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/loams-k3s-bootstrap --imds-block
+
+[Install]
+WantedBy=multi-user.target

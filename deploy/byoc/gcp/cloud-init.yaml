@@ -298,6 +298,10 @@ write_files:
       #
       #   loams-byoc-secrets [--confluent-only] [aws|gcp|azure]
       #                                        (default cloud: LOAMS_BYOC_CLOUD from the config)
+      #   loams-byoc-secrets --get NAME [aws|gcp|azure]
+      #                                        print one secret's value (no trailing newline) and
+      #                                        nothing else (the k3s bootstrap reads its tailnet
+      #                                        key, CA and database secrets this way)
       #
       # --confluent-only refreshes the Confluent files and nothing else (no .env
       # change, no restart): loams-byoc-confluent.timer runs it every 5 minutes and
@@ -307,7 +311,13 @@ write_files:
       umask 077
 
       confluent_only=0
+      get_name=""
       if [[ "${1:-}" == "--confluent-only" ]]; then confluent_only=1; shift; fi
+      if [[ "${1:-}" == "--get" ]]; then
+        get_name="${2:-}"
+        [[ "$get_name" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || { echo "loams-byoc-secrets: --get needs a secret name (lowercase letters, digits, -)" >&2; exit 2; }
+        shift 2
+      fi
 
       config="${LOAMS_BYOC_CONFIG:-/etc/loams-byoc/config.env}"
       # shellcheck disable=SC1090
@@ -463,6 +473,14 @@ write_files:
         # install.sh --cloud runs this as root for the ssh user, who runs compose.
         [[ -z "${LOAMS_BYOC_OWNER:-}" || "$(id -u)" -ne 0 ]] || chown "$LOAMS_BYOC_OWNER" "$envfile"
       }
+
+      # --get NAME: the value on stdout, without trailing newlines (the JSON parsers
+      # above end it with one), and no other output.
+      if [[ -n "$get_name" ]]; then
+        fetch "$get_name" || die "missing secret $(secret_name "$get_name")"
+        printf '%s' "$(cat "$work/value")"
+        exit 0
+      fi
 
       if ((!confluent_only)); then
         fetch tailnet-authkey || die "missing secret $(secret_name tailnet-authkey) (the Tailscale auth key)"
