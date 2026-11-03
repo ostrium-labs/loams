@@ -138,8 +138,9 @@ fn marketplace_refresh_is_a_duration_string() {
     assert_eq!(v["marketplace"]["refresh"], "1m 30s");
     let back: LoamsClusterSpec = serde_json::from_value(v).unwrap();
     assert_eq!(back.marketplace.refresh, Duration::from_secs(90));
-    let five: LoamsClusterSpec =
-        from_yaml(&serde_yaml_ng::to_string(&serde_json::to_value(minimal_home()).unwrap()).unwrap());
+    let five: LoamsClusterSpec = from_yaml(
+        &serde_yaml_ng::to_string(&serde_json::to_value(minimal_home()).unwrap()).unwrap(),
+    );
     assert_eq!(
         serde_json::to_value(&five).unwrap()["marketplace"]["refresh"],
         "5m"
