@@ -1,0 +1,31 @@
+[package]
+name = "loams-operator-api"
+description = "Custom resource types of the Loams operator v2 (LoamsCluster, LoamsInstall, StorageBinding) and the crdgen tool (design 86, plan OP2-A). Preview."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "crdgen"
+path = "src/bin/crdgen.rs"
+
+[dependencies]
+humantime.workspace = true
+# `schemars` feature: JsonSchema for `Condition` and `Time`.
+k8s-openapi = { workspace = true, features = ["schemars"] }
+kube = { workspace = true, features = ["derive"] }
+# kube-derive generates code against `::schemars`, and kube-core 3.1.0 needs 1.x.
+schemars = "1"
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml_ng = "0.10"
+
+[dev-dependencies]
+# The it_kind_cel tests (ignored without a cluster) use the client.
+kube = { workspace = true, features = ["client", "derive"] }
+tokio.workspace = true
+
+[lints]
+workspace = true
