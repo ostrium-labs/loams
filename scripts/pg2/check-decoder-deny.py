@@ -5,8 +5,10 @@
   crates/loams-wal-decoder, a workspace of its own).
 - crates/loams-wal-decoder/deny.toml extends the root deny.toml: the same
   licences, clarifications, bans and advisory settings (advisory ignores may
-  be added), and the root's git sources plus only github.com/ostrium-labs
-  ones.
+  be added), and the root's git sources plus only github.com/neondatabase
+  ones (official Neon, D2450). The one licence exception allowed is inferno's
+  CDDL-1.0 (pprof's flamegraph in official Neon; the decoder's binary is not
+  published).
 
 Usage: scripts/pg2/check-decoder-deny.py [repo root]
 """
@@ -35,8 +37,9 @@ def main(root: Path) -> int:
     for k in ("confidence-threshold", "clarify"):
         if bl.get(k) != dl.get(k):
             errors.append(f"[licenses] {k} differs from the root deny.toml")
-    if dl.get("exceptions"):
-        errors.append("[licenses] exceptions are not allowed in the decoder's policy")
+    allowed_exceptions = [{"crate": "inferno", "allow": ["CDDL-1.0"]}]
+    if dl.get("exceptions", []) not in ([], allowed_exceptions):
+        errors.append("[licenses] the decoder's policy allows only inferno's CDDL-1.0 exception")
     ba, da = base.get("advisories", {}), dec.get("advisories", {})
     for k in set(ba) | set(da):
         if k == "ignore":
@@ -53,9 +56,9 @@ def main(root: Path) -> int:
     extra = set(ds.get("allow-git", [])) - root_git
     if not root_git <= set(ds.get("allow-git", [])):
         errors.append("[sources] allow-git drops root entries")
-    bad = [u for u in extra if not u.startswith("https://github.com/ostrium-labs/")]
+    bad = [u for u in extra if not u.startswith("https://github.com/neondatabase/")]
     if bad:
-        errors.append(f"[sources] decoder-only git sources must be ostrium-labs forks: {bad}")
+        errors.append(f"[sources] decoder-only git sources must be official Neon repositories: {bad}")
 
     for e in errors:
         print(f"check-decoder-deny: {e}", file=sys.stderr)
