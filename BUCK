@@ -277,3 +277,12 @@ export_file(
         "PUBLIC",
     ],
 )
+
+export_file(
+    name = "file=schemas+marketplace+testdata+v2+valid+app-oci.json",
+    src = "schemas/marketplace/testdata/v2/valid/app-oci.json",
+    mode = "reference",
+    visibility = [
+        "PUBLIC",
+    ],
+)
