@@ -9,7 +9,7 @@
 #
 # Needs: bash, jq, curl, tar, python3 with PyYAML, git. CLOUD_INIT_SRC=<a
 # cloud-init source tree> adds the cloud-init schema check.
-# shellcheck disable=SC2015,SC2154,SC2329 # (SC2329: the check functions are passed to t) # A && B || C is used on purpose: C reports a failed check
+# shellcheck disable=SC2015,SC2154,SC2317,SC2329 # (SC2317/SC2329: the check functions are passed to t) # A && B || C is used on purpose: C reports a failed check
 set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
