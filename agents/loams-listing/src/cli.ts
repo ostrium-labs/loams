@@ -1,12 +1,12 @@
 // loams-listing: lint <listing.json>… | from-package <dir> | index build <dir> --out <dir> | verify | publish --walrus
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fromPackageDir, PackageError } from './from-package.js';
 import { buildIndex, canonical, IndexError, writeIndex } from './index-build.js';
 import { formatIssue, hasErrors, lint, RULES } from './lint.js';
-import type { Listing } from './types.js';
+import type { IndexSnapshot, Listing } from './types.js';
 import { publishWalrus, PublishError, type PublishInput } from './publish.js';
-import { httpFetcher, sigstoreVerifier, verifyListing, type VerifyOptions, type VerifyReport, type WalrusVerifyOptions } from './verify.js';
+import { execCosign, httpFetcher, sigstoreVerifier, verifyListing, type VerifyOptions, type VerifyReport, type WalrusVerifyOptions } from './verify.js';
 import {
   checkEndpoint,
   DEFAULT_EPOCHS,
@@ -34,10 +34,10 @@ export interface Io {
 }
 
 const USAGE = `usage:
-  loams-listing lint [--first-party-only] <listing.json>…
+  loams-listing lint [--first-party-only] [--submitter <login>] [--index <dir>] <listing.json>…
   loams-listing from-package <dir> (--tarball <file> | --integrity <sha512-…>) [--commit <sha>] [--out <file>]
   loams-listing index build <listings-dir> --out <dir> [--first-party-only] [--source-commit <sha>]
-  loams-listing verify <listing.json>… [--save-provenance <dir>] [--report <file.json>]
+  loams-listing verify <listing.json>… [--save-provenance <dir>] [--report <file.json>] [--cosign <path>]
       [--aggregator <url>] [--walrus-record <file>] [--current-epoch <n>] [--support-epochs <n>]
   loams-listing publish --walrus <listing.json> (--tarball <file> | --file <platform>=<file>…)
       --publisher <url> --aggregator <url> --network testnet|mainnet [--publisher-token-file <file>]
@@ -59,9 +59,12 @@ const VALUE_FLAGS = new Set([
   '--integrity',
   '--commit',
   '--out',
+  '--index',
+  '--submitter',
   '--source-commit',
   '--save-provenance',
   '--report',
+  '--cosign',
   '--file',
   '--publisher',
   '--aggregator',
@@ -96,6 +99,19 @@ function parseArgs(args: string[]): Parsed {
 }
 
 class UsageError extends Error {}
+
+/**
+ * The index snapshot for `lint --index <dir>`: `index.v2.json` if the directory has it, else `index.json`.
+ * Both are read as { listings: [{ id, versions: [{ version }] }] }, the shape `index build` writes.
+ */
+function readIndexSnapshot(dir: string): IndexSnapshot {
+  const file = ['index.v2.json', 'index.json'].map((name) => resolve(dir, name)).find((path) => existsSync(path));
+  if (!file) throw new UsageError(`--index ${dir} has no index.v2.json or index.json`);
+  const index = JSON.parse(readFileSync(file, 'utf8')) as { listings?: { id: string; versions?: { version: string }[] }[] };
+  const byId = new Map<string, string[]>();
+  for (const entry of index.listings ?? []) byId.set(entry.id, (entry.versions ?? []).map((v) => v.version));
+  return { versions: (id) => byId.get(id) ?? [] };
+}
 
 function str(flags: Parsed['flags'], name: string): string | undefined {
   const value = flags.get(name);
@@ -135,16 +151,33 @@ export async function main(args: string[], io: Io): Promise<number> {
       case 'lint': {
         if (positional.length === 0) throw new UsageError('lint needs at least one listing.json');
         let failed = false;
-        for (const file of positional) {
-          let doc: unknown;
+        const indexDir = str(flags, '--index');
+        const submitter = str(flags, '--submitter');
+        // Read every file first: the snapshot is the built index plus the listings being linted,
+        // so a pull request that adds a listing with its dependency resolves.
+        const docs = positional.map((file) => {
           try {
-            doc = JSON.parse(readFileSync(at(file), 'utf8'));
+            return { file, doc: JSON.parse(readFileSync(at(file), 'utf8')) as unknown };
           } catch (error) {
             io.stderr(`${file}: error [schema] not readable JSON: ${(error as Error).message}`);
             failed = true;
-            continue;
+            return { file, doc: undefined };
           }
-          const issues = lint(doc, { firstPartyOnly: flags.has('--first-party-only') });
+        });
+        const base = indexDir ? readIndexSnapshot(at(indexDir)) : undefined;
+        const added = new Map<string, string[]>();
+        for (const { doc } of docs) {
+          const { id, version } = (doc ?? {}) as { id?: unknown; version?: unknown };
+          if (typeof id === 'string' && typeof version === 'string') added.set(id, [...(added.get(id) ?? []), version]);
+        }
+        const index: IndexSnapshot | undefined = base && {
+          versions: (id) => [...base.versions(id), ...(added.get(id) ?? [])],
+        };
+        if (submitter === undefined) io.stderr('note: no --submitter given; reserved-namespace was skipped');
+        if (index === undefined) io.stderr('note: no --index given; depends-on-resolves was skipped');
+        for (const { file, doc } of docs) {
+          if (doc === undefined) continue;
+          const issues = lint(doc, { firstPartyOnly: flags.has('--first-party-only'), index, submitter });
           for (const issue of issues) io.stderr(formatIssue(file, issue));
           if (hasErrors(issues)) failed = true;
           else io.stdout(`${file}: ok`);
@@ -188,7 +221,8 @@ export async function main(args: string[], io: Io): Promise<number> {
         const reports: (VerifyReport & { file: string })[] = [];
         for (const file of positional) {
           const listing = JSON.parse(readFileSync(at(file), 'utf8')) as Listing;
-          const options = { ...base, walrus: walrusVerifyOptions(flags, env, at, file, io) };
+          const cosign = str(flags, '--cosign');
+          const options = { ...base, ...(cosign && !base.runCosign ? { runCosign: execCosign(cosign) } : {}), walrus: walrusVerifyOptions(flags, env, at, file, io) };
           const report = { file, ...(await verifyListing(listing, options)) };
           reports.push(report);
           for (const check of report.checks) {

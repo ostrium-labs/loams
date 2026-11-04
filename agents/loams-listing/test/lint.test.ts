@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { hasErrors, lint, RULES } from '../src/lint.js';
+import { hasErrors, lint, RULES, type LintOptions } from '../src/lint.js';
 import { satisfies } from '../src/semver.js';
 import { fixture, invalidCases, patched, validFixtures } from './helpers.js';
 
@@ -9,9 +9,14 @@ const REMOTE_MCP = 'valid/mcp-server-remote.json';
 const ARCHIVE = 'valid/harness-acp-binary.json';
 const PYTHON = 'valid/agent-pydantic-ai-a2a.json';
 const BUN = 'valid/agent-mastra-bun.json';
+const V2_APP = 'v2/valid/app-oci.json';
+const V2_HELM = 'v2/valid/app-helm.json';
+const V2_BINARY = 'v2/valid/laptop-binary.json';
+const PG: LintOptions = { index: { versions: (id) => (id === 'acme/pg' ? ['16.4.0'] : []) } };
+const nested = (depth: number): unknown => (depth === 0 ? { type: 'string' } : { type: 'object', properties: { a: nested(depth - 1) } });
 
 /** One listing per semantic rule that breaks exactly that rule. */
-const SEMANTIC: [rule: string, base: string, ops: Parameters<typeof patched>[1], options?: { firstPartyOnly: boolean }][] = [
+const SEMANTIC: [rule: string, base: string, ops: Parameters<typeof patched>[1], options?: LintOptions, alsoReports?: string[]][] = [
   ['namespace-first-party', PYTHON, [], { firstPartyOnly: true }],
   ['tool-names-unique', AGENT, [{ op: 'set', path: '/tools/1/name', value: 'query_notes' }, { op: 'set', path: '/place/always_ask', value: [] }]],
   ['always-ask-declared', AGENT, [{ op: 'set', path: '/place/always_ask', value: ['drop_table'] }]],
@@ -29,6 +34,13 @@ const SEMANTIC: [rule: string, base: string, ops: Parameters<typeof patched>[1],
   ['archive-platforms-unique', ARCHIVE, [{ op: 'set', path: '/artifact/files/1/platform', value: 'linux-x86_64' }]],
   ['walrus-sha256-matches', ARCHIVE, [{ op: 'set', path: '/artifact/files/0/locations/0/sha256', value: '0'.repeat(64) }]],
   ['data-scopes-unique', AGENT, [{ op: 'set', path: '/place/data/1', value: { kind: 'database', name: 'notes', access: 'read' } }]],
+  ['reserved-namespace', V2_APP, [{ op: 'set', path: '/id', value: 'loams-official/notes-app' }], { submitter: 'acme' }],
+  ['depends-on-resolves', V2_APP, [{ op: 'set', path: '/depends_on/0/version', value: '^17' }], PG],
+  ['depends-on-self', V2_APP, [{ op: 'set', path: '/depends_on/0/id', value: 'acme/notes-app' }]],
+  ['values-schema-local-ref', V2_APP, [{ op: 'set', path: '/values_schema', value: { $ref: 'https://evil.example/s.json' } }]],
+  ['values-schema-size', V2_APP, [{ op: 'set', path: '/values_schema', value: { type: 'object', description: 'x'.repeat(70_000) } }]],
+  ['package-needs-verified', V2_HELM, []],
+  ['binary-triple-unique', V2_BINARY, [{ op: 'set', path: '/package/targets/1/triple', value: 'x86_64-unknown-linux-gnu' }], undefined, ['package-needs-verified']],
 ];
 
 describe('lint', () => {
@@ -46,9 +58,9 @@ describe('lint', () => {
       expect(issues.map((i) => i.rule), testCase.name).toContain('schema');
       reported.add('schema');
     }
-    for (const [rule, base, ops, options] of SEMANTIC) {
+    for (const [rule, base, ops, options, alsoReports = []] of SEMANTIC) {
       const issues = lint(patched(fixture(base), ops), options);
-      expect(issues.map((i) => i.rule), rule).toEqual([rule]);
+      expect(issues.map((i) => i.rule).sort(), rule).toEqual([rule, ...alsoReports].sort());
       reported.add(rule);
     }
     expect([...reported].sort()).toEqual(Object.keys(RULES).sort());
@@ -67,6 +79,67 @@ describe('lint', () => {
   it('flags hidden characters in tool names and descriptions', () => {
     const issues = lint(patched(fixture(AGENT), [{ op: 'set', path: '/tools/0/description', value: 'Reads rows.​' }]));
     expect(issues.map((i) => i.rule)).toEqual(['tool-poisoning']);
+  });
+});
+
+describe('lint listing/v2', () => {
+  it('lint_picks_schema_by_dollar_schema', () => {
+    expect(lint(fixture(V2_APP), PG)).toEqual([]);
+    const v1 = lint(patched(fixture(V2_APP), [{ op: 'remove', path: '/$schema' }]));
+    expect(v1.some((i) => i.rule === 'schema')).toBe(true);
+    expect(hasErrors(v1)).toBe(true);
+  });
+
+  it('accepts every v2 fixture, with a warning only for the Verified-tier packages', () => {
+    for (const name of ['agent-v2', 'app-oci', 'mcp-server-v2', 'app-helm', 'device-wasm', 'engine-kustomize', 'laptop-binary']) {
+      const issues = lint(fixture(`v2/valid/${name}.json`));
+      expect(hasErrors(issues), name).toBe(false);
+      expect(issues.every((i) => i.rule === 'package-needs-verified'), name).toBe(true);
+    }
+  });
+
+  it('reserved_prefix_refused', () => {
+    for (const id of ['loams-official/x', 'ostrium-tools/x', 'ostrium/x', 'loams/x']) {
+      const doc = patched(fixture(V2_APP), [{ op: 'set', path: '/id', value: id }]);
+      expect(lint(doc, { submitter: 'acme' }).map((i) => i.rule), id).toEqual(['reserved-namespace']);
+      expect(lint(doc, { submitter: 'ostrium-labs' }), id).toEqual([]);
+    }
+    const loamsy = patched(fixture(V2_APP), [{ op: 'set', path: '/id', value: 'loamsy/x' }]);
+    expect(lint(loamsy, { submitter: 'acme' })).toEqual([]);
+  });
+
+  it('depends_on_must_resolve', () => {
+    const issues = lint(patched(fixture(V2_APP), [{ op: 'set', path: '/depends_on/0/version', value: '^17' }]), PG);
+    expect(issues.map((i) => i.rule)).toEqual(['depends-on-resolves']);
+    expect(issues[0]?.path).toBe('/depends_on/0');
+    expect(lint(patched(fixture(V2_APP), [{ op: 'set', path: '/depends_on/0/id', value: 'acme/missing' }]), PG).map((i) => i.rule)).toEqual(['depends-on-resolves']);
+  });
+
+  it('values_schema_remote_ref_refused_in_lint', () => {
+    for (const key of ['$ref', '$dynamicRef']) {
+      const schema = { type: 'object', properties: { a: { [key]: 'https://evil.example/s.json' } } };
+      const issues = lint(patched(fixture(V2_APP), [{ op: 'set', path: '/values_schema', value: schema }]));
+      expect(issues.map((i) => i.rule), key).toEqual(['values-schema-local-ref']);
+    }
+    const local = { $defs: { n: { type: 'string' } }, properties: { a: { $ref: '#/$defs/n' } } };
+    expect(lint(patched(fixture(V2_APP), [{ op: 'set', path: '/values_schema', value: local }]))).toEqual([]);
+  });
+
+  it('values_schema_over_64k_refused_in_lint', () => {
+    expect(lint(patched(fixture(V2_APP), [{ op: 'set', path: '/values_schema', value: nested(5) }]))).toEqual([]);
+    const big = { type: 'object', description: 'x'.repeat(65_600) };
+    expect(lint(patched(fixture(V2_APP), [{ op: 'set', path: '/values_schema', value: big }])).map((i) => i.rule)).toEqual(['values-schema-size']);
+  });
+
+  it('helm_package_warns_needs_verified', () => {
+    const issues = lint(fixture(V2_HELM));
+    expect(issues.map((i) => [i.rule, i.severity])).toEqual([['package-needs-verified', 'warning']]);
+    expect(lint(fixture(V2_APP))).toEqual([]);
+  });
+
+  it('skips depends-on-resolves without an index and reserved-namespace without a submitter', () => {
+    expect(lint(patched(fixture(V2_APP), [{ op: 'set', path: '/depends_on/0/version', value: '^17' }]))).toEqual([]);
+    expect(lint(patched(fixture(V2_APP), [{ op: 'set', path: '/id', value: 'loams/x' }]))).toEqual([]);
   });
 });
 

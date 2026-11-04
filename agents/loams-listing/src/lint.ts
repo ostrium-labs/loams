@@ -1,8 +1,9 @@
 // `loams-listing lint`: the schema, then the rules a JSON Schema cannot say
 // (design 73 sections 3.3, 3.6, 7.4 and 10.2).
-import { validateAgainst } from './schema.js';
+import { canonical } from './index-build.js';
+import { listingSchemaFor, validateAgainst } from './schema.js';
 import { BUN_PINNED, satisfies } from './semver.js';
-import type { Listing, Tool } from './types.js';
+import type { IndexSnapshot, Listing, Tool } from './types.js';
 
 export type Severity = 'error' | 'warning';
 
@@ -17,6 +18,41 @@ export interface LintIssue {
 export interface LintOptions {
   /** MK0's index policy: only the reserved first-party namespaces (plan MK1 Global Constraints). */
   firstPartyOnly?: boolean;
+  /** The index, for `depends-on-resolves`; the rule is skipped without it. */
+  index?: IndexSnapshot;
+  /** The GitHub login the submission comes from, for `reserved-namespace`; the rule is skipped without it. */
+  submitter?: string;
+}
+
+/** Reserved namespaces: these exact names and these prefixes belong to `ostrium-labs` (OP2-B decision 7). */
+export const RESERVED_NAMESPACES = ['ostrium', 'loams'] as const;
+export const RESERVED_PREFIXES = ['ostrium-', 'loams-'] as const;
+export const RESERVED_OWNER = 'ostrium-labs';
+
+/** The most a `values_schema` may weigh: the size of its `canonical` form, as the Rust parser measures it. */
+export const VALUES_SCHEMA_MAX_BYTES = 65_536;
+
+const PACKAGES_NEEDING_VERIFIED = ['helm', 'kustomize', 'wasm', 'binary'];
+
+export function isReservedNamespace(namespace: string): boolean {
+  return (RESERVED_NAMESPACES as readonly string[]).includes(namespace) || RESERVED_PREFIXES.some((p) => namespace.startsWith(p));
+}
+
+/** The first `$ref` or `$dynamicRef` string that does not start with `#`, as the Rust parser finds it. */
+function remoteRef(value: unknown): string | undefined {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = remoteRef(item);
+      if (found !== undefined) return found;
+    }
+  } else if (value && typeof value === 'object') {
+    for (const [key, item] of Object.entries(value)) {
+      if ((key === '$ref' || key === '$dynamicRef') && typeof item === 'string' && !item.startsWith('#')) return item;
+      const found = remoteRef(item);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
 }
 
 /** The namespaces reserved for Ostrium Labs (design 73 section 6). */
@@ -42,6 +78,13 @@ export const RULES: Record<string, string> = {
   'archive-platforms-unique': 'An archive has one file per platform.',
   'walrus-sha256-matches': "A Walrus mirror of an archive file carries that file's sha256 (D1812).",
   'data-scopes-unique': 'Each data scope is declared once.',
+  'reserved-namespace': 'ostrium, loams and the prefixes ostrium- and loams- belong to ostrium-labs (needs a submitter).',
+  'depends-on-resolves': 'Each depends_on entry matches a version in the index (needs an index).',
+  'depends-on-self': 'A listing does not depend on itself.',
+  'values-schema-local-ref': 'values_schema references are local (#…) only.',
+  'values-schema-size': `values_schema is at most ${VALUES_SCHEMA_MAX_BYTES} bytes in canonical form.`,
+  'package-needs-verified': 'helm, kustomize, wasm and binary packages need the Verified tier (warning).',
+  'binary-triple-unique': 'A binary package has one file per target triple.',
 };
 
 /** Variables agentd sets for every agent (design 73 section 3.3); a config input may not shadow them. */
@@ -68,6 +111,43 @@ function duplicates(values: string[]): string[] {
   return [...dup];
 }
 
+interface ListingV2Like {
+  id: string;
+  package?: { type: string; targets?: { triple: string }[] };
+  depends_on?: { id: string; version: string }[];
+  values_schema?: unknown;
+}
+
+type Report = (rule: string, path: string, message: string) => number;
+
+/** The rules only listing/v2 has, and the namespace rule that applies to both versions. */
+function lintV2(listing: ListingV2Like, options: LintOptions, error: Report, warning: Report): void {
+  if (listing.package && PACKAGES_NEEDING_VERIFIED.includes(listing.package.type)) {
+    warning('package-needs-verified', '/package/type', `a ${listing.package.type} package is accepted at the Verified tier only; this listing stays Community until it is verified`);
+  }
+  if (listing.package?.type === 'binary') {
+    for (const triple of duplicates((listing.package.targets ?? []).map((t) => t.triple))) {
+      error('binary-triple-unique', '/package/targets', `target triple ${triple} is listed more than once`);
+    }
+  }
+  (listing.depends_on ?? []).forEach((dep, i) => {
+    if (dep.id === listing.id) {
+      error('depends-on-self', `/depends_on/${i}/id`, `${listing.id} depends on itself`);
+    } else if (options.index) {
+      const versions = options.index.versions(dep.id);
+      if (!versions.some((v) => satisfies(dep.version, v))) {
+        error('depends-on-resolves', `/depends_on/${i}`, `no version of ${dep.id} in the index satisfies ${dep.version} (have: ${versions.join(', ') || 'none'})`);
+      }
+    }
+  });
+  if (listing.values_schema !== undefined) {
+    const ref = remoteRef(listing.values_schema);
+    if (ref !== undefined) error('values-schema-local-ref', '/values_schema', `${ref} is not a local reference; only #… references are allowed`);
+    const size = Buffer.byteLength(canonical(listing.values_schema));
+    if (size > VALUES_SCHEMA_MAX_BYTES) error('values-schema-size', '/values_schema', `${size} bytes is over the ${VALUES_SCHEMA_MAX_BYTES}-byte limit`);
+  }
+}
+
 export function lint(doc: unknown, options: LintOptions = {}): LintIssue[] {
   const issues: LintIssue[] = [];
   const error = (rule: string, path: string, message: string) =>
@@ -75,15 +155,20 @@ export function lint(doc: unknown, options: LintOptions = {}): LintIssue[] {
   const warning = (rule: string, path: string, message: string) =>
     issues.push({ rule, severity: 'warning', path, message });
 
-  const schemaIssues = validateAgainst('listing.v1.json', doc);
+  const schemaIssues = validateAgainst(listingSchemaFor(doc), doc);
   for (const issue of schemaIssues) error('schema', issue.path, issue.message);
   // The semantic rules read fields the schema guarantees; skip them on a broken listing.
   if (schemaIssues.length > 0) return issues;
   const listing = doc as Listing;
+  if (listingSchemaFor(doc) === 'listing-v2.schema.json') lintV2(doc as ListingV2Like, options, error, warning);
 
   const namespace = listing.id.split('/')[0] ?? '';
   if (options.firstPartyOnly && !(FIRST_PARTY_NAMESPACES as readonly string[]).includes(namespace)) {
     error('namespace-first-party', '/id', `namespace ${namespace} is not first-party; third-party listings open in MK1`);
+  }
+
+  if (options.submitter !== undefined && isReservedNamespace(namespace) && options.submitter.toLowerCase() !== RESERVED_OWNER) {
+    error('reserved-namespace', '/id', `namespace ${namespace} is reserved for ${RESERVED_OWNER}; ${options.submitter} may not publish it`);
   }
 
   const tools: Tool[] = listing.tools ?? [];

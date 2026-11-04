@@ -5,9 +5,12 @@
 // requires the provenance to name the listing's source repository, both in
 // the signed statement and in the signing certificate. agentd repeats the
 // same checks in Rust before an install (Task 6).
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { integrityOf, normaliseRepository } from './from-package.js';
 import type { ArchiveFile, ArtifactLocation, Listing } from './types.js';
+import { safeRequest } from './http.js';
+import { DIGEST_RE, ociHttp, parseImage, resolveOciDigest, type OciHttp } from './oci.js';
 import { epochStatus, estimateEpoch, readVerified, type WalrusRecord } from './walrus.js';
 
 export const SLSA_V1 = 'https://slsa.dev/provenance/v1';
@@ -90,6 +93,169 @@ export interface VerifyOptions {
   verifier: BundleVerifier;
   /** The walrus checks (plan MS1 Task 9); absent, walrus locations are only warned about. */
   walrus?: WalrusVerifyOptions;
+  /** v2 `package`s: the registry client (the network one when absent). */
+  oci?: OciHttp;
+  /** v2 `cosign` provenance: runs the cosign CLI (see `execCosign`). Absent, cosign provenance fails with a clear message. */
+  runCosign?: RunCosign;
+}
+
+export type RunCosign = (args: string[]) => Promise<{ code: number; stdout: string; stderr: string }>;
+
+/** What `verifyPackage` reads of a listing/v2 document. */
+export interface PackageListing {
+  id: string;
+  kind: string;
+  source: { repository: string };
+  package?: V2Package;
+  provenance?: { type: string; ref: string };
+}
+
+export type V2Package =
+  | { type: 'oci'; image: string; digest: string }
+  | { type: 'helm'; chart: string; version: string; digest: string }
+  | { type: 'kustomize'; url: string; digest: string }
+  | { type: 'wasm'; url: string; digest: string }
+  | { type: 'binary'; targets: { triple: string; url: string; digest: string }[] };
+
+export interface PackageReport {
+  digest: 'ok' | 'fail';
+  provenance: 'ok' | 'fail' | 'missing';
+  detail: string;
+  /** The provenance bundles that passed, to store beside the listing. */
+  bundles?: { name: string; bundle: unknown }[];
+}
+
+export interface PackageDeps {
+  fetcher: Fetcher;
+  oci: OciHttp;
+  runCosign?: RunCosign;
+  verifier: BundleVerifier;
+}
+
+export const COSIGN_ISSUER = 'https://token.actions.githubusercontent.com';
+
+/** Escapes a string for use inside a regular expression (cosign takes the identity as a Go regexp). */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** What one digest in a package refers to: an OCI manifest (`oci`) or the bytes of a file (`file`). */
+type Unit = { label: string; digest: string } & ({ oci: { image: string } } | { url: string });
+
+function unitsOf(pkg: V2Package): Unit[] {
+  switch (pkg.type) {
+    case 'oci':
+      return [{ label: pkg.image, digest: pkg.digest, oci: { image: pkg.image } }];
+    case 'helm':
+      return pkg.chart.startsWith('oci://')
+        ? [{ label: pkg.chart, digest: pkg.digest, oci: { image: pkg.chart.slice('oci://'.length) } }]
+        : [{ label: pkg.chart, digest: pkg.digest, url: pkg.chart }];
+    case 'kustomize':
+    case 'wasm':
+      return [{ label: pkg.url, digest: pkg.digest, url: pkg.url }];
+    case 'binary':
+      return pkg.targets.map((t) => ({ label: `${t.triple} ${t.url}`, digest: t.digest, url: t.url }));
+  }
+}
+
+/** The digest half of `verifyPackage`: every unit resolves and matches. Returns the failure, or undefined. */
+async function checkDigests(listing: PackageListing, units: Unit[], deps: PackageDeps): Promise<string | undefined> {
+  for (const unit of units) {
+    if (!DIGEST_RE.test(unit.digest)) return `${unit.label}: ${unit.digest} is not sha256:<64 lowercase hex>`;
+    try {
+      if ('oci' in unit) {
+        const { registry, repository } = parseImage(unit.oci.image);
+        const resolved = await resolveOciDigest({ registry, repository, digest: unit.digest }, deps.oci);
+        // D2626: an app or engine image runs on amd64 and arm64 nodes.
+        if (listing.package!.type === 'oci' && (listing.kind === 'app' || listing.kind === 'engine')) {
+          const missing = ['linux/amd64', 'linux/arm64'].filter((p) => !resolved.platforms.includes(p));
+          if (missing.length > 0) {
+            return `${unit.label}: an app or engine image must be an index with linux/amd64 and linux/arm64; ${resolved.platforms.length ? `this one lacks ${missing.join(', ')}` : `this is ${resolved.mediaType || 'not an index'}`}`;
+          }
+        }
+      } else {
+        const actual = `sha256:${sha256Hex(await deps.fetcher.bytes(unit.url))}`;
+        if (actual !== unit.digest) return `${unit.label}: the file hashes to ${actual}, not ${unit.digest}`;
+      }
+    } catch (error) {
+      return `${unit.label}: ${(error as Error).message}`;
+    }
+  }
+  return undefined;
+}
+
+async function checkCosign(listing: PackageListing, units: Unit[], deps: PackageDeps): Promise<{ ok: boolean; detail: string }> {
+  if (units.some((u) => !('oci' in u))) return { ok: false, detail: 'cosign provenance is for OCI packages; use github-attestation or sigstore-bundle for files' };
+  if (!deps.runCosign) return { ok: false, detail: 'cosign provenance needs the cosign CLI (give --cosign <path>)' };
+  let repository: string;
+  try {
+    repository = normaliseRepository(listing.source.repository);
+  } catch (error) {
+    return { ok: false, detail: (error as Error).message };
+  }
+  if (!repository.startsWith('https://github.com/')) return { ok: false, detail: `cosign provenance is checked for GitHub Actions workflows; ${repository} is not a GitHub repository` };
+  const identity = `^${escapeRegExp(`${repository}/.github/workflows/`)}`;
+  for (const unit of units as (Unit & { oci: { image: string } })[]) {
+    const { registry, repository: repo } = parseImage(unit.oci.image);
+    const result = await deps.runCosign([
+      'verify',
+      `${registry}/${repo}@${unit.digest}`,
+      '--certificate-identity-regexp',
+      identity,
+      '--certificate-oidc-issuer',
+      COSIGN_ISSUER,
+      '--output',
+      'json',
+    ]);
+    if (result.code !== 0) return { ok: false, detail: `cosign verify failed for ${unit.label}: ${result.stderr.trim().split('\n').pop() || `exit ${result.code}`}` };
+  }
+  return { ok: true, detail: `signed by a workflow of ${repository}` };
+}
+
+/**
+ * A v2 `package`: its digest resolves (registry manifest, or the file's SHA-256) and its
+ * provenance is present and valid (Decision 14: cosign for OCI, github-attestation for any
+ * digest, sigstore-bundle for a single file).
+ */
+export async function verifyPackage(listing: PackageListing, deps: PackageDeps): Promise<PackageReport> {
+  const pkg = listing.package;
+  if (!pkg) return { digest: 'ok', provenance: 'ok', detail: 'no package' };
+  const units = unitsOf(pkg);
+  const failure = await checkDigests(listing, units, deps);
+  const provenance = listing.provenance;
+  const digestState = failure ? 'fail' : 'ok';
+  const digestDetail = failure ?? `${units.length} digest(s) match`;
+  if (!provenance) return { digest: digestState, provenance: 'missing', detail: `${digestDetail}; the listing names no provenance` };
+  if (failure) return { digest: 'fail', provenance: 'fail', detail: `${failure}; provenance not checked` };
+  const fail = (detail: string): PackageReport => ({ digest: 'ok', provenance: 'fail', detail });
+  try {
+    if (provenance.type === 'cosign') {
+      const r = await checkCosign(listing, units, deps);
+      return r.ok ? { digest: 'ok', provenance: 'ok', detail: r.detail } : fail(r.detail);
+    }
+    const sink = new Report();
+    let covered: boolean;
+    if (provenance.type === 'github-attestation') {
+      covered = true;
+      for (const unit of units) {
+        const hex = unit.digest.slice('sha256:'.length);
+        const found = (await deps.fetcher.json(`${provenance.ref.replace(/\/$/, '')}/sha256:${hex}`)) as { attestations?: { bundle?: unknown }[] };
+        const bundles = (found.attestations ?? []).map((a) => a.bundle);
+        covered = (await checkProvenance(sink, unit.label, bundles, { algorithm: 'sha256', hex }, listing as unknown as Listing, deps.verifier)) && covered;
+      }
+    } else if (provenance.type === 'sigstore-bundle') {
+      if (units.length !== 1 || 'oci' in units[0]!) return fail('sigstore-bundle provenance covers a single file (helm .tgz, kustomize, wasm); use github-attestation for this package');
+      const unit = units[0]!;
+      const bundle = await deps.fetcher.json(provenance.ref);
+      covered = await checkProvenance(sink, unit.label, [bundle], { algorithm: 'sha256', hex: unit.digest.slice('sha256:'.length) }, listing as unknown as Listing, deps.verifier);
+    } else {
+      return fail(`${provenance.type} provenance is not verified for v2 packages`);
+    }
+    const detail = sink.checks.map((c) => c.detail).join('; ');
+    return { digest: 'ok', provenance: covered ? 'ok' : 'fail', detail, bundles: sink.bundles };
+  } catch (error) {
+    return fail((error as Error).message);
+  }
 }
 
 export interface WalrusVerifyOptions {
@@ -285,9 +451,26 @@ async function verifyArchiveFile(
 export async function verifyListing(listing: Listing, options: VerifyOptions): Promise<VerifyReport> {
   const report = new Report();
   const artifact = listing.artifact;
+  const v2 = listing as unknown as PackageListing;
   try {
+    if (v2.package) {
+      const result = await verifyPackage(v2, {
+        fetcher: options.fetcher,
+        verifier: options.verifier,
+        oci: options.oci ?? ociHttp(),
+        runCosign: options.runCosign,
+      });
+      if (result.digest === 'ok') report.pass('package_digest', `the ${v2.package.type} package's digest resolves`);
+      else report.fail('package_digest', result.detail);
+      if (result.provenance === 'ok') {
+        report.pass('package_provenance', result.detail);
+        report.bundles.push(...(result.bundles ?? []));
+      } else if (result.digest === 'ok') {
+        report.fail('package_provenance', result.provenance === 'missing' ? 'the package has no provenance' : result.detail);
+      }
+    }
     if (!artifact) {
-      report.pass('artifact', listing.kind === 'mcp-server' ? 'a remote MCP server installs nothing' : 'a built-in harness installs nothing');
+      if (!v2.package) report.pass('artifact', listing.kind === 'mcp-server' ? 'a remote MCP server installs nothing' : 'a built-in harness installs nothing');
     } else if (artifact.type === 'npm') {
       await verifyNpm(listing, report, options);
     } else if (artifact.type === 'archive') {
@@ -308,25 +491,19 @@ export async function verifyListing(listing: Listing, options: VerifyOptions): P
   };
 }
 
-/** The network fetcher (Node's fetch), with a size cap so a listing cannot make CI download without end. */
+/** The network fetcher: https only, redirects re-checked, bodies capped while streaming so a listing cannot make CI download without end. */
 export function httpFetcher(maxBytes = 512 * 1024 * 1024): Fetcher {
-  async function get(url: string, accept: string): Promise<Response> {
-    if (!url.startsWith('https://')) throw new Error(`refusing a non-https URL: ${url}`);
-    const response = await fetch(url, { headers: { accept, 'user-agent': 'loams-listing' }, redirect: 'follow' });
-    if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
-    return response;
+  async function get(url: string, accept: string, cap: number): Promise<Uint8Array> {
+    const response = await safeRequest({ url, method: 'GET', headers: { accept }, maxBytes: cap });
+    if (response.status < 200 || response.status > 299) throw new Error(`${url}: HTTP ${response.status}`);
+    return response.body;
   }
   return {
     async json(url) {
-      return (await get(url, 'application/json')).json();
+      return JSON.parse(new TextDecoder().decode(await get(url, 'application/json', Math.min(maxBytes, 16 * 1024 * 1024))));
     },
     async bytes(url) {
-      const response = await get(url, 'application/octet-stream');
-      const length = Number(response.headers.get('content-length') ?? '0');
-      if (length > maxBytes) throw new Error(`${url}: ${length} bytes is over the ${maxBytes}-byte cap`);
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      if (bytes.length > maxBytes) throw new Error(`${url}: over the ${maxBytes}-byte cap`);
-      return bytes;
+      return get(url, 'application/octet-stream', maxBytes);
     },
   };
 }
@@ -340,4 +517,15 @@ export async function sigstoreVerifier(): Promise<BundleVerifier> {
       return { subjectAlternativeName: signer.identity?.subjectAlternativeName, issuer: signer.identity?.extensions?.issuer };
     },
   };
+}
+
+/** The production `RunCosign`: execFile, no shell, a timeout and an output cap; `cosignPath` comes from `--cosign`. */
+export function execCosign(cosignPath: string): RunCosign {
+  return (args) =>
+    new Promise((resolve) => {
+      execFile(cosignPath, args, { timeout: 120_000, maxBuffer: 8 * 1024 * 1024, shell: false, windowsHide: true }, (error, stdout, stderr) => {
+        const code = error ? (typeof (error as { code?: unknown }).code === 'number' ? ((error as { code: number }).code) : 1) : 0;
+        resolve({ code, stdout: String(stdout), stderr: error && !stderr ? error.message : String(stderr) });
+      });
+    });
 }
