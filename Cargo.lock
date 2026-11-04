@@ -9651,6 +9651,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-kube"
+version = "0.1.4"
+dependencies = [
+ "async-trait",
+ "k8s-openapi",
+ "kube",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "loams-kv"
 version = "0.1.4"
 dependencies = [
