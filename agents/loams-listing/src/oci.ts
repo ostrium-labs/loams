@@ -4,6 +4,7 @@
 // bounded: https only, no IP-literal or single-label hosts, capped bodies, a
 // capped number of redirects (each re-checked), and no shell.
 import { createHash } from 'node:crypto';
+import { isPublicHost, safeRequest } from './http.js';
 
 export const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
 const MAX_TOKEN_BYTES = 64 * 1024;
@@ -19,7 +20,6 @@ const INDEX_TYPES = ['application/vnd.oci.image.index.v1+json', 'application/vnd
 
 export const DIGEST_RE = /^sha256:[0-9a-f]{64}$/;
 const REPOSITORY_RE = /^[a-z0-9]+(?:[._-][a-z0-9]+)*(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)*$/;
-const HOST_RE = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z][a-z0-9-]*(?::\d{1,5})?$/;
 
 export interface OciRef {
   registry: string;
@@ -69,7 +69,7 @@ export function parseImage(image: string): { registry: string; repository: strin
     registry = 'registry-1.docker.io';
     if (rest.length === 1) rest = ['library', rest[0]!];
   }
-  if (!HOST_RE.test(registry)) throw new Error(`${image}: ${registry} is not a registry host name`);
+  if (!isPublicHost(registry)) throw new Error(`${image}: ${registry} is not a registry host name`);
   const repository = rest.join('/');
   if (!REPOSITORY_RE.test(repository)) throw new Error(`${image}: ${repository} is not a valid repository name`);
   return { registry, repository };
@@ -93,6 +93,7 @@ function text(bytes: Uint8Array): string {
 async function bearerToken(http: OciHttp, challenge: { realm: string; service?: string; scope?: string }, repository: string): Promise<string> {
   const url = new URL(challenge.realm);
   if (url.protocol !== 'https:') throw new Error(`the registry's token realm is not https: ${challenge.realm}`);
+  if (!isPublicHost(url.host)) throw new Error(`the registry's token realm is not a public host: ${challenge.realm}`);
   if (challenge.service) url.searchParams.set('service', challenge.service);
   url.searchParams.set('scope', challenge.scope ?? `repository:${repository}:pull`);
   const response = await http({ url: url.toString(), method: 'GET', headers: { accept: 'application/json' }, maxBytes: MAX_TOKEN_BYTES });
@@ -111,7 +112,7 @@ async function bearerToken(http: OciHttp, challenge: { realm: string; service?: 
  */
 export async function resolveOciDigest(ref: OciRef, http: OciHttp): Promise<Resolved> {
   if (!DIGEST_RE.test(ref.digest)) throw new Error(`${ref.digest} is not sha256:<64 lowercase hex>`);
-  if (!HOST_RE.test(ref.registry) || !REPOSITORY_RE.test(ref.repository)) throw new Error(`${ref.registry}/${ref.repository} is not a registry reference`);
+  if (!isPublicHost(ref.registry) || !REPOSITORY_RE.test(ref.repository)) throw new Error(`${ref.registry}/${ref.repository} is not a registry reference`);
   const url = `https://${ref.registry}/v2/${ref.repository}/manifests/${ref.digest}`;
   let auth: string | undefined;
   const call = async (method: 'GET' | 'HEAD', maxBytes: number): Promise<HttpResponse> => {
@@ -145,29 +146,7 @@ export async function resolveOciDigest(ref: OciRef, http: OciHttp): Promise<Reso
   return { mediaType, platforms };
 }
 
-const MAX_HOPS = 3;
-
-/** The network `OciHttp`: https only (each redirect re-checked), a body cap, no cookies or credentials. */
+/** The network `OciHttp`: https only (each redirect re-checked), a streamed body cap, no cookies or credentials. */
 export function ociHttp(): OciHttp {
-  return async ({ url, method, headers, maxBytes }) => {
-    let target = url;
-    for (let hop = 0; hop <= MAX_HOPS; hop++) {
-      if (!target.startsWith('https://')) throw new Error(`refusing a non-https URL: ${target}`);
-      const response = await fetch(target, { method, headers: { ...headers, 'user-agent': 'loams-listing' }, redirect: 'manual', signal: AbortSignal.timeout(30_000) });
-      if (response.status >= 300 && response.status < 400 && response.headers.has('location')) {
-        target = new URL(response.headers.get('location')!, target).toString();
-        // Do not send the registry's token to another host.
-        if (new URL(target).host !== new URL(url).host) delete headers.authorization;
-        continue;
-      }
-      const out: Record<string, string> = {};
-      response.headers.forEach((v, k) => (out[k.toLowerCase()] = v));
-      if (method === 'HEAD') return { status: response.status, headers: out, body: new Uint8Array() };
-      if (Number(out['content-length'] ?? '0') > maxBytes) throw new Error(`${target}: over the ${maxBytes}-byte cap`);
-      const body = new Uint8Array(await response.arrayBuffer());
-      if (body.length > maxBytes) throw new Error(`${target}: over the ${maxBytes}-byte cap`);
-      return { status: response.status, headers: out, body };
-    }
-    throw new Error(`${url}: too many redirects`);
-  };
+  return (request) => safeRequest(request);
 }

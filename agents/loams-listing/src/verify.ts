@@ -9,6 +9,7 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { integrityOf, normaliseRepository } from './from-package.js';
 import type { ArchiveFile, ArtifactLocation, Listing } from './types.js';
+import { safeRequest } from './http.js';
 import { DIGEST_RE, ociHttp, parseImage, resolveOciDigest, type OciHttp } from './oci.js';
 import { epochStatus, estimateEpoch, readVerified, type WalrusRecord } from './walrus.js';
 
@@ -490,25 +491,19 @@ export async function verifyListing(listing: Listing, options: VerifyOptions): P
   };
 }
 
-/** The network fetcher (Node's fetch), with a size cap so a listing cannot make CI download without end. */
+/** The network fetcher: https only, redirects re-checked, bodies capped while streaming so a listing cannot make CI download without end. */
 export function httpFetcher(maxBytes = 512 * 1024 * 1024): Fetcher {
-  async function get(url: string, accept: string): Promise<Response> {
-    if (!url.startsWith('https://')) throw new Error(`refusing a non-https URL: ${url}`);
-    const response = await fetch(url, { headers: { accept, 'user-agent': 'loams-listing' }, redirect: 'follow' });
-    if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
-    return response;
+  async function get(url: string, accept: string, cap: number): Promise<Uint8Array> {
+    const response = await safeRequest({ url, method: 'GET', headers: { accept }, maxBytes: cap });
+    if (response.status < 200 || response.status > 299) throw new Error(`${url}: HTTP ${response.status}`);
+    return response.body;
   }
   return {
     async json(url) {
-      return (await get(url, 'application/json')).json();
+      return JSON.parse(new TextDecoder().decode(await get(url, 'application/json', Math.min(maxBytes, 16 * 1024 * 1024))));
     },
     async bytes(url) {
-      const response = await get(url, 'application/octet-stream');
-      const length = Number(response.headers.get('content-length') ?? '0');
-      if (length > maxBytes) throw new Error(`${url}: ${length} bytes is over the ${maxBytes}-byte cap`);
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      if (bytes.length > maxBytes) throw new Error(`${url}: over the ${maxBytes}-byte cap`);
-      return bytes;
+      return get(url, 'application/octet-stream', maxBytes);
     },
   };
 }
