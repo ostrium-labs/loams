@@ -276,7 +276,7 @@ Location: the `upgrade-snapshots` volume, mounted into `migrate`, `tikv` (for BR
 | Component | Pin today | Where | Its own upgrade rules |
 |---|---|---|---|
 | PD, TiKV | `v8.5.8` | `deploy/release/.env.example` (`TIKV_TAG`), `release/companions.toml` (CL1) | PingCAP's order: PD, then TiKV, then TiDB; no downgrade across minors once upgraded (verify for v8.5) |
-| TiDB | `ghcr.io/ostrium-labs/tidb:v8.5.8-loams.1` | `release/sqldb-images.toml`, `TIDB_IMAGE` | Bootstrap and upgrade DDL per keyspace on start or in `CreateDatabase` (§47 §5; verify which for a version bump) |
+| TiDB | `pingcap/tidb:v8.5.8` (official, D2450) | `release/sqldb-images.toml`, `TIDB_IMAGE` | Bootstrap and upgrade DDL per keyspace on start or in `CreateDatabase` (§47 §5; verify which for a version bump) |
 | Loams Postgres storage and computes | digests in `deploy/pins/loams-postgres-images.toml` | `deploy/loams-postgres-dev/compose.yaml` | The fork's release rules (D810, D811); a Postgres major only through `UpgradeProject` (§51 §9) |
 | chDB | the `chdb-core` pin (§49 §19, D779) | fabric's manifest | Stable releases only, ≥ 14 days old; storage is Iceberg in production, so an engine bump migrates no data there; the preview's local data directory is snapshotted |
 | Grafeo | `ostrium-labs/grafeo` `v0.5.43-loams.1` | the workspace `Cargo.toml` | A file-format change rebuilds local files from the portable snapshot on open (§48 §14.4) |

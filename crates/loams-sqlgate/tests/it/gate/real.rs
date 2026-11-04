@@ -158,8 +158,9 @@ async fn user_of_db_a_cannot_reach_db_b() {
     // One keyspace's TiDB at a time for bootstrap and DDL. On upstream
     // v8.5.8 (one PD), with another keyspace's TiDB up, a first bootstrap
     // stalled and DDL never ran: every keyspace's TiDB competed for one DDL
-    // owner (plan R5.3). The pinned v8.5.8-loams.1 image fixes that
-    // (`ddl_runs_while_another_keyspace_runs`); this test keeps its order:
+    // owner (plan R5.3). The fix, pingcap/tidb#60403, is not in the official
+    // pingcap/tidb:v8.5.8 pinned by D2450 (`ddl_runs_while_another_keyspace_runs`
+    // is ignored); this test keeps its order:
     // A takes its DDL alone, is suspended for B's bootstrap, and is read
     // again after its warm resume.
     let ready = |branch: BranchId| {

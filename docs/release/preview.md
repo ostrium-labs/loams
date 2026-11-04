@@ -275,7 +275,7 @@ flowchart LR
 | Loams Live | A reactive document database: transactions, indexes, live queries and a TypeScript SDK, on an embedded store or on TiKV (`live-tikv`) | Available. Deploys, rollback, validators and online index changes through `LiveAdminService` on the main port, over the tailnet; many apps per engine, per-app and per-table authorization, end users from any OIDC provider; a deploy reaches every node at once |
 | Loams Graph | `loams.graph.v1` on the main port, GQL on Grafeo (cargo feature `graph`) | Available. Writes reach the Loams log before they are acknowledged, with a fenced single owner per graph, snapshots in the bucket and crash recovery (GR1 Tasks 11 to 14), on Loams' Grafeo fork |
 | Loams House | ClickHouse-compatible analytics on chDB in `loams-fabric`, with `loams.house.v1` proxied by the engine | Experimental. On by default and linked to the engine; the `house-tailnet` profile serves its ClickHouse HTTP interface on your tailnet through its own sidecar, with chDB access control, statement checks and sealed workers. With `LOAMS_HOUSE_ENDPOINT` the engine reaches it over TLS on a private network; lake tables take `INSERT` (every declared format, `VALUES`, `SELECT`), `CREATE TABLE … AS SELECT`, `TRUNCATE` and `OPTIMIZE TABLE` |
-| Loams SQL | MySQL-compatible SQL on a patched TiDB (`v8.5.8-loams.1`) over TiKV | Available with the `tikv` profile |
+| Loams SQL | MySQL-compatible SQL on the official TiDB (`v8.5.8`) over TiKV | Available with the `tikv` profile |
 | Loams Postgres | A fork of Neon whose storage lives on the bucket; the compose stack runs its storage and computes | Available. The compose stack runs its storage and computes; `--profile postgres-control` adds `pg-control` and `pg-runner`, which provision computes and endpoints |
 | Postgres and MySQL wire | SQL over the Postgres and MySQL wire protocols, over collections | Available |
 | Streaming gRPC API | Idempotent produce and streaming subscribe over gRPC | Available |
@@ -312,7 +312,7 @@ rest (see [the profiles](#profiles-tikv-rustfs-and-iggy)).
 | `agentd` | `ghcr.io/ostrium-labs/loams-agentd` | The agent daemon |
 | `pd` (profile `tikv`) | PD | TiKV's placement driver |
 | `tikv` (profile `tikv`) | TiKV | The metastore and Live with the profile, and TiDB's storage |
-| `tidb` (profile `tikv`) | `ghcr.io/ostrium-labs/tidb:v8.5.8-loams.1` | Loams SQL (MySQL compatible) |
+| `tidb` (profile `tikv`) | `pingcap/tidb:v8.5.8` | Loams SQL (MySQL compatible) |
 | `rustfs`, `create-bucket` (profile `rustfs`) | RustFS | An S3 bucket for the Postgres stack's remote storage |
 | `iggy` (profile `iggy`, preview) | `docker.io/apache/iggy:0.9.0@sha256:…` (the official image, pinned by version and digest) | The Iggy server, on the compose network only. No Kafka port (D2450). See [Kafka and Iggy](../guides/kafka.md) |
 | `house-tailscale` (profile `house-tailnet`) | `tailscale/tailscale` | The House's own door: joins the tailnet as `loams-house` and serves its ClickHouse HTTP interface there |
@@ -321,8 +321,9 @@ rest (see [the profiles](#profiles-tikv-rustfs-and-iggy)).
 | `headscale` (profile `headscale`) | Headscale | Coming soon, unsupported in this release (see [the tailnet](#the-tailnet)) |
 
 Images are tagged `0.1.4`, `0.1` and `:latest`. The compose file pins `0.1.4` through
-`LOAMS_VERSION`. The patched TiDB image
-`ghcr.io/ostrium-labs/tidb:v8.5.8-loams.1` is public and amd64 only.
+`LOAMS_VERSION`. TiDB is the official multi-arch `pingcap/tidb:v8.5.8` image (D2450). It
+lacks pingcap/tidb#60403, so DDL in one database can stall while another database's TiDB runs on
+the same PD.
 
 Only the `tailscale` service (and, with the `house-tailnet` profile, `house-tailscale`) is reachable
 from outside the compose network, and only over your tailnet. Nothing binds `0.0.0.0` on the

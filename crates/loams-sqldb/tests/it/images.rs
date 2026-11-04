@@ -48,15 +48,11 @@ fn images_are_pinned_by_digest() {
 fn tidb_image_is_v8_5() {
     let images = Images::load().expect("pins");
     let tidb = images.tidb();
-    // TiDB is the ostrium-labs/tidb patch queue on an upstream release
-    // (§47 §5.4, R5.3): `<release>-loams.<n>`.
-    assert_eq!(tidb.image, "ghcr.io/ostrium-labs/tidb");
-    let (release, patch) = tidb
-        .tag
-        .split_once("-loams.")
-        .expect("a v8.5.x-loams.N tag");
+    // TiDB is the official PingCAP image (D2450): `<release>`, no patch tag.
+    assert_eq!(tidb.image, "docker.io/pingcap/tidb");
+    let release = tidb.tag.as_str();
     assert!(release.starts_with("v8.5."), "{}", tidb.tag);
-    assert!(patch.parse::<u32>().is_ok(), "{}", tidb.tag);
+    assert!(!release.contains("-loams."), "{}", tidb.tag);
     // Every TiDB-ecosystem image moves together, on the same release.
     for (name, pin) in images.all() {
         if name != "tidb" {
