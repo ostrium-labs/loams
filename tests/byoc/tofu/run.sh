@@ -25,7 +25,7 @@ for ex in aws-vm gcp-vm azure-vm confluent aws-vm-confluent aws-free gcp-free az
   run "init $ex" "$tofu" -chdir="$tofu_dir/examples/$ex" init "${init_args[@]}"
   run "validate $ex" "$tofu" -chdir="$tofu_dir/examples/$ex" validate
 done
-for mod in aws-vm gcp-vm azure-vm confluent aws-free gcp-free azure-free; do
+for mod in aws-vm gcp-vm azure-vm confluent aws-free gcp-free azure-free k3s-home; do
   run "init $mod" "$tofu" -chdir="$tofu_dir/modules/$mod" init "${init_args[@]}"
   run "test $mod" "$tofu" -chdir="$tofu_dir/modules/$mod" test
 done

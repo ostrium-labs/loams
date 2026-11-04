@@ -1,0 +1,850 @@
+#cloud-config
+# Loams on one k3s VM in your own Google Cloud account (OP2-C, one-click deploy).
+# GENERATED from deploy/byoc/cloud-init-k3s.tmpl.yaml, lib/, k3s.env, k3s/ and
+# gcp/config.env by deploy/byoc/gen-cloud-init.sh; edit those, not this file.
+# The module (or deploy/byoc/render.sh) fills the @@NAME@@ placeholders.
+#
+# What it does: joins your tailnet, installs k3s and the Loams operator chart
+# from pinned, checked downloads, and writes the manifest that creates the home
+# LoamsCluster. The tailnet key, the cluster CAs and the Access database secret
+# are read from the secret store with the VM's own identity. No port is opened,
+# and pods cannot reach the cloud's metadata service.
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - jq
+write_files:
+  - path: /etc/loams-k3s/config.env
+    permissions: "0600"
+    owner: root:root
+    content: |
+      # Settings for the Google Cloud VM (rendered into /etc/loams-byoc/config.env). No keys.
+      LOAMS_BYOC_CLOUD=gcp
+      LOAMS_VERSION=@@VERSION@@
+      LOAMS_BUCKET_URL=gs://@@BUCKET@@/loams
+      GCP_PROJECT=@@PROJECT@@
+      SECRET_PREFIX=@@SECRET_PREFIX@@
+      LOAMS_PROFILES=@@PROFILES@@
+      TS_HOSTNAME=@@HOSTNAME@@
+      DATA_DEVICE=@@DATA_DEVICE@@
+      CONFLUENT_INTEGRATIONS=@@CONFLUENT_INTEGRATIONS@@
+      # The k3s home (loams-k3s-bootstrap): the chart tag is LOAMS_VERSION.
+      TAILNET_DOMAIN=@@TAILNET_DOMAIN@@
+      DEPLOYMENT=@@DEPLOYMENT@@
+      ACCESS_DB=@@ACCESS_DB@@
+      HOME_VALUES_B64=@@HOME_VALUES_B64@@
+      HOME_SECRETS_B64=@@HOME_SECRETS_B64@@
+      TARGET_FACTS_B64=@@TARGET_FACTS_B64@@
+      CHART_DIGEST=@@CHART_DIGEST@@
+  - path: /etc/loams-k3s/pins.env
+    permissions: "0644"
+    owner: root:root
+    content: |
+      # Pins for the k3s home path (OP2-C Task 3). Read by lib/loams-k3s-bootstrap;
+      # the VM gets this file as /etc/loams-k3s/pins.env. Every value comes from the
+      # official upstream (D2600), never a fork or a mirror. Bump them together, with
+      # a new date below, and run tests/byoc/static/run.sh.
+      #
+      # Last checked 2026-11-03.
+
+      # k3s: the "stable" channel of k3s-io/k3s (channel.yaml on main names
+      # v1.36.5+k3s1; https://update.k3s.io/v1-release/channels/stable was not
+      # reachable when this was pinned). The hashes are the k3s and k3s-arm64 lines of
+      # that release's sha256sum-amd64.txt and sha256sum-arm64.txt:
+      # https://github.com/k3s-io/k3s/releases/tag/v1.36.5%2Bk3s1
+      K3S_VERSION=v1.36.5+k3s1
+      K3S_SHA256_AMD64=d73847bcd3c5fccef0115b372e2f9a91f3032dc84bbf71518a4617565294d313
+      K3S_SHA256_ARM64=135e34cb9e8a1cfae3cb55577789e93501efe7edc080a8b2630458a85b07721e
+
+      # sha256 of install.sh at the same tag:
+      # https://raw.githubusercontent.com/k3s-io/k3s/v1.36.5%2Bk3s1/install.sh
+      K3S_INSTALL_SHA256=46177d4c99440b4c0311b67233823a8e8a2fc09693f6c89af1a7161e152fbfad
+
+      # Tailscale's package signing key: the primary key fingerprint of
+      # https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg (the same file is
+      # served for the other Ubuntu and Debian releases).
+      TAILSCALE_KEY_FPR=2596A99EAAB33821893C0A79458CA832957F5868
+
+      # The Access database image (C1): the official postgres image, major 17, pinned
+      # by the digest of its multi-arch index, read from Docker Hub's registry API
+      # (docker.io/library/postgres:17, Docker-Content-Digest of the OCI index).
+      POSTGRES_IMAGE=docker.io/library/postgres@sha256:3b0cda93be7c8dba2ed484d19393d93845dc3dafb88973e248ba8e6d99d784e1
+  - path: /etc/loams-k3s/access-db.yaml.tmpl
+    permissions: "0644"
+    owner: root:root
+    content: |
+      # The Access database of a k3s home (C1): the official postgres image as a
+      # one-pod StatefulSet in loams-system, with a 10 GiB local-path volume. Rendered
+      # by lib/loams-k3s-bootstrap when the home uses the local database. It holds no
+      # secret: the password is in the Secret loams-access-db-auth, which the
+      # bootstrap writes next to it. The %%NAME%% lines are filled by the bootstrap.
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: loams-access-db-init
+        namespace: loams-system
+      data:
+        init.sql: |
+          %%INIT_SQL%%
+      ---
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: loams-access-db
+        namespace: loams-system
+      spec:
+        selector:
+          app.kubernetes.io/name: loams-access-db
+        ports:
+          - name: postgres
+            port: 5432
+            targetPort: postgres
+      ---
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: loams-access-db
+        namespace: loams-system
+      spec:
+        serviceName: loams-access-db
+        replicas: 1
+        selector:
+          matchLabels:
+            app.kubernetes.io/name: loams-access-db
+        template:
+          metadata:
+            labels:
+              app.kubernetes.io/name: loams-access-db
+          spec:
+            securityContext:
+              fsGroup: 999
+            containers:
+              - name: postgres
+                image: %%POSTGRES_IMAGE%%
+                ports:
+                  - name: postgres
+                    containerPort: 5432
+                env:
+                  - name: POSTGRES_USER
+                    value: loams
+                  - name: POSTGRES_PASSWORD
+                    valueFrom:
+                      secretKeyRef:
+                        name: loams-access-db-auth
+                        key: password
+                  - name: PGDATA
+                    value: /var/lib/postgresql/data/pgdata
+                readinessProbe:
+                  exec:
+                    command: ["pg_isready", "-U", "loams"]
+                  periodSeconds: 10
+                volumeMounts:
+                  - name: data
+                    mountPath: /var/lib/postgresql/data
+                  - name: init
+                    mountPath: /docker-entrypoint-initdb.d
+                    readOnly: true
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 256Mi
+            volumes:
+              - name: init
+                configMap:
+                  name: loams-access-db-init
+        volumeClaimTemplates:
+          - metadata:
+              name: data
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              storageClassName: local-path
+              resources:
+                requests:
+                  storage: 10Gi
+  - path: /usr/local/bin/loams-k3s-bootstrap
+    permissions: "0755"
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      # First boot of a Loams k3s home (Ubuntu or Debian, amd64 or arm64): joins the
+      # tailnet, installs k3s from its pinned release, pulls the Loams operator chart
+      # from GHCR, and writes the manifest that creates the home. Every download is
+      # checked against a pin or a digest. Safe to run again; a finished run is a no-op.
+      #
+      #   loams-k3s-bootstrap               install (the loams-k3s.service unit runs this)
+      #   loams-k3s-bootstrap --imds-block  (re)apply the rule that keeps pods off the cloud
+      #                                     metadata service; loams-k3s-imds-block.service
+      #                                     runs it after k3s.service at every boot
+      #
+      # Settings: /etc/loams-k3s/config.env (LOAMS_VERSION is the chart tag; TS_HOSTNAME,
+      # TAILNET_DOMAIN, DEPLOYMENT, ACCESS_DB=local|external, CHART_DIGEST, and the base64
+      # values HOME_VALUES_B64, HOME_SECRETS_B64, TARGET_FACTS_B64). Pins: /etc/loams-k3s/pins.env.
+      # Secrets, read with the VM's own identity (loams-byoc-secrets --get) or, with
+      # LOAMS_K3S_CLOUD=server, from /etc/loams-k3s/secrets/{tailnet-authkey,k3s-ca.json,access-db.json}:
+      #   tailnet-authkey   the Tailscale auth key
+      #   k3s-ca            JSON {server_ca_crt, server_ca_key, client_ca_crt, client_ca_key}
+      #   access-db         JSON {password} (ACCESS_DB=local) or {dsn} (external)
+      #
+      #   LOAMS_K3S_SKIP_SYSTEM=1   for tests, not for a VM: skip the root check, the data disk
+      #                             and the apt installs; work under LOAMS_K3S_ROOT; and honour
+      #                             the LOAMS_K3S_{RELEASE,RAW,GHCR}_URL, _ARCH, _SECRETS_BIN
+      #                             and _ACCESS_DB_TMPL overrides
+      set -euo pipefail
+      umask 022
+
+      say() { echo "loams-k3s-bootstrap: $*"; }
+      die() { echo "loams-k3s-bootstrap: $*" >&2; exit 1; }
+
+      # k3s's default pod network. Pods must not take the VM's cloud role through the
+      # metadata service (Review Focus 5), so their traffic to it is dropped in the raw
+      # table's PREROUTING, the first hook a packet from a pod meets. Nothing in the filter
+      # table's FORWARD (where kube-router's chains can ACCEPT a pod's traffic ahead of any
+      # rule of ours) or in k3s's own chains can reorder or bypass it, and it does not depend
+      # on k3s having started. The unit that runs this is ordered before k3s.service, so there
+      # is no boot window either. Each rule is checked before it is added: a rerun adds nothing.
+      pod_cidr="10.42.0.0/16"
+      imds_block() {
+        iptables -w -t raw -N LOAMS-IMDS 2>/dev/null || true
+        iptables -w -t raw -C LOAMS-IMDS -s "$pod_cidr" -d 169.254.169.254 -j DROP 2>/dev/null \
+          || iptables -w -t raw -A LOAMS-IMDS -s "$pod_cidr" -d 169.254.169.254 -j DROP
+        iptables -w -t raw -C PREROUTING -j LOAMS-IMDS 2>/dev/null \
+          || iptables -w -t raw -I PREROUTING 1 -j LOAMS-IMDS
+      }
+      if [[ "${1:-}" == "--imds-block" ]]; then
+        imds_block
+        say "pods are blocked from 169.254.169.254"
+        exit 0
+      fi
+      [[ $# -eq 0 ]] || die "usage: loams-k3s-bootstrap [--imds-block]"
+
+      skip_system="${LOAMS_K3S_SKIP_SYSTEM:-0}"
+      root=""
+      config="/etc/loams-k3s/config.env"
+      pins="/etc/loams-k3s/pins.env"
+      secrets_bin="/usr/local/bin/loams-byoc-secrets"
+      access_tmpl="/etc/loams-k3s/access-db.yaml.tmpl"
+      k3s_url="https://github.com/k3s-io/k3s/releases/download"
+      raw_url="https://raw.githubusercontent.com/k3s-io/k3s"
+      ghcr_url="https://ghcr.io"
+      proto='=https'
+      arch="$(uname -m)"
+      if [[ "$skip_system" == 1 ]]; then
+        root="${LOAMS_K3S_ROOT:?LOAMS_K3S_ROOT is not set}"
+        config="${LOAMS_K3S_CONFIG:-$config}"; pins="${LOAMS_K3S_PINS:-$pins}"
+        secrets_bin="${LOAMS_K3S_SECRETS_BIN:-$secrets_bin}"; access_tmpl="${LOAMS_K3S_ACCESS_DB_TMPL:-$access_tmpl}"
+        k3s_url="${LOAMS_K3S_RELEASE_URL:-$k3s_url}"; raw_url="${LOAMS_K3S_RAW_URL:-$raw_url}"; ghcr_url="${LOAMS_K3S_GHCR_URL:-$ghcr_url}"
+        arch="${LOAMS_K3S_ARCH:-$arch}"
+        proto='=http,https'
+      else
+        [[ "$(id -u)" -eq 0 ]] || die "run as root"
+      fi
+
+      done_marker="$root/var/lib/loams-k3s/done"
+      if [[ -f "$done_marker" ]]; then
+        say "already done ($done_marker); nothing to do"
+        exit 0
+      fi
+
+      # shellcheck disable=SC1090
+      . "$config"
+      # shellcheck disable=SC1090
+      . "$pins"
+
+      # --- settings, checked before anything changes -----------------------------------
+      : "${LOAMS_VERSION:?}" "${TS_HOSTNAME:?}" "${TAILNET_DOMAIN:?}" "${ACCESS_DB:?}" "${HOME_VALUES_B64:?}"
+      : "${K3S_VERSION:?}" "${K3S_SHA256_AMD64:?}" "${K3S_SHA256_ARM64:?}" "${K3S_INSTALL_SHA256:?}" "${TAILSCALE_KEY_FPR:?}" "${POSTGRES_IMAGE:?}"
+      cloud="${LOAMS_K3S_CLOUD:-${LOAMS_BYOC_CLOUD:-}}"
+      deployment="${DEPLOYMENT:-}"
+      chart_pin="${CHART_DIGEST:-}"
+      [[ "$LOAMS_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]] || die "LOAMS_VERSION must be a release version, not '$LOAMS_VERSION'"
+      [[ "$TS_HOSTNAME" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || die "TS_HOSTNAME is not a host name: '$TS_HOSTNAME'"
+      [[ "$TAILNET_DOMAIN" =~ ^[a-z0-9][a-z0-9.-]{0,251}$ ]] || die "TAILNET_DOMAIN is not a domain name: '$TAILNET_DOMAIN'"
+      [[ "$ACCESS_DB" == local || "$ACCESS_DB" == external ]] || die "ACCESS_DB must be local or external, not '$ACCESS_DB'"
+      [[ "$chart_pin" =~ ^(sha256:[0-9a-f]{64})?$ ]] || die "CHART_DIGEST must be sha256:<64 hex digits> or empty, not '$chart_pin'"
+      [[ "$deployment" =~ ^[A-Za-z0-9._-]{0,63}$ ]] || die "DEPLOYMENT is not a name: '$deployment'"
+      for v in HOME_VALUES_B64 HOME_SECRETS_B64 TARGET_FACTS_B64; do
+        [[ "${!v:-}" =~ ^[A-Za-z0-9+/=]*$ ]] || die "$v is not base64"
+      done
+      [[ "$K3S_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+\+k3s[0-9]+$ ]] || die "K3S_VERSION is not a k3s release: '$K3S_VERSION'"
+      [[ "$K3S_SHA256_AMD64$K3S_SHA256_ARM64$K3S_INSTALL_SHA256" =~ ^[0-9a-f]{192}$ ]] || die "a k3s pin is not a sha256"
+      [[ "$TAILSCALE_KEY_FPR" =~ ^[0-9A-F]{40}$ ]] || die "TAILSCALE_KEY_FPR is not a fingerprint"
+      [[ "$POSTGRES_IMAGE" =~ ^[a-z0-9./-]+@sha256:[0-9a-f]{64}$ ]] || die "POSTGRES_IMAGE must be pinned by digest"
+      case "$cloud" in aws|gcp|azure|server) ;; *) die "the secret store is not known: '$cloud' (aws, gcp, azure or server)" ;; esac
+      case "$arch" in
+        x86_64|amd64) k3s_file=k3s; k3s_sha="$K3S_SHA256_AMD64" ;;
+        aarch64|arm64) k3s_file=k3s-arm64; k3s_sha="$K3S_SHA256_ARM64" ;;
+        *) die "unsupported architecture $arch (amd64 and arm64 only)" ;;
+      esac
+      command -v jq >/dev/null 2>&1 || {
+        [[ "$skip_system" != 1 ]] || die "jq is not installed"
+        apt-get update -qq; DEBIAN_FRONTEND=noninteractive apt-get install -y -qq jq gnupg curl ca-certificates
+      }
+
+      work="$(mktemp -d)"
+      trap 'rm -rf "$work"' EXIT
+
+      # curl for a pinned or digest-checked download: https only (tests: http too),
+      # and redirects keep to the same rule.
+      dl() {  # url out [curl args...]
+        local url="$1" out="$2"; shift 2
+        curl --proto "$proto" --proto-redir "$proto" --tlsv1.2 -fsSL --retry 3 "$@" "$url" -o "$out"
+      }
+      sha256_of() { sha256sum "$1" | cut -d' ' -f1; }
+
+      # One secret's value on stdout. On a cloud it is read with the VM's identity;
+      # on a server (server-ssh) from the files the installer left.
+      secret() {  # name
+        if [[ "$cloud" == server ]]; then
+          local f="$root/etc/loams-k3s/secrets/$1"
+          [[ "$1" == tailnet-authkey ]] || f="$f.json"
+          [[ -r "$f" ]] || die "missing secret file $f"
+          cat "$f"
+        else
+          LOAMS_BYOC_CONFIG="$config" "$secrets_bin" --get "$1" "$cloud" || die "could not read the $1 secret"
+        fi
+      }
+
+      # --- the secrets and values the home needs, all read and checked first ----------------
+      authkey="$(secret tailnet-authkey)"
+      [[ -n "$authkey" ]] || die "the tailnet auth key is empty"
+      ca_json="$(secret k3s-ca)"
+      for k in server_ca_crt server_ca_key client_ca_crt client_ca_key; do
+        printf '%s' "$ca_json" | jq -e --arg k "$k" '.[$k] | strings | length > 0' >/dev/null || die "the k3s-ca secret has no $k"
+      done
+      db_json="$(secret access-db)"
+      db_password=""; db_dsn=""
+      if [[ "$ACCESS_DB" == local ]]; then
+        db_password="$(printf '%s' "$db_json" | jq -er '.password | strings')" || die "the access-db secret has no password"
+        [[ "$db_password" =~ ^[A-Za-z0-9._~-]{16,128}$ ]] || die "the access-db password must be 16 to 128 URL-safe characters (letters, digits, . _ ~ -)"
+      else
+        db_dsn="$(printf '%s' "$db_json" | jq -er '.dsn | strings | select(length > 0)')" || die "the access-db secret has no dsn"
+      fi
+
+      home_values="$(printf '%s' "$HOME_VALUES_B64" | base64 -d | jq -ce 'select(type == "object")')" || die "HOME_VALUES_B64 is not a JSON object"
+      home_secrets='[]'
+      [[ -z "${HOME_SECRETS_B64:-}" ]] || home_secrets="$(printf '%s' "$HOME_SECRETS_B64" | base64 -d | jq -ce . 2>/dev/null)" || die "HOME_SECRETS_B64 is not JSON"
+      printf '%s' "$home_secrets" | jq -e 'type == "array" and all(.[];
+          (.name | type == "string" and length <= 253 and test("^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"))
+          and (.key | type == "string" and test("^[-._a-zA-Z0-9]{1,253}$"))
+          and (.database | type == "string" and test("^[a-z_][a-z0-9_]{0,62}$")))' >/dev/null \
+        || die "HOME_SECRETS_B64 must be a list of {name, key, database}: a Secret name, a key, and a plain database name (a-z, 0-9, _)"
+      facts='{}'
+      [[ -z "${TARGET_FACTS_B64:-}" ]] || facts="$(printf '%s' "$TARGET_FACTS_B64" | base64 -d | jq -ce . 2>/dev/null)" || die "TARGET_FACTS_B64 is not JSON"
+      facts="$(printf '%s' "$facts" | jq -ce --arg d "$deployment" 'if type != "object" then error("not an object") else . end
+        | with_entries(select(.value != null) | .value |= tostring) | if ($d != "" and (has("deployment") | not)) then . + {deployment: $d} else . end')" \
+        || die "TARGET_FACTS_B64 must be a JSON object"
+      printf '%s' "$facts" | jq -e 'keys | all(test("^[-._a-zA-Z0-9]{1,253}$"))' >/dev/null || die "a fact name in TARGET_FACTS_B64 is not a valid ConfigMap key"
+
+      # --- the data disk, if one is attached (k3s keeps everything under /var/lib/rancher) ----
+      if [[ "$skip_system" != 1 && -n "${DATA_DEVICE:-}" ]]; then
+        for _ in $(seq 30); do [[ -b "$DATA_DEVICE" ]] && break; sleep 2; done
+        [[ -b "$DATA_DEVICE" ]] || die "data disk $DATA_DEVICE did not appear"
+        if ! blkid "$DATA_DEVICE" >/dev/null 2>&1; then
+          say "formatting $DATA_DEVICE as ext4"
+          mkfs.ext4 -q -L loams-data "$DATA_DEVICE"
+        fi
+        mkdir -p /var/lib/rancher
+        grep -q ' /var/lib/rancher ' /etc/fstab || echo "LABEL=loams-data /var/lib/rancher ext4 defaults,nofail 0 2" >>/etc/fstab
+        mountpoint -q /var/lib/rancher || mount /var/lib/rancher
+      fi
+
+      # --- 1. Tailscale: the vendor's apt repository, key checked by fingerprint -------------
+      install_tailscale() {
+        local id codename keyring=/usr/share/keyrings/tailscale-archive-keyring.gpg got pubs
+        export DEBIAN_FRONTEND=noninteractive
+        # shellcheck disable=SC1091
+        . /etc/os-release
+        id="$ID"; codename="${VERSION_CODENAME:-}"
+        case "$id" in ubuntu|debian) ;; *) die "Tailscale's apt repository is used on Ubuntu and Debian, not $id" ;; esac
+        [[ "$codename" =~ ^[a-z]+$ ]] || die "no release codename in /etc/os-release"
+        say "installing Tailscale"
+        apt-get update -qq
+        apt-get install -y -qq ca-certificates curl gnupg
+        curl --proto '=https' --tlsv1.2 -fsSL "https://pkgs.tailscale.com/stable/$id/$codename.noarmor.gpg" -o "$work/tailscale.gpg"
+        got="$(gpg --show-keys --with-colons "$work/tailscale.gpg" | awk -F: '$1=="fpr"{print $10; exit}')"
+        pubs="$(gpg --show-keys --with-colons "$work/tailscale.gpg" | grep -c '^pub:' || true)"
+        [[ "$got" == "$TAILSCALE_KEY_FPR" && "$pubs" == 1 ]] || die "Tailscale's apt key has fingerprint $got ($pubs keys), expected only $TAILSCALE_KEY_FPR"
+        install -m 0644 "$work/tailscale.gpg" "$keyring"
+        echo "deb [signed-by=$keyring] https://pkgs.tailscale.com/stable/$id $codename main" >/etc/apt/sources.list.d/tailscale.list
+        apt-get update -qq
+        apt-get install -y -qq tailscale
+        systemctl enable --now tailscaled
+      }
+      if [[ "$skip_system" != 1 ]] && ! command -v tailscale >/dev/null 2>&1; then install_tailscale; fi
+      if tailscale ip -4 >/dev/null 2>&1; then
+        say "already on the tailnet"
+      else
+        # The key goes in a mode-600 file, not on the command line.
+        install -m 600 /dev/null "$work/authkey"
+        printf '%s' "$authkey" >"$work/authkey"
+        tailscale up --authkey "file:$work/authkey" --hostname "$TS_HOSTNAME"
+      fi
+      unset authkey
+
+      # --- 2. the cluster CAs, before k3s starts (it generates the other certificates) ----------
+      tls="$root/var/lib/rancher/k3s/server/tls"
+      mkdir -p "$tls"
+      chmod 700 "$root/var/lib/rancher/k3s/server" "$tls"
+      for pair in server_ca_crt:server-ca.crt:644 server_ca_key:server-ca.key:600 client_ca_crt:client-ca.crt:644 client_ca_key:client-ca.key:600; do
+        IFS=: read -r k f mode <<<"$pair"
+        install -m "$mode" /dev/null "$tls/$f"
+        printf '%s' "$ca_json" | jq -er --arg k "$k" '.[$k]' >"$tls/$f"
+      done
+      unset ca_json
+      # Pod Security: baseline is enforced in every namespace except the two the platform
+      # itself runs in. It forbids hostNetwork, hostPID and privileged pods, so a pod cannot
+      # reach the cloud metadata service from the host's network namespace, where the rule
+      # in step 5 (which matches pod-network sources) does not see it (Review Focus 5). The
+      # file must exist before k3s first starts; the flag in step 4 points the API server at it.
+      cat >"$work/psa.yaml" <<'YAML'
+      apiVersion: apiserver.config.k8s.io/v1
+      kind: AdmissionConfiguration
+      plugins:
+        - name: PodSecurity
+          configuration:
+            apiVersion: pod-security.admission.config.k8s.io/v1
+            kind: PodSecurityConfiguration
+            defaults:
+              enforce: baseline
+              enforce-version: latest
+              audit: restricted
+              audit-version: latest
+              warn: restricted
+              warn-version: latest
+            exemptions:
+              usernames: []
+              runtimeClasses: []
+              namespaces: [kube-system, loams-system]
+      YAML
+      install -m 0600 "$work/psa.yaml" "$root/var/lib/rancher/k3s/server/psa.yaml"
+
+      # --- 3. k3s and its install script, at the pinned tag, checked ---------------------------
+      etag="${K3S_VERSION//+/%2B}"
+      dl "$k3s_url/$etag/$k3s_file" "$work/k3s"
+      [[ "$(sha256_of "$work/k3s")" == "$k3s_sha" ]] || die "$k3s_file for $K3S_VERSION does not match its pinned sha256"
+      dl "$raw_url/$etag/install.sh" "$work/install.sh"
+      [[ "$(sha256_of "$work/install.sh")" == "$K3S_INSTALL_SHA256" ]] || die "install.sh for $K3S_VERSION does not match its pinned sha256"
+      mkdir -p "$root/usr/local/bin"
+      install -m 0755 "$work/k3s" "$root/usr/local/bin/k3s"
+
+      # --- 5. pods stay off the metadata service, before k3s starts: the unit is ordered before
+      # k3s.service and wanted by it (this amends the brief, which started it after k3s; see Review
+      # Focus 5: iptables rules do not persist, so a rule added after k3s leaves a window) --------
+      systemctl daemon-reload
+      systemctl enable --now loams-k3s-imds-block.service
+
+      # --- 4. k3s: no Traefik, secrets encrypted, kubeconfig for root only, Pod Security --------
+      # The flags are the brief's, plus the Pod Security config file (Review Focus 5, see step 2).
+      say "installing k3s $K3S_VERSION"
+      INSTALL_K3S_SKIP_DOWNLOAD=true \
+      INSTALL_K3S_EXEC="server --disable traefik --secrets-encryption --write-kubeconfig-mode 0600 --tls-san $TS_HOSTNAME --tls-san $TS_HOSTNAME.$TAILNET_DOMAIN --kube-apiserver-arg=admission-control-config-file=/var/lib/rancher/k3s/server/psa.yaml" \
+        sh "$work/install.sh"
+
+      # --- 6. the operator chart, from GHCR's registry API ---------------------------------------
+      chart_repo="ostrium-labs/charts/loams-operator"
+      dl "$ghcr_url/token?service=ghcr.io&scope=repository:$chart_repo:pull" "$work/ghcr-token.json"
+      printf 'Authorization: Bearer %s\n' "$(jq -er '.token | strings | select(length > 0)' "$work/ghcr-token.json")" >"$work/ghcr.hdr"
+      dl "$ghcr_url/v2/$chart_repo/manifests/$LOAMS_VERSION" "$work/chart-manifest.json" -H "@$work/ghcr.hdr" \
+        -H 'Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json'
+      chart_digest="sha256:$(sha256_of "$work/chart-manifest.json")"
+      if [[ -n "$chart_pin" ]]; then
+        [[ "$chart_digest" == "$chart_pin" ]] || die "chart manifest digest $chart_digest does not match the pinned CHART_DIGEST $chart_pin"
+        say "chart manifest $chart_digest matches the pin"
+      else
+        say "chart manifest digest $chart_digest (not pinned: CHART_DIGEST is empty; recorded as chart_digest)"
+      fi
+      layer="$(jq -er '[.layers[] | select(.mediaType == "application/vnd.cncf.helm.chart.content.v1.tar+gzip") | .digest] | if length == 1 then .[0] else error("not one chart layer") end' "$work/chart-manifest.json")" \
+        || die "the chart manifest for $LOAMS_VERSION has no single Helm chart layer"
+      [[ "$layer" =~ ^sha256:[0-9a-f]{64}$ ]] || die "the chart layer digest is not a sha256: $layer"
+      dl "$ghcr_url/v2/$chart_repo/blobs/$layer" "$work/chart.tgz" -H "@$work/ghcr.hdr"
+      [[ "sha256:$(sha256_of "$work/chart.tgz")" == "$layer" ]] || die "chart layer for $LOAMS_VERSION does not match its digest $layer"
+      charts="$root/var/lib/rancher/k3s/server/static/charts"
+      mkdir -p "$charts"
+      install -m 0644 "$work/chart.tgz" "$charts/loams-operator-$LOAMS_VERSION.tgz"
+
+      # --- 7. the home: k3s applies everything in its manifests directory --------------------------
+      # JSON is YAML, so values from outside (DSNs, facts) are written by jq, never spliced into text.
+      # Passwords and DSNs reach jq through the environment, not its arguments.
+      manifest="$work/loams-home.yaml"
+      {
+        echo "# Written by loams-k3s-bootstrap for $LOAMS_VERSION: the home. k3s applies it; edit the cluster, not this file."
+        cat <<'YAML'
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: loams-system
+      YAML
+        printf -- '---\n'
+        printf '%s' "$facts" | jq -c --arg d "$chart_digest" '{apiVersion: "v1", kind: "ConfigMap", metadata: {name: "loams-target", namespace: "loams-system"}, data: (. + {chart_digest: $d})}'
+        # The Secrets the home names: each key holds the Postgres DSN.
+        LK_MODE="$ACCESS_DB" LK_PASSWORD="$db_password" LK_DSN="$db_dsn" \
+          jq -nr --argjson entries "$home_secrets" '
+            def dsn($e): if env.LK_MODE == "local"
+              then "postgres://loams:\(env.LK_PASSWORD)@loams-access-db.loams-system.svc:5432/\($e.database)?sslmode=disable"
+              else env.LK_DSN end;
+            reduce $entries[] as $e ({}; .[$e.name] += {($e.key): dsn($e)})
+            | to_entries[]
+            | "---\n" + ({apiVersion: "v1", kind: "Secret", metadata: {name: .key, namespace: "loams-system"}, type: "Opaque", stringData: .value} | tojson)'
+        if [[ "$ACCESS_DB" == local ]]; then
+          printf -- '---\n'
+          LK_PASSWORD="$db_password" jq -nc '{apiVersion: "v1", kind: "Secret", metadata: {name: "loams-access-db-auth", namespace: "loams-system"}, type: "Opaque", stringData: {password: env.LK_PASSWORD}}'
+          # The StatefulSet, with an init script that makes the databases the Secrets point
+          # at on the first start of an empty volume.
+          printf -- '---\n'
+          while IFS= read -r line || [[ -n "$line" ]]; do
+            case "$line" in
+              *%%INIT_SQL%%*)
+                lead="${line%%[![:space:]]*}"
+                printf '%s' "$home_secrets" | jq -r --arg lead "$lead" '[.[].database] | unique | (map($lead + "CREATE DATABASE " + . + ";") | if length == 0 then [$lead + "SELECT 1;"] else . end)[]'
+                ;;
+              *) printf '%s\n' "${line//%%POSTGRES_IMAGE%%/$POSTGRES_IMAGE}" ;;
+            esac
+          done <"$access_tmpl"
+        fi
+        printf -- '---\n'
+        cat <<YAML
+      apiVersion: helm.cattle.io/v1
+      kind: HelmChart
+      metadata:
+        name: loams-operator
+        namespace: kube-system
+      spec:
+        chart: https://%{KUBERNETES_API}%/static/charts/loams-operator-$LOAMS_VERSION.tgz
+        targetNamespace: loams-system
+        valuesContent: |
+      $(printf '%s' "$home_values" | jq . | sed 's/^/    /')
+      YAML
+      } >"$manifest"
+      mdir="$root/var/lib/rancher/k3s/server/manifests"
+      mkdir -p "$mdir"
+      # The Secrets are in it: owner only.
+      install -m 0600 "$manifest" "$mdir/loams-home.yaml"
+
+      # --- 8. done ---------------------------------------------------------------------------------
+      mkdir -p "$root/var/lib/loams-k3s"
+      touch "$done_marker"
+      say "done: k3s and the Loams operator are starting; the home is Ready when 'k3s kubectl -n loams-system get loamscluster home' says so"
+  - path: /usr/local/bin/loams-byoc-secrets
+    permissions: "0755"
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      # Reads the install's secrets from the cloud's secret store with the VM's own
+      # identity and writes them where the stack reads them. No cloud CLI, no key:
+      #
+      #   aws    IMDSv2 role credentials, then Secrets Manager with SigV4 (curl)
+      #   gcp    the metadata server's service-account token, then Secret Manager
+      #   azure  IMDS managed-identity token for Key Vault, then the vault's REST API
+      #
+      # Secret names (the prefix is SECRET_PREFIX in /etc/loams-byoc/config.env):
+      #   <prefix>/tailnet-authkey   required   -> TS_AUTHKEY in .env
+      #   <prefix>/setup-token       required   -> LOAMS_SETUP_TOKEN in .env
+      #   <prefix>/api-keys          optional   -> secrets/api-keys
+      #   <prefix>/confluent-<i>-{api-key,api-secret,sr-key,sr-secret,metrics-key,metrics-secret}
+      #                              optional, for each integration <i> in CONFLUENT_INTEGRATIONS
+      #                              -> secrets/connect/<ns>/confluent-<i>/{username,password,
+      #                                 sr-username,sr-password,metrics-key,metrics-secret}
+      #                              (the connect role's file secret store, design 80 §7.2;
+      #                              <ns> is CONNECT_NAMESPACE, default 0). Never in .env.
+      # On AWS the separator is "/"; Google Cloud and Azure names cannot hold "/",
+      # so they use "-" (the prefix "loams-<install>" gives loams-<install>-setup-token).
+      #
+      # Never prints a secret value. A failure names the secret and the HTTP status.
+      #
+      #   loams-byoc-secrets [--confluent-only] [aws|gcp|azure]
+      #                                        (default cloud: LOAMS_BYOC_CLOUD from the config)
+      #   loams-byoc-secrets --get NAME [aws|gcp|azure]
+      #                                        print one secret's value (no trailing newline) and
+      #                                        nothing else (the k3s bootstrap reads its tailnet
+      #                                        key, CA and database secrets this way)
+      #
+      # --confluent-only refreshes the Confluent files and nothing else (no .env
+      # change, no restart): loams-byoc-confluent.timer runs it every 5 minutes and
+      # `systemctl reload loams-byoc` runs it at once, so a key rotated with
+      # `loams byoc confluent key rotate` reaches the connect role without a reboot.
+      set -euo pipefail
+      umask 077
+
+      confluent_only=0
+      get_name=""
+      if [[ "${1:-}" == "--confluent-only" ]]; then confluent_only=1; shift; fi
+      if [[ "${1:-}" == "--get" ]]; then
+        get_name="${2:-}"
+        [[ "$get_name" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || { echo "loams-byoc-secrets: --get needs a secret name (lowercase letters, digits, -)" >&2; exit 2; }
+        shift 2
+      fi
+
+      config="${LOAMS_BYOC_CONFIG:-/etc/loams-byoc/config.env}"
+      # shellcheck disable=SC1090
+      [[ -r "$config" ]] && . "$config"
+      cloud="${1:-${LOAMS_BYOC_CLOUD:-}}"
+      stack="${LOAMS_BYOC_STACK:-/opt/loams/release}"
+      prefix="${SECRET_PREFIX:-}"
+      [[ -n "$prefix" ]] || { echo "loams-byoc-secrets: SECRET_PREFIX is not set" >&2; exit 2; }
+      only_ints="${CONFLUENT_INTEGRATIONS:-}"
+      if ((confluent_only)) && [[ -z "${only_ints//[ ,]/}" ]]; then
+        # The timer runs on every install; with no integration it reads nothing.
+        exit 0
+      fi
+
+      work="$(mktemp -d)"
+      trap 'rm -rf "$work"' EXIT
+
+      die() { echo "loams-byoc-secrets: $*" >&2; exit 1; }
+
+      # curl wrapper: body to $work/body, prints the HTTP status. A transport error
+      # prints 000. Headers (which carry tokens) are passed in a file, not argv.
+      http() {
+        local out
+        out="$(curl --silent --show-error --proto '=http,https' --max-time 20 \
+          --retry 3 --retry-connrefused --retry-delay 2 \
+          --output "$work/body" --write-out '%{http_code}' "$@" 2>"$work/curl.err")" || out=000
+        printf '%s' "$out"
+      }
+
+      secret_name() {  # $1 = short name
+        case "$cloud" in
+          aws) printf '%s/%s' "$prefix" "$1" ;;
+          *) printf '%s-%s' "${prefix//\//-}" "$1" ;;
+        esac
+      }
+
+      # --- aws ------------------------------------------------------------------
+      aws_creds_ready=0
+      aws_prepare() {
+        ((aws_creds_ready)) && return 0
+        local imds="${LOAMS_BYOC_IMDS_URL:-http://169.254.169.254}" code token role
+        : "${REGION:?REGION is not set}"
+        code="$(http -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 300' "$imds/latest/api/token")"
+        [[ "$code" == 200 ]] || die "IMDSv2 did not answer ($code); is the instance metadata service on, with hop limit 2 for containers?"
+        token="$(cat "$work/body")"
+        code="$(http -H "X-aws-ec2-metadata-token: $token" "$imds/latest/meta-data/iam/security-credentials/")"
+        [[ "$code" == 200 ]] || die "the instance has no IAM role ($code)"
+        role="$(head -n1 "$work/body")"
+        code="$(http -H "X-aws-ec2-metadata-token: $token" "$imds/latest/meta-data/iam/security-credentials/$role")"
+        [[ "$code" == 200 ]] || die "could not read the role's credentials ($code)"
+        aws_ak="$(jq -er .AccessKeyId "$work/body")"
+        aws_sk="$(jq -er .SecretAccessKey "$work/body")"
+        aws_st="$(jq -er .Token "$work/body")"
+        aws_creds_ready=1
+      }
+
+      aws_get() {  # $1 = full secret id; body -> $work/value; prints status
+        aws_prepare
+        local endpoint="${LOAMS_BYOC_SECRETS_URL:-https://secretsmanager.$REGION.amazonaws.com}" code
+        printf 'x-amz-security-token: %s\n' "$aws_st" >"$work/hdr"
+        printf 'user = "%s:%s"\n' "$aws_ak" "$aws_sk" >"$work/cfg"
+        code="$(http -K "$work/cfg" -H "@$work/hdr" \
+          --aws-sigv4 "aws:amz:$REGION:secretsmanager" \
+          -H 'Content-Type: application/x-amz-json-1.1' -H 'X-Amz-Target: secretsmanager.GetSecretValue' \
+          --data "$(jq -cn --arg id "$1" '{SecretId:$id}')" "$endpoint/")"
+        if [[ "$code" == 200 ]]; then
+          jq -er '.SecretString // empty' "$work/body" >"$work/value" || { echo 000; return; }
+        elif jq -e '.__type | test("ResourceNotFoundException")' "$work/body" >/dev/null 2>&1; then
+          code=404
+        fi
+        printf '%s' "$code"
+      }
+
+      # --- gcp ------------------------------------------------------------------
+      gcp_ready=0
+      gcp_prepare() {
+        ((gcp_ready)) && return 0
+        local md="${LOAMS_BYOC_METADATA_URL:-http://metadata.google.internal}" code
+        code="$(http -H 'Metadata-Flavor: Google' "$md/computeMetadata/v1/instance/service-accounts/default/token")"
+        [[ "$code" == 200 ]] || die "the metadata server gave no service-account token ($code)"
+        printf 'Authorization: Bearer %s\n' "$(jq -er .access_token "$work/body")" >"$work/hdr"
+        if [[ -z "${GCP_PROJECT:-}" ]]; then
+          code="$(http -H 'Metadata-Flavor: Google' "$md/computeMetadata/v1/project/project-id")"
+          [[ "$code" == 200 ]] || die "could not read the project id ($code)"
+          GCP_PROJECT="$(cat "$work/body")"
+        fi
+        gcp_ready=1
+      }
+
+      gcp_get() {
+        gcp_prepare
+        local endpoint="${LOAMS_BYOC_SECRETS_URL:-https://secretmanager.googleapis.com}" code
+        code="$(http -H "@$work/hdr" "$endpoint/v1/projects/$GCP_PROJECT/secrets/$1/versions/latest:access")"
+        if [[ "$code" == 200 ]]; then
+          jq -er '.payload.data // empty' "$work/body" | base64 -d >"$work/value" || { echo 000; return; }
+        fi
+        printf '%s' "$code"
+      }
+
+      # --- azure ----------------------------------------------------------------
+      azure_ready=0
+      azure_prepare() {
+        ((azure_ready)) && return 0
+        local imds="${LOAMS_BYOC_IMDS_URL:-http://169.254.169.254}" code url
+        : "${AZURE_VAULT:?AZURE_VAULT is not set}"
+        url="$imds/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fvault.azure.net"
+        [[ -z "${AZURE_CLIENT_ID:-}" ]] || url="$url&client_id=$AZURE_CLIENT_ID"
+        code="$(http -H 'Metadata: true' "$url")"
+        [[ "$code" == 200 ]] || die "IMDS gave no managed-identity token ($code); is an identity assigned to the VM?"
+        printf 'Authorization: Bearer %s\n' "$(jq -er .access_token "$work/body")" >"$work/hdr"
+        azure_ready=1
+      }
+
+      azure_get() {
+        azure_prepare
+        local base="${LOAMS_BYOC_SECRETS_URL:-https://$AZURE_VAULT.vault.azure.net}" code
+        code="$(http -H "@$work/hdr" "$base/secrets/$1?api-version=7.4")"
+        if [[ "$code" == 200 ]]; then
+          jq -er '.value // empty' "$work/body" >"$work/value" || { echo 000; return; }
+        fi
+        printf '%s' "$code"
+      }
+
+      # --- shared -----------------------------------------------------------------
+      case "$cloud" in aws|gcp|azure) ;; *) die "usage: loams-byoc-secrets aws|gcp|azure" ;; esac
+
+      # fetch SHORT -> 0 found (value in $work/value), 1 not found; dies on other errors
+      fetch() {
+        local name code
+        name="$(secret_name "$1")"
+        rm -f "$work/value"
+        "${cloud}_prepare"   # in this shell, so a failure ends the script and the token is kept
+        code="$("${cloud}_get" "$name")"
+        case "$code" in
+          200) [[ -s "$work/value" ]] || die "secret $name is empty"; return 0 ;;
+          404) return 1 ;;
+          *) die "reading secret $name failed (HTTP $code)" ;;
+        esac
+      }
+
+      # set_env KEY from $work/value into .env, without putting the value in argv
+      set_env() {
+        local envfile="$stack/.env" tmp
+        [[ -f "$envfile" ]] || die "$envfile does not exist; run loams-byoc-bootstrap first"
+        tmp="$(mktemp "$stack/.env.XXXXXX")"
+        K="$1" V="$(tr -d '\r\n' <"$work/value")" awk '
+          BEGIN { FS = "="; k = ENVIRON["K"]; v = ENVIRON["V"] }
+          $1 == k { print k "=" v; found = 1; next }
+          { print }
+          END { if (!found) print k "=" v }' "$envfile" >"$tmp"
+        chmod 600 "$tmp"
+        mv "$tmp" "$envfile"
+        # install.sh --cloud runs this as root for the ssh user, who runs compose.
+        [[ -z "${LOAMS_BYOC_OWNER:-}" || "$(id -u)" -ne 0 ]] || chown "$LOAMS_BYOC_OWNER" "$envfile"
+      }
+
+      # --get NAME: the value on stdout, without trailing newlines (the JSON parsers
+      # above end it with one), and no other output.
+      if [[ -n "$get_name" ]]; then
+        fetch "$get_name" || die "missing secret $(secret_name "$get_name")"
+        printf '%s' "$(cat "$work/value")"
+        exit 0
+      fi
+
+      if ((!confluent_only)); then
+        fetch tailnet-authkey || die "missing secret $(secret_name tailnet-authkey) (the Tailscale auth key)"
+        set_env TS_AUTHKEY
+        fetch setup-token || die "missing secret $(secret_name setup-token) (the first-run setup token)"
+        set_env LOAMS_SETUP_TOKEN
+        mkdir -p "$stack/secrets"
+        if fetch api-keys; then
+          install -m 600 "$work/value" "$stack/secrets/api-keys"
+          # The engine reads it as uid 10001 (release/README.md).
+          [[ "$(id -u)" -ne 0 ]] || chown 10001 "$stack/secrets/api-keys"
+          echo "loams-byoc-secrets: wrote secrets/api-keys"
+        fi
+      fi
+
+      # Confluent integrations (D1827): one directory per integration, owner-only files.
+      # A missing api-key or api-secret is reported, not fatal: the stack starts and the
+      # integration's connector instances fail until the key is in the secret store.
+      ints="${CONFLUENT_INTEGRATIONS:-}"
+      ints="${ints//,/ }"
+      ns="${CONNECT_NAMESPACE:-0}"
+      [[ "$ns" =~ ^[0-9]{1,19}$ ]] || die "CONNECT_NAMESPACE must be a number"
+      changed=0
+      for i in $ints; do
+        [[ "$i" =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] || die "CONFLUENT_INTEGRATIONS: '$i' is not an integration name (lowercase letters, digits, -)"
+        dir="$stack/secrets/connect/$ns/confluent-$i"
+        [[ -d "$stack/secrets" ]] || die "$stack/secrets does not exist; run loams-byoc-bootstrap first"
+        install -d -m 700 "$stack/secrets/connect" "$stack/secrets/connect/$ns" "$dir"
+        for pair in api-key:username api-secret:password sr-key:sr-username sr-secret:sr-password \
+                    metrics-key:metrics-key metrics-secret:metrics-secret; do
+          short="${pair%%:*}"; file="${pair#*:}"
+          if fetch "confluent-$i-$short"; then
+            tmpf="$(mktemp "$dir/.$file.XXXXXX")"
+            # No trailing newline; the value never passes through argv.
+            printf '%s' "$(cat "$work/value")" >"$tmpf"
+            chmod 600 "$tmpf"
+            cmp -s "$tmpf" "$dir/$file" 2>/dev/null || changed=1
+            mv "$tmpf" "$dir/$file"
+          else
+            [[ ! -e "$dir/$file" ]] || changed=1
+            rm -f "$dir/$file"
+            case "$short" in
+              api-key|api-secret) echo "loams-byoc-secrets: confluent-$i: $(secret_name "confluent-$i-$short") is not in the secret store yet (run loams byoc confluent key create)" >&2 ;;
+            esac
+          fi
+        done
+        # The connect role reads them as uid 10001, as the engine does.
+        [[ "$(id -u)" -ne 0 ]] || chown -R 10001 "$stack/secrets/connect"
+        echo "loams-byoc-secrets: wrote secrets/connect/$ns/confluent-$i"
+      done
+      # A rotated key (loams byoc confluent key rotate) reaches running connectors only
+      # when the connect role restarts its instances; its admin API is on its own
+      # loopback, so the refresh restarts the service (a graceful stop: drain and
+      # checkpoint, then start with the new files). At boot the stack starts after this.
+      if ((confluent_only && changed)); then
+        compose="${LOAMS_BYOC_COMPOSE:-docker compose}"
+        # shellcheck disable=SC2086 # the command and its subcommand
+        if (cd "$stack" && $compose ps --status running --services 2>/dev/null | grep -qx connect); then
+          # shellcheck disable=SC2086
+          if (cd "$stack" && $compose restart connect >/dev/null 2>&1); then
+            echo "loams-byoc-secrets: a Confluent key changed: restarted the connect service"
+          else
+            echo "loams-byoc-secrets: a Confluent key changed, but restarting the connect service failed; run: docker compose restart connect" >&2
+          fi
+        else
+          echo "loams-byoc-secrets: a Confluent key changed; the connect service is not running"
+        fi
+      fi
+      echo "loams-byoc-secrets: ok ($cloud, prefix $prefix)"
+  - path: /etc/systemd/system/loams-k3s.service
+    permissions: "0644"
+    owner: root:root
+    content: |
+      [Unit]
+      Description=Loams k3s home: Tailscale, k3s, the operator chart and the home
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      # Every step is safe to repeat, and a finished run (/var/lib/loams-k3s/done) is a no-op.
+      ExecStart=/usr/local/bin/loams-k3s-bootstrap
+      # The secrets may arrive after boot (Azure): try again until they do.
+      Restart=on-failure
+      RestartSec=30
+      TimeoutStartSec=1800
+
+      [Install]
+      WantedBy=multi-user.target
+  - path: /etc/systemd/system/loams-k3s-imds-block.service
+    permissions: "0644"
+    owner: root:root
+    content: |
+      [Unit]
+      Description=Keep pods off the cloud metadata service (169.254.169.254)
+      # Before k3s starts a single pod: the rule is in the raw table, which does not depend on
+      # k3s's own chains, and iptables rules do not survive a reboot, so this runs at every boot.
+      Before=k3s.service
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/local/bin/loams-k3s-bootstrap --imds-block
+
+      [Install]
+      WantedBy=k3s.service multi-user.target
+runcmd:
+  - [ systemctl, daemon-reload ]
+  - [ systemctl, enable, --now, --no-block, loams-k3s.service ]

@@ -1,0 +1,17 @@
+[Unit]
+Description=Loams k3s home: Tailscale, k3s, the operator chart and the home
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Every step is safe to repeat, and a finished run (/var/lib/loams-k3s/done) is a no-op.
+ExecStart=/usr/local/bin/loams-k3s-bootstrap
+# The secrets may arrive after boot (Azure): try again until they do.
+Restart=on-failure
+RestartSec=30
+TimeoutStartSec=1800
+
+[Install]
+WantedBy=multi-user.target

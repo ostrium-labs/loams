@@ -1,0 +1,13 @@
+[Unit]
+Description=Keep pods off the cloud metadata service (169.254.169.254)
+# Before k3s starts a single pod: the rule is in the raw table, which does not depend on
+# k3s's own chains, and iptables rules do not survive a reboot, so this runs at every boot.
+Before=k3s.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/loams-k3s-bootstrap --imds-block
+
+[Install]
+WantedBy=k3s.service multi-user.target
