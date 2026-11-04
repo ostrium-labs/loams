@@ -185,8 +185,30 @@ fn every_sku_in_modules_is_priced() {
             }
         }
     }
-    // Vacuous until the module tasks land (Task 5).
-    let _ = seen;
+    // Not vacuous: an available operator module spells out its disk SKU in full,
+    // so the scan above finds and prices the SKUs it emits.
+    let mut available_k3s = 0;
+    for t in DeployTargets::embedded()
+        .iter()
+        .filter(|t| t.available && t.operator && t.class == TargetClass::K3s)
+    {
+        available_k3s += 1;
+        let dir = modules.join(&t.module);
+        let text: String = ["main.tf", "outputs.tf"]
+            .iter()
+            .filter_map(|f| fs::read_to_string(dir.join(f)).ok())
+            .collect();
+        for sku in [&t.disk_sku, "aws/secretsmanager/secret"] {
+            if t.cloud == "aws" || sku != "aws/secretsmanager/secret" {
+                assert!(
+                    text.contains(&format!("\"{sku}\"")),
+                    "{}: the module does not emit {sku}",
+                    t.kind
+                );
+            }
+        }
+    }
+    assert!(available_k3s == 0 || seen > 0, "no SKU found in any module");
 }
 
 #[test]
