@@ -98,6 +98,7 @@ ignore = [
     { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5.5, through official Neon's storage clients (D2450); not reached by the in-process WAL decoder, whose binary is not published" },
     { id = "RUSTSEC-2026-0194", reason = "quick-xml 0.31.0, through official Neon's storage clients (D2450); not reached by the in-process WAL decoder, whose binary is not published" },
     { id = "RUSTSEC-2026-0195", reason = "quick-xml 0.31.0, through official Neon's storage clients (D2450); not reached by the in-process WAL decoder, whose binary is not published" },
+    { id = "RUSTSEC-2026-0049", reason = "rustls-webpki 0.102.8 (no fixed 0.102 release), through official Neon's storage clients (D2450); not reached by the in-process WAL decoder, whose binary is not published" },
     { id = "RUSTSEC-2025-0111", reason = "tokio-tar 0.3.1, through official Neon's storage clients (D2450); not reached by the in-process WAL decoder, whose binary is not published" },
     { id = "RUSTSEC-2026-0381", reason = "webpki-roots 0.26.11 re-exports webpki-roots 1.0.10, which drops the distrusted emSign roots; the 0.26 shim carries no certificates" },
 ]

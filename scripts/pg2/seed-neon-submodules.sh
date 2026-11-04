@@ -10,13 +10,13 @@
 #   scripts/pg2/seed-neon-submodules.sh crates/loams-wal-decoder/Cargo.lock
 #
 # The database directory name is cargo's hash of the submodule URL
-# (postgres-3118924c31a8989c for https://github.com/ostrium-labs/postgres.git
+# (postgres-7fba7d663876ac88 for https://github.com/neondatabase/postgres.git
 # with cargo 1.97). If a cargo release names it differently, the seed is
 # ignored and cargo fetches the full history: slower, still correct.
 set -euo pipefail
 
 lock=${1:?usage: seed-neon-submodules.sh <Cargo.lock>}
-db=${CARGO_HOME:-$HOME/.cargo}/git/db/postgres-3118924c31a8989c
+db=${CARGO_HOME:-$HOME/.cargo}/git/db/postgres-7fba7d663876ac88
 url=https://github.com/neondatabase/postgres.git
 
 rev=$(sed -n 's#^source = "git+https://github.com/neondatabase/neon?rev=\([0-9a-f]\{40\}\)\#.*#\1#p' "$lock" | head -1)
