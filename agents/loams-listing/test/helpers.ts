@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import type { Listing } from '../src/types.js';
 
@@ -52,3 +53,11 @@ export function patched<T>(doc: T, ops: Op[]): T {
   }
   return out as T;
 }
+
+export const INDEX_TYPE = 'application/vnd.oci.image.index.v1+json';
+
+export function indexBody(platforms: string[]): { body: string; digest: string } {
+  const body = JSON.stringify({ manifests: platforms.map((p) => ({ platform: { os: p.split('/')[0], architecture: p.split('/')[1] } })) });
+  return { body, digest: `sha256:${createHash('sha256').update(body).digest('hex')}` };
+}
+

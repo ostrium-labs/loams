@@ -6,7 +6,7 @@ import { buildIndex, canonical, IndexError, writeIndex } from './index-build.js'
 import { formatIssue, hasErrors, lint, RULES } from './lint.js';
 import type { IndexSnapshot, Listing } from './types.js';
 import { publishWalrus, PublishError, type PublishInput } from './publish.js';
-import { httpFetcher, sigstoreVerifier, verifyListing, type VerifyOptions, type VerifyReport, type WalrusVerifyOptions } from './verify.js';
+import { execCosign, httpFetcher, sigstoreVerifier, verifyListing, type VerifyOptions, type VerifyReport, type WalrusVerifyOptions } from './verify.js';
 import {
   checkEndpoint,
   DEFAULT_EPOCHS,
@@ -37,7 +37,7 @@ const USAGE = `usage:
   loams-listing lint [--first-party-only] [--submitter <login>] [--index <dir>] <listing.json>…
   loams-listing from-package <dir> (--tarball <file> | --integrity <sha512-…>) [--commit <sha>] [--out <file>]
   loams-listing index build <listings-dir> --out <dir> [--first-party-only] [--source-commit <sha>]
-  loams-listing verify <listing.json>… [--save-provenance <dir>] [--report <file.json>]
+  loams-listing verify <listing.json>… [--save-provenance <dir>] [--report <file.json>] [--cosign <path>]
       [--aggregator <url>] [--walrus-record <file>] [--current-epoch <n>] [--support-epochs <n>]
   loams-listing publish --walrus <listing.json> (--tarball <file> | --file <platform>=<file>…)
       --publisher <url> --aggregator <url> --network testnet|mainnet [--publisher-token-file <file>]
@@ -64,6 +64,7 @@ const VALUE_FLAGS = new Set([
   '--source-commit',
   '--save-provenance',
   '--report',
+  '--cosign',
   '--file',
   '--publisher',
   '--aggregator',
@@ -220,7 +221,8 @@ export async function main(args: string[], io: Io): Promise<number> {
         const reports: (VerifyReport & { file: string })[] = [];
         for (const file of positional) {
           const listing = JSON.parse(readFileSync(at(file), 'utf8')) as Listing;
-          const options = { ...base, walrus: walrusVerifyOptions(flags, env, at, file, io) };
+          const cosign = str(flags, '--cosign');
+          const options = { ...base, ...(cosign && !base.runCosign ? { runCosign: execCosign(cosign) } : {}), walrus: walrusVerifyOptions(flags, env, at, file, io) };
           const report = { file, ...(await verifyListing(listing, options)) };
           reports.push(report);
           for (const check of report.checks) {

@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vite-plus/test';
 import { integrityOf } from '../src/from-package.js';
 import type { Listing } from '../src/types.js';
-import { type BundleVerifier, type Fetcher, integrityHex, npmDocumentUrl, SLSA_V1, verifyListing } from '../src/verify.js';
-import { fixture } from './helpers.js';
+import type { OciHttp } from '../src/oci.js';
+import { type BundleVerifier, type Fetcher, integrityHex, npmDocumentUrl, SLSA_V1, verifyListing, verifyPackage, type PackageDeps, type PackageListing } from '../src/verify.js';
+import { fixture, indexBody, INDEX_TYPE } from './helpers.js';
 
 const GITHUB = 'https://token.actions.githubusercontent.com';
 const TARBALL = new TextEncoder().encode('the starter agent, packed');
@@ -196,5 +197,172 @@ describe('verify: listings without an artifact', () => {
   it('refuses the runtimes MK0 cannot verify yet', async () => {
     const report = await verifyListing(fixture('valid/agent-pydantic-ai-a2a.json'), { fetcher: fetcher({}, {}), verifier });
     expect(report.ok).toBe(false);
+  });
+});
+
+describe('verifyPackage (listing/v2)', () => {
+  const REPO_URL = 'https://github.com/acme/notes';
+  const SAN_V2 = `${REPO_URL}/.github/workflows/release.yml@refs/heads/main`;
+  const hex = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
+  const both = indexBody(['linux/amd64', 'linux/arm64']);
+  const amdOnly = indexBody(['linux/amd64']);
+
+  /** A registry holding the given index bodies by digest. */
+  function registry(manifests: Record<string, { body: string }>, missing = false): OciHttp {
+    return async (r) => {
+      const digest = r.url.split('/manifests/')[1]!;
+      const m = manifests[digest];
+      if (!m || missing) return { status: 404, headers: {} as Record<string, string>, body: new Uint8Array() };
+      return { status: 200, headers: { 'content-type': INDEX_TYPE } as Record<string, string>, body: r.method === 'GET' ? new TextEncoder().encode(m.body) : new Uint8Array() };
+    };
+  }
+
+  function deps(over: Partial<PackageDeps> & { json?: Record<string, unknown>; bytes?: Record<string, Uint8Array> } = {}): PackageDeps & { cosign: string[][] } {
+    const cosign: string[][] = [];
+    return {
+      cosign,
+      fetcher: over.fetcher ?? fetcher(over.json ?? {}, over.bytes ?? {}),
+      oci: over.oci ?? registry({ [both.digest]: both }),
+      verifier,
+      runCosign: over.runCosign ?? (async (args) => (cosign.push(args), { code: 0, stdout: '[]', stderr: '' })),
+    };
+  }
+
+  const oci = (digest = both.digest, kind = 'app', provenance: PackageListing['provenance'] = { type: 'cosign', ref: 'unused' }): PackageListing => ({
+    id: 'acme/notes',
+    kind,
+    source: { repository: REPO_URL },
+    package: { type: 'oci', image: 'ghcr.io/acme/notes', digest },
+    provenance,
+  });
+
+  function attestation(hexDigest: string, san = SAN_V2): { url: string; doc: unknown } {
+    const subject = [{ name: 'x', digest: { sha256: hexDigest } }];
+    return {
+      url: `https://api.github.com/repos/acme/notes/attestations/sha256:${hexDigest}`,
+      doc: { attestations: [{ bundle: bundle(slsa(subject, REPO_URL), { san, issuer: GITHUB }) }] },
+    };
+  }
+
+  it('oci_digest_resolves', async () => {
+    const d = deps();
+    const r = await verifyPackage(oci(), d);
+    expect(r).toMatchObject({ digest: 'ok', provenance: 'ok' });
+  });
+
+  it('oci_digest_missing_fails', async () => {
+    const r = await verifyPackage(oci(), deps({ oci: registry({}) }));
+    expect(r.digest).toBe('fail');
+    expect(r.detail).toMatch(/no such manifest/);
+  });
+
+  it('oci_index_must_include_linux_amd64_and_arm64', async () => {
+    const r = await verifyPackage(oci(amdOnly.digest), deps({ oci: registry({ [amdOnly.digest]: amdOnly }) }));
+    expect(r.digest).toBe('fail');
+    expect(r.detail).toMatch(/linux\/arm64/);
+    // an agent-kind image is not held to D2626
+    const agent = await verifyPackage(oci(amdOnly.digest, 'agent'), deps({ oci: registry({ [amdOnly.digest]: amdOnly }) }));
+    expect(agent.digest).toBe('ok');
+  });
+
+  it('helm_oci_chart_digest_resolves', async () => {
+    const d = deps();
+    const listing: PackageListing = { ...oci(), package: { type: 'helm', chart: 'oci://ghcr.io/acme/charts/notes', version: '1.0.0', digest: both.digest } };
+    expect(await verifyPackage(listing, d)).toMatchObject({ digest: 'ok', provenance: 'ok' });
+    expect(d.cosign[0]![1]).toBe(`ghcr.io/acme/charts/notes@${both.digest}`);
+    const gone = await verifyPackage(listing, deps({ oci: registry({}) }));
+    expect(gone.digest).toBe('fail');
+  });
+
+  const FILE = new TextEncoder().encode('chart bytes');
+  const att = (b: Uint8Array) => attestation(hex(b));
+
+  it('helm_https_tgz_sha256_checked', async () => {
+    const url = 'https://example.com/wiki-3.1.0.tgz';
+    const a = att(FILE);
+    const listing: PackageListing = { ...oci(), package: { type: 'helm', chart: url, version: '3.1.0', digest: `sha256:${hex(FILE)}` }, provenance: { type: 'github-attestation', ref: 'https://api.github.com/repos/acme/notes/attestations' } };
+    expect(await verifyPackage(listing, deps({ bytes: { [url]: FILE }, json: { [a.url]: a.doc } }))).toMatchObject({ digest: 'ok', provenance: 'ok' });
+    const bad = await verifyPackage(listing, deps({ bytes: { [url]: new TextEncoder().encode('other') } }));
+    expect(bad.digest).toBe('fail');
+    expect(bad.detail).toMatch(/hashes to/);
+  });
+
+  it('kustomize_tarball_sha256_checked', async () => {
+    const url = 'https://example.com/kustomize.tar.gz';
+    const a = att(FILE);
+    const listing: PackageListing = { ...oci(), kind: 'engine', package: { type: 'kustomize', url, digest: `sha256:${hex(FILE)}` }, provenance: { type: 'github-attestation', ref: 'https://api.github.com/repos/acme/notes/attestations' } };
+    expect(await verifyPackage(listing, deps({ bytes: { [url]: FILE }, json: { [a.url]: a.doc } }))).toMatchObject({ digest: 'ok', provenance: 'ok' });
+    expect((await verifyPackage(listing, deps({ bytes: { [url]: new Uint8Array([1]) } }))).digest).toBe('fail');
+  });
+
+  it('binary_each_triple_checked', async () => {
+    const one = new TextEncoder().encode('linux'), two = new TextEncoder().encode('mac');
+    const urls = { a: 'https://example.com/syncd-linux', b: 'https://example.com/syncd-mac' };
+    const listing: PackageListing = {
+      ...oci(),
+      package: { type: 'binary', targets: [{ triple: 'x86_64-unknown-linux-gnu', url: urls.a, digest: `sha256:${hex(one)}` }, { triple: 'aarch64-apple-darwin', url: urls.b, digest: `sha256:${hex(two)}` }] },
+      provenance: { type: 'github-attestation', ref: 'https://api.github.com/repos/acme/notes/attestations' },
+    };
+    const a1 = att(one), a2 = att(two);
+    const json = { [a1.url]: a1.doc, [a2.url]: a2.doc };
+    expect(await verifyPackage(listing, deps({ bytes: { [urls.a]: one, [urls.b]: two }, json }))).toMatchObject({ digest: 'ok', provenance: 'ok' });
+    const bad = await verifyPackage(listing, deps({ bytes: { [urls.a]: one, [urls.b]: new Uint8Array([9]) }, json }));
+    expect(bad.digest).toBe('fail');
+    expect(bad.detail).toMatch(/aarch64-apple-darwin/);
+  });
+
+  it('cosign_signer_must_be_source_repo_workflow', async () => {
+    const d = deps();
+    await verifyPackage(oci(), d);
+    expect(d.cosign).toEqual([
+      ['verify', `ghcr.io/acme/notes@${both.digest}`, '--certificate-identity-regexp', '^https://github\\.com/acme/notes/\\.github/workflows/', '--certificate-oidc-issuer', GITHUB, '--output', 'json'],
+    ]);
+    const failing = deps({ runCosign: async () => ({ code: 1, stdout: '', stderr: 'no matching signatures\n' }) });
+    expect(await verifyPackage(oci(), failing)).toMatchObject({ digest: 'ok', provenance: 'fail' });
+  });
+
+  it('cosign is refused for a file package', async () => {
+    const url = 'https://example.com/f.wasm';
+    const listing: PackageListing = { ...oci(), package: { type: 'wasm', url, digest: `sha256:${hex(FILE)}` } };
+    const r = await verifyPackage(listing, deps({ bytes: { [url]: FILE } }));
+    expect(r.provenance).toBe('fail');
+    expect(r.detail).toMatch(/OCI/);
+  });
+
+  it('github_attestation_by_package_digest', async () => {
+    const a = attestation(both.digest.slice(7));
+    const listing = oci(both.digest, 'app', { type: 'github-attestation', ref: 'https://api.github.com/repos/acme/notes/attestations' });
+    const d = deps({ json: { [a.url]: a.doc } });
+    expect(await verifyPackage(listing, d)).toMatchObject({ digest: 'ok', provenance: 'ok' });
+    // signed by another repository's workflow
+    const wrong = attestation(both.digest.slice(7), 'https://github.com/evil/notes/.github/workflows/r.yml@refs/heads/main');
+    expect((await verifyPackage(listing, deps({ json: { [wrong.url]: wrong.doc } }))).provenance).toBe('fail');
+  });
+
+  it('sigstore_bundle covers a single file only', async () => {
+    const url = 'https://example.com/f.wasm';
+    const ref = 'https://example.com/f.wasm.sigstore.json';
+    const a = att(FILE);
+    const listing: PackageListing = { ...oci(), package: { type: 'wasm', url, digest: `sha256:${hex(FILE)}` }, provenance: { type: 'sigstore-bundle', ref } };
+    const bundleDoc = (a.doc as { attestations: { bundle: unknown }[] }).attestations[0]!.bundle;
+    expect(await verifyPackage(listing, deps({ bytes: { [url]: FILE }, json: { [ref]: bundleDoc } }))).toMatchObject({ provenance: 'ok' });
+    const image = await verifyPackage({ ...oci(), provenance: { type: 'sigstore-bundle', ref } }, deps({ json: { [ref]: bundleDoc } }));
+    expect(image.provenance).toBe('fail');
+    expect(image.detail).toMatch(/single file/);
+  });
+
+  it('provenance_missing_reported', async () => {
+    const listing = { ...oci(), provenance: undefined };
+    expect(await verifyPackage(listing, deps())).toMatchObject({ digest: 'ok', provenance: 'missing' });
+  });
+
+  it('verifyListing reports a v2 package as checks and no longer says oci is unverified', async () => {
+    const listing = { ...oci(), $schema: 'x' } as unknown as Listing;
+    const d = deps();
+    const report = await verifyListing(listing, { fetcher: d.fetcher, verifier, oci: d.oci, runCosign: d.runCosign });
+    expect(report.ok).toBe(true);
+    expect(report.checks.map((c) => c.check)).toEqual(['package_digest', 'package_provenance']);
+    const missing = await verifyListing({ ...oci(), provenance: undefined } as unknown as Listing, { fetcher: d.fetcher, verifier, oci: d.oci });
+    expect(missing.ok).toBe(false);
   });
 });
