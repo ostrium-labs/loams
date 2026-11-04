@@ -235,3 +235,104 @@ async fn replace_with_stale_resource_version_conflicts() {
     ));
     store.replace(&updated).await.unwrap();
 }
+
+/// A slow first read must not backdate the observation: B's first `get` takes 7 s
+/// (longer than lease - renew_deadline = 5 s), the holder goes silent while it
+/// is in flight, and B still has to wait a full lease after the last write.
+#[tokio::test(start_paused = true)]
+async fn slow_read_does_not_shorten_the_wait() {
+    let store = MemLeaseStore::new();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let a = tokio::spawn({
+        let store = store.clone();
+        async move {
+            run_leader(
+                cfg("a"),
+                store,
+                TokioClock::new(),
+                |_t: LeaderToken| async move {
+                    let _ = tx.send(());
+                    std::future::pending::<()>().await;
+                },
+            )
+            .await
+        }
+    });
+    rx.await.unwrap();
+    sleep(Duration::from_secs(4)).await;
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let b_store = store.with_first_get_stall(Duration::from_secs(7));
+    let b = tokio::spawn(async move {
+        run_leader(
+            cfg("b"),
+            b_store,
+            TokioClock::new(),
+            |_t: LeaderToken| async move {
+                let _ = tx.send(Instant::now());
+            },
+        )
+        .await
+    });
+    // The holder dies while B's first read is in flight; B reads its record at 7 s.
+    sleep(Duration::from_millis(6500)).await;
+    a.abort();
+    let _ = a.await;
+    let last_write = store.last_write_at().unwrap();
+
+    let took = rx.await.unwrap().duration_since(last_write);
+    assert!(
+        took >= Duration::from_secs(15),
+        "B took the lease {took:?} after the last write"
+    );
+    assert_eq!(b.await.unwrap(), LeaderExit::Shutdown);
+}
+
+/// A leader resumed after a pause past its deadline fences before `work` runs
+/// another step, even when `work` is always ready (LOC-HA-002).
+#[tokio::test(start_paused = true)]
+async fn fence_comes_before_work_after_a_pause() {
+    for round in 0..30 {
+        let store = MemLeaseStore::new();
+        let late = Arc::new(AtomicUsize::new(0));
+        let deadline = Arc::new(Mutex::new(None::<Instant>));
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let leader = tokio::spawn({
+            let (store, late, deadline) = (store.clone(), late.clone(), deadline.clone());
+            async move {
+                run_leader(
+                    cfg("a"),
+                    store,
+                    TokioClock::new(),
+                    |_t: LeaderToken| async move {
+                        let _ = tx.send(());
+                        loop {
+                            let d = *deadline.lock().unwrap();
+                            if d.is_some_and(|d| Instant::now() >= d) {
+                                late.fetch_add(1, Ordering::SeqCst);
+                            }
+                            tokio::task::yield_now().await;
+                        }
+                    },
+                )
+                .await
+            }
+        });
+        rx.await.unwrap();
+        // The work never idles, so paused time is moved by hand.
+        tokio::time::advance(Duration::from_secs(3)).await;
+        // Renewals stop working. The last one started at its write time.
+        store.set_stall(Some(Duration::from_secs(60)));
+        let last = store.last_write_at().unwrap();
+        let fence_at = last + Duration::from_secs(10);
+        *deadline.lock().unwrap() = Some(fence_at);
+        // The process is "paused": time jumps to the deadline in one step.
+        tokio::time::advance(fence_at - Instant::now()).await;
+        assert_eq!(leader.await.unwrap(), LeaderExit::LostLease);
+        assert_eq!(
+            late.load(Ordering::SeqCst),
+            0,
+            "work ran after the deadline (round {round})"
+        );
+    }
+}

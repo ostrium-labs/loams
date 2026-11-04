@@ -135,6 +135,8 @@ impl LeaseStore for KubeLeaseStore {
 #[derive(Clone, Debug, Default)]
 pub struct MemLeaseStore {
     inner: Arc<Mutex<MemState>>,
+    /// Stall of the first `get` of this handle only (not shared by clones).
+    first_get_stall: Arc<Mutex<Option<Duration>>>,
 }
 
 #[derive(Debug, Default)]
@@ -142,6 +144,7 @@ struct MemState {
     lease: Option<Lease>,
     version: u64,
     stall: Option<Duration>,
+    last_write: Option<Instant>,
 }
 
 impl MemLeaseStore {
@@ -153,6 +156,20 @@ impl MemLeaseStore {
     /// `None` clears it. A call dropped meanwhile (a timeout) is not applied.
     pub fn set_stall(&self, d: Option<Duration>) {
         self.state().stall = d;
+    }
+
+    /// A handle on the same Lease whose first `get` takes `d` (a slow read), while
+    /// every other call, and every other handle, is unaffected.
+    pub fn with_first_get_stall(&self, d: Duration) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            first_get_stall: Arc::new(Mutex::new(Some(d))),
+        }
+    }
+
+    /// When the last write was applied (tokio clock).
+    pub fn last_write_at(&self) -> Option<Instant> {
+        self.state().last_write
     }
 
     /// The current Lease, if any.
@@ -175,6 +192,14 @@ impl MemLeaseStore {
 #[async_trait]
 impl LeaseStore for MemLeaseStore {
     async fn get(&self, _name: &str) -> Result<Option<Lease>> {
+        let once = self
+            .first_get_stall
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+        if let Some(d) = once {
+            tokio::time::sleep(d).await;
+        }
         self.stall().await;
         Ok(self.state().lease.clone())
     }
@@ -189,6 +214,7 @@ impl LeaseStore for MemLeaseStore {
         let mut new = l.clone();
         new.metadata.resource_version = Some(s.version.to_string());
         s.lease = Some(new.clone());
+        s.last_write = Some(Instant::now());
         Ok(new)
     }
 
@@ -206,6 +232,7 @@ impl LeaseStore for MemLeaseStore {
         let mut new = l.clone();
         new.metadata.resource_version = Some(s.version.to_string());
         s.lease = Some(new.clone());
+        s.last_write = Some(Instant::now());
         Ok(new)
     }
 }
@@ -318,9 +345,13 @@ async fn try_acquire_or_renew(
     clock: &dyn Clock,
     obs: &mut Observed,
 ) -> Result<Attempt> {
-    let now = clock.now();
     let wall = micro(clock.wall());
-    let Some(existing) = store.get(&cfg.name).await? else {
+    let got = store.get(&cfg.name).await?;
+    // The observation time is taken after the read returns, never before it: the
+    // record may have been written any time before the response, so a slow read
+    // must not make the Lease look older than it is.
+    let now = clock.now();
+    let Some(existing) = got else {
         let l = Lease {
             metadata: ObjectMeta {
                 name: Some(cfg.name.clone()),
@@ -337,7 +368,7 @@ async fn try_acquire_or_renew(
             }),
         };
         let created = store.create(&l).await?;
-        observe(obs, &created, now);
+        observe(obs, &created, clock.now());
         return Ok(Attempt::Held(0));
     };
 
@@ -379,7 +410,7 @@ async fn try_acquire_or_renew(
         ..spec
     });
     let written = store.replace(&next).await?;
-    observe(obs, &written, now);
+    observe(obs, &written, clock.now());
     Ok(Attempt::Held(transitions))
 }
 
@@ -417,6 +448,11 @@ async fn release(cfg: &LeaseConfig, store: &dyn LeaseStore, clock: &dyn Clock) {
 /// released and the result is [`LeaderExit::Shutdown`]) or until the Lease is
 /// lost (then `token.lost` is cancelled, `work` is dropped and the result is
 /// [`LeaderExit::LostLease`]).
+///
+/// Renewal runs on the same task as `work`, so `work` must not block the
+/// runtime thread (no long synchronous code, no blocking IO): it has to yield
+/// often and stop when `token.lost` is cancelled. The fence is checked before
+/// `work` is polled on every wake-up.
 ///
 /// # Panics
 ///
@@ -494,7 +530,10 @@ where
     tokio::pin!(renew);
     let work = work(token);
     tokio::pin!(work);
+    // `biased`: the renewal branch is polled first, so a leader that was paused
+    // past its deadline fences before `work` can run another step.
     tokio::select! {
+        biased;
         () = &mut renew => {
             lost.cancel();
             tracing::error!(identity = %cfg.identity, "lost the leader lease, self-fenced");
