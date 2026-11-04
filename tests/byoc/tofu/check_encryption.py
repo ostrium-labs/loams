@@ -3,13 +3,16 @@
 
 Every root module under deploy/tofu/examples that can put a Confluent key in state
 (it passes create_api_keys to the confluent module, or sets kafka_admin to
-module_key) must have an `encryption` block whose `state` and `plan` blocks both
+module_key), and every example named after an operator target in
+deploy/tofu/targets.toml (its state holds cluster CAs and database passwords),
+must have an `encryption` block whose `state` and `plan` blocks both
 say `enforced = true`. A crude HCL reader (comments stripped, braces counted) is
 enough for the examples' own style. Exit 1 and name the file on a failure.
 """
 import pathlib
 import re
 import sys
+import tomllib
 
 
 def strip_comments(text: str) -> str:
@@ -27,14 +30,26 @@ def block_bodies(text: str, header: str):
         yield text[m.end(): i - 1]
 
 
+def operator_targets(root: str) -> set:
+    """Kinds with operator = true in targets.toml, which sits next to the examples directory."""
+    path = pathlib.Path(root).resolve().parent / "targets.toml"
+    if not path.is_file():
+        return set()
+    data = tomllib.loads(path.read_text())
+    return {kind for kind, t in data.get("targets", {}).items() if t.get("operator")}
+
+
 def main(root: str) -> int:
     fail = 0
+    operators = operator_targets(root)
     examples = sorted(p for p in pathlib.Path(root).iterdir() if p.is_dir())
     for ex in examples:
         text = "\n".join(strip_comments(f.read_text()) for f in sorted(ex.glob("*.tf")))
         needs = re.search(r"create_api_keys\s*=", text) or re.search(r'kafka_admin\s*=\s*"module_key"', text)
-        if not needs:
+        operator = ex.name in operators
+        if not needs and not operator:
             continue
+        what = "is an operator target (its state holds secrets)" if operator else "can create a Confluent key"
         enc = list(block_bodies(text, r"\bencryption"))
         ok = False
         for body in enc:
@@ -45,7 +60,7 @@ def main(root: str) -> int:
         if ok:
             print(f"ok   example_with_keys_enforces_encryption: {ex.name}")
         else:
-            print(f"FAIL example_with_keys_enforces_encryption: {ex.name} can create a Confluent key but its state and plan encryption is not enforced = true")
+            print(f"FAIL example_with_keys_enforces_encryption: {ex.name} {what} but its state and plan encryption is not enforced = true")
             fail = 1
     return fail
 

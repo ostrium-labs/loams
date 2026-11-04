@@ -9,7 +9,7 @@
 #   sizes.*         one NODE of the size and how many nodes: cpu_millis, memory_mib, nodes
 #   reserve         what the platform base plus the Access database take (an estimate)
 #   disk_sku, egress_sku   price table SKUs (deploy/tofu/prices.toml)
-#   keep_on_destroy state addresses removed from state and kept on teardown (provisional until the module lands)
+#   keep_on_destroy state addresses removed from state and kept on teardown (the real addresses in the example root, module "target")
 #   credentials     the CLI session the user needs: aws | gcloud | az | ssh
 #   needs_tailnet   the engine is reached over the user's tailnet
 
@@ -19,13 +19,23 @@ module = "aws-k3s"
 cloud = "aws"
 class = "k3s"
 operator = true
-available = false
+available = true
 free_tier = false
 default_region = "us-east-1"
 disk_sku = "aws/ebs/gp3"
 egress_sku = "aws/network/egress-internet"
 required_inputs = []
-keep_on_destroy = ["module.target.aws_s3_bucket.this", "module.target.aws_kms_key.bucket"]
+# the bucket, its key and the settings that keep it private, versioned and encrypted once kept
+keep_on_destroy = [
+  "module.target.aws_s3_bucket.this",
+  "module.target.aws_s3_bucket_ownership_controls.this",
+  "module.target.aws_s3_bucket_public_access_block.this",
+  "module.target.aws_s3_bucket_versioning.this",
+  "module.target.aws_s3_bucket_server_side_encryption_configuration.this",
+  "module.target.aws_s3_bucket_lifecycle_configuration.this",
+  "module.target.aws_s3_bucket_policy.this",
+  "module.target.aws_kms_key.bucket",
+]
 credentials = "aws"
 needs_tailnet = true
 reserve = { cpu_millis = 1500, memory_mib = 4096 }
