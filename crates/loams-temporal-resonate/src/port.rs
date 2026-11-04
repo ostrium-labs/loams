@@ -1,5 +1,5 @@
-//! The `Durability` port (D1591): what the gateway asks of Resonate, named
-//! after FW3's `resonate-client` methods so the final adapter is thin.
+//! The `Durability` port (D1591): what the gateway asks of Resonate, in the
+//! protocol's own terms (`promise.*`, `task.*`), so an adapter is thin.
 
 use std::collections::BTreeMap;
 

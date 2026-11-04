@@ -39,7 +39,7 @@ healthcheck, except `loams-gateway` and `loams-temporal`, which have no client m
 
 | Image | Contains |
 |---|---|
-| `loams` | the engine, features `live,live-tikv,durable,durable-tikv,graph,git,tikv,pgwire,mysql-wire,stream-grpc` |
+| `loams` | the engine, features `live,live-tikv,durable,durable-postgres,graph,git,tikv,pgwire,mysql-wire,stream-grpc` |
 | `loams-fabric` | `loams-fabric house` and `loams-house-worker`, with the digest-pinned libchdb; workers sealed with `--sandbox pods` by default |
 | `loams-agentd` | the agent daemon |
 | `loams-pg-control` | `loams` with features `postgres,tikv` and the standalone `docker-compose` CLI: `pg-control` and `pg-runner` (`--profile postgres-control`; from 0.1.0) |
@@ -65,7 +65,7 @@ The default stack is light enough for a laptop or one small VM: about 8 GB of
 images and 1 GB of RAM at idle (measured on 0.1.0 images). It runs
 
 - the engine (`loams`, with `migrate` first) on its embedded stores: the
-  metastore on openraft + redb, Loams Live on redb, Durable on SQLite, Git and
+  metastore on openraft + redb, Loams Live on redb, Durable on its local redb store, Git and
   Graph, all in the `loams-data` volume, with the bucket a local folder
   (`LOAMS_BUCKET=file:///var/lib/loams/bucket`);
 - Loams House (`house`), linked to the engine;
@@ -83,7 +83,7 @@ engine, `migrate` and `loams upgrade` all see the same set:
 
 | Profile | Adds |
 |---|---|
-| `tikv` | PD, TiKV and TiDB: Loams SQL (MySQL compatible), and the engine's metastore and Live on TiKV (keyspaces `loams_meta`, `loams_live_dev`) for scale. About 2.8 GB more of images and 2 GB more of RAM at idle (TiKV alone idles near 1.8 GB). Durable stays on SQLite unless `LOAMS_DURABLE_STORE=tikv://pd:2379/loams_durable` |
+| `tikv` | PD, TiKV and TiDB: Loams SQL (MySQL compatible), and the engine's metastore and Live on TiKV (keyspaces `loams_meta`, `loams_live_dev`) for scale. About 2.8 GB more of images and 2 GB more of RAM at idle (TiKV alone idles near 1.8 GB). Durable stays on its local store unless `LOAMS_DURABLE_STORE` names a Postgres database |
 | `rustfs` | RustFS, an S3 bucket (`neon`) for Loams Postgres's pageserver, safekeeper and endpoint storage instead of local folders |
 | `house-tailnet` | the House's own tailnet node (below) |
 | `postgres-control` | Loams Postgres's control plane (below) |
@@ -337,6 +337,12 @@ delivery on the engine's Resonate. It is a preview: the Go and TypeScript
 SDK legs run on pull requests that touch it, and it has not yet run end to
 end on a deployed stack. The image ships from 0.1.3.
 
+**Not usable on a stack since D2450 (2026-11-02):** its Resonate adapter was
+built on the dropped fork's `resonate-client`, so the gateway refuses
+`[durability] kind = "resonate"` at start until an adapter on the official
+Resonate protocol lands. Only development mode (`kind = "in_process"`,
+`insecure_dev`, loopback) runs, and the SDK legs are off in CI.
+
 ```sh
 cd deploy/release
 cp temporal-gateway.toml.example temporal-gateway.toml
@@ -390,17 +396,26 @@ startup gate refuses data with a migration still pending).
 
 ### Durable execution's store
 
-The engine keeps Loams Durable (the embedded Resonate server) in the SQLite
-file `durable/default.db` in the `loams-data` volume, with or without the
-`tikv` profile (D1342). For several engines on one TiKV, set
-`LOAMS_DURABLE_STORE=tikv://pd:2379/loams_durable` (with the `tikv` profile):
-a fresh keyspace that the engine creates on first start when PD has none.
-**Nothing copies the SQLite state into TiKV** (`loams durable migrate` brings a
-store's schema up to date; it does not move data between stores), so set it
-before the first start, or drain first: let pending promises finish
-(`promise.search` with `"state": "pending"`), note your schedules
-(`schedule.search`) and create them again afterwards. The SQLite file stays in
-`loams-data`, unread. BR snapshots cover the keyspace with the rest of TiKV.
+The engine keeps Loams Durable (the embedded Resonate server) in its local
+store, the redb file `durable/default.redb` in the `loams-data` volume, with or
+without the `tikv` profile. For several engines on one database, set
+`LOAMS_DURABLE_STORE=postgres://…` (a Postgres database, such as one on Loams
+Postgres; run `loams durable migrate --durable-store postgres://…` against it
+once first) before the first start.
+
+**Since D2450 (2026-11-02) Loams uses the official resonatehq/resonate, not a
+fork.** Two stores went with the fork:
+
+- **SQLite** (`durable/default.db`, the default up to 0.1.4): upstream's SQLite
+  server cannot be linked beside Loams's own SQLite, so the local store
+  replaced it. **The SQLite file is not read**: drain first (let pending
+  promises finish, `promise.search` with `"state": "pending"`; note your
+  schedules, `schedule.search`, and create them again afterwards). The engine
+  warns at start while the old file is there; delete it once drained.
+- **TiKV** (`LOAMS_DURABLE_STORE=tikv://pd:2379/loams_durable`): the native
+  TiKV store existed only in the fork, and `tikv://` is now refused. Drain the
+  same way, then unset `LOAMS_DURABLE_STORE` (the local store) or point it at
+  Postgres. The keyspace stays in TiKV, unread.
 
 ## On your own VM (BYOC)
 

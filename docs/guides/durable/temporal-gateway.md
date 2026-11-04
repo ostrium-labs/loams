@@ -7,6 +7,13 @@ history in Postgres and hands its tasks, timers and timeouts to Resonate (design
 not the Temporal server and contains none of its code. "Temporal" is a trademark of Temporal
 Technologies Inc., which does not endorse Loams.
 
+> **Since D2450 (2026-11-02) the gateway runs in development mode only.** Its Resonate adapter
+> (`HttpDurability`) was built on `resonate-client`, which only the ostrium-labs/resonate fork had.
+> Loams now uses the official resonatehq/resonate, which has no Rust protocol client, so the gateway
+> refuses `[durability] kind = "resonate"` at start, and the compose profile's SDK legs are off in
+> CI (repository variable `TEMPORAL_GATEWAY_RESONATE`). `kind = "in_process"` (`insecure_dev`,
+> loopback) still runs. The status below is what DX1 measured before that.
+
 **Status (2026-10-27): DX1, the MVP.** The official Go SDK v1.49.0 and TypeScript SDK 1.24.0 run
 the DX1 scenarios against it (hello, activities, a signal, queries, cancel, terminate, a failed
 workflow, heartbeats, a fan-out of ten activities), and each SDK's replayer accepts the histories
@@ -94,7 +101,7 @@ server. The configuration starts from
 | `shards` | `64` | Shards of the store, fixed when the database is created; another count on an existing database refuses to start (X1.R6) |
 | `pid` | `loams-temporal-1` | This process's Resonate process ID |
 | `[store] kind` | required | `postgres` with `url_env` (the name of the environment variable holding the URL), or `memory` (development) |
-| `[durability] kind` | required | `resonate` with `url` and an optional `token_env`, or `in_process` (development) |
+| `[durability] kind` | required | `in_process` (development). `resonate` (with `url` and an optional `token_env`) still parses and is refused at start since D2450 |
 | `[[task_token_keys]]` | none | `id` and `secret_env`; the first key signs, every key verifies, so keys rotate by adding one in front (X1.R4) |
 | `[[keys]]` | none | `sha256` (hex SHA-256 of the API key), `loams_namespace_id`, `role` |
 | `dev_loams_namespace` | none | The Loams namespace of every caller when there are no keys (development) |
@@ -107,10 +114,10 @@ The Postgres database must be reached through a session or direct endpoint, neve
 transaction pooling: the store uses `LISTEN`/`NOTIFY` for its outbox (design 74 §5.5 rule 5). The
 gateway creates and migrates its schema at start.
 
-The gateway reaches Resonate through the fork's `resonate-client` crate (`HttpDurability`): its
+The gateway reached Resonate through the fork's `resonate-client` crate (`HttpDurability`): its
 typed protocol requests, and its poll consumer for the task and settlement messages (design 74
-D1516; D2040, D2043). The interim adapter of plan D1591 is gone, and the configuration did not
-change.
+D1516; D2040, D2043). D2450 dropped the fork, and with it that adapter; an adapter on the
+official protocol (`POST /` and `GET /poll/{group}/{pid}`) is still to be written.
 
 ### Compose
 

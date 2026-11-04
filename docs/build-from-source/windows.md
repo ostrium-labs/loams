@@ -300,7 +300,7 @@ cargo build --release -p loams --locked --features graph
 
 The feature list is read from `crates/loams/Cargo.toml` **[verified]**;
 `default = ["es", "flight", "hnsw", "qdrant"]`, and `durable`, `durable-mysql`,
-`durable-tikv`, `graph`, `mysql-wire`, `pgwire`, `stream-grpc`, `tikv`,
+`durable-postgres`, `durable-push`, `graph`, `mysql-wire`, `pgwire`, `stream-grpc`, `tikv`,
 `cluster-tests` and `failpoints` are all off by default. `graph` serves Loams
 Graph (`loams.graph.v1`, the embedded Grafeo engine) and makes the binary the
 `full` variant.

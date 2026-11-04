@@ -18,14 +18,20 @@ fn config_rejects_dev_settings_on_a_public_listener() {
     assert!(check(&c).unwrap_err().contains("insecure_dev"));
 }
 
+/// The example is the production shape (no dev mode, a Resonate server). It
+/// parses, and is refused until an adapter on the official Resonate protocol
+/// replaces the one D2450 dropped with the fork's resonate-client.
 #[test]
-fn example_config_parses_and_needs_no_dev_mode() {
+fn example_config_parses_and_is_refused_without_a_resonate_adapter() {
     let path = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("set"))
         .join("../../deploy/release/temporal-gateway.toml.example");
     let text = std::fs::read_to_string(&path).expect("example config");
     let c: Config = toml::from_str(&text).expect("parses");
     assert!(!c.insecure_dev);
-    assert!(check(&c).is_ok());
+    assert_eq!(
+        check(&c).expect_err("dropped by D2450"),
+        loams_temporal_frontend::standalone::RESONATE_DROPPED
+    );
 }
 
 #[test]

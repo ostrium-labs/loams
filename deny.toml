@@ -87,6 +87,8 @@ ignore = [
     # webpki-roots 0.26.11 is a shim with no roots of its own: it re-exports
     # webpki-roots 1.x, which is at 1.0.10 (emSign removed) in this lock. Reached
     # through sqlx-core 0.8 and tokio-tungstenite 0.24; remove when they move to 1.x.
+    { id = "RUSTSEC-2024-0421", reason = "idna 0.5.0 via validator 0.18 in the official Resonate (resonate-core, D2450): it only checks request fields' format; no Loams or Resonate code compares host names through it for a privilege check. Remove when Resonate moves to validator 0.19+" },
+    { id = "RUSTSEC-2024-0437", reason = "protobuf 2.28 via prometheus 0.13 in the official Resonate (resonate-plugin, D2450): prometheus only encodes its own metrics, never parses untrusted protobuf. Remove when Resonate moves to prometheus 0.14" },
     { id = "RUSTSEC-2026-0381", reason = "webpki-roots 0.26.11 re-exports webpki-roots 1.0.10, which drops the distrusted emSign roots; the 0.26 shim carries no certificates" },
     # zstd-rs advisories of 2026-10-26. loams-hot is on the fixed zstd 0.14.3 /
     # zstd-safe 8.2.0 / zstd-sys 2.1.2; what is left is zstd 0.13.3 on
@@ -101,9 +103,8 @@ ignore = [
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-# tikv-client is pinned by rev to Loams's fork, branch `loam` (R1 plan rows R4
-# and F1). Resonate is pinned by rev to the fork's loam/0.10.1 (D1 plan Task
-# 1, D140). Grafeo is pinned by rev to Loams's fork, a release tag
+# Resonate is the official resonatehq/resonate, pinned by rev (D140, D2450).
+# Grafeo is pinned by rev to Loams's fork, a release tag
 # `v0.5.43-loams.<n>` on branch `loams/v0.5.43-patches` (patch queue in the
 # fork's PATCHES.md).
 # network_partitions (Leiden, MIT) is pinned by rev to Microsoft's
@@ -111,7 +112,5 @@ unknown-git = "deny"
 # The Neon fork is not allowed here: only crates/loams-wal-decoder, a
 # workspace of its own with its own deny.toml, may use it, and
 # scripts/pg2/check-decoder-deny.py fails if this lockfile names it.
-# tikv-client is the official tikv/client-rust pinned by rev (D2450). The
-# ostrium-labs/client-rust entry stays only while the Resonate fork's
-# resonate-server-blob still depends on it; the Resonate switch removes it.
-allow-git = ["https://github.com/tikv/client-rust", "https://github.com/ostrium-labs/client-rust", "https://github.com/ostrium-labs/resonate", "https://github.com/microsoft/graspologic-native"]
+# tikv-client is the official tikv/client-rust pinned by rev (D2450).
+allow-git = ["https://github.com/tikv/client-rust", "https://github.com/resonatehq/resonate", "https://github.com/microsoft/graspologic-native"]

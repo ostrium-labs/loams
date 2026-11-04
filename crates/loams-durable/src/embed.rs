@@ -28,7 +28,7 @@ use crate::registry;
 /// The protocol version Loams's in-process calls speak.
 pub const PROTOCOL_VERSION: &str = "2026-04-01";
 
-/// The lock file beside a SQLite store; one process holds it exclusively.
+/// The lock file beside the local store; one process holds it exclusively.
 pub const LOCK_FILE: &str = "durable.lock";
 
 /// How long a stop waits for the listener's port to be free again.
@@ -74,9 +74,8 @@ impl DurableServer {
         let instance = inproc::next_instance();
         let (registry, configuration) = prepare(&config, extra, Mode::Serve, Some(instance))?;
         let lock = match &config.store {
-            DurableStore::Sqlite { path } => Some(lock_store(path)?),
-            DurableStore::Mysql { .. } => None,
-            DurableStore::Tikv { .. } => None,
+            DurableStore::Local { path } => Some(lock_store(path)?),
+            DurableStore::Mysql { .. } | DurableStore::Postgres { .. } => None,
         };
         // Serving never migrates a MySQL store: an empty database would
         // otherwise get Resonate's schema on the first start (D1 Task 4).
@@ -86,7 +85,7 @@ impl DurableServer {
             crate::mysql::check_schema(url, *tls).await?;
         }
         listen::probe(config.listen)?;
-        let options = Options::default().default_server("server_sqlite");
+        let options = Options::default().default_server("server_local");
         let built = resonate_base::build(&registry, &configuration, &options);
         // Taken whatever `build` said, so a failed build parks nothing.
         let inproc = inproc::take(instance);
@@ -128,7 +127,8 @@ impl DurableServer {
     /// `loams durable migrate`: open `store` once with Resonate's migrations
     /// on (`migrate = true`), with no listener, and stop. An empty database
     /// gets the schema; an up-to-date one is left as it is. The database
-    /// itself must exist.
+    /// itself must exist. The local store has no schema: it is only opened
+    /// (created when absent).
     pub async fn migrate(store: DurableStore) -> Result<(), DurableError> {
         let config = DurableConfig::new(store);
         let (registry, configuration) = prepare(&config, &[], Mode::Migrate, None)?;
@@ -137,11 +137,10 @@ impl DurableServer {
             crate::mysql::ensure_crypto_provider(*tls);
         }
         let lock = match &config.store {
-            DurableStore::Sqlite { path } => Some(lock_store(path)?),
-            DurableStore::Mysql { .. } => None,
-            DurableStore::Tikv { .. } => None,
+            DurableStore::Local { path } => Some(lock_store(path)?),
+            DurableStore::Mysql { .. } | DurableStore::Postgres { .. } => None,
         };
-        let options = Options::default().default_server("server_sqlite");
+        let options = Options::default().default_server("server_local");
         let running = resonate_base::build(&registry, &configuration, &options)
             .map_err(|e| DurableError::Config(scrub_for(&config.store, &e)))?;
         running
@@ -278,10 +277,16 @@ fn prepare(
             "this build has no MySQL durable store (the durable-mysql feature is off)".into(),
         ));
     }
-    #[cfg(not(feature = "tikv"))]
-    if let DurableStore::Tikv { .. } = config.store {
+    #[cfg(not(feature = "push"))]
+    if config.push {
         return Err(DurableError::Config(
-            "this build has no native TiKV durable store (the durable-tikv feature is off)".into(),
+            "this build has no push delivery (the durable-push feature is off)".into(),
+        ));
+    }
+    #[cfg(not(feature = "postgres"))]
+    if let DurableStore::Postgres { .. } = config.store {
+        return Err(DurableError::Config(
+            "this build has no Postgres durable store (the durable-postgres feature is off)".into(),
         ));
     }
     let configuration = config::configuration(config, &registry::carried(&registry), mode, inproc)
@@ -297,9 +302,10 @@ fn prepare(
 /// `message` without the store's password.
 fn scrub_for(store: &DurableStore, message: &str) -> String {
     match store {
-        DurableStore::Sqlite { .. } => message.to_string(),
-        DurableStore::Mysql { url, .. } => config::scrub(message, url),
-        DurableStore::Tikv { .. } => message.to_string(),
+        DurableStore::Local { .. } => message.to_string(),
+        DurableStore::Mysql { url, .. } | DurableStore::Postgres { url } => {
+            config::scrub(message, url)
+        }
     }
 }
 
@@ -307,7 +313,10 @@ fn scrub_for(store: &DurableStore, message: &str) -> String {
 /// `loams durable migrate` when the schema is the problem.
 fn explain_start(store: &DurableStore, message: &str) -> String {
     let message = scrub_for(store, message);
-    if !matches!(store, DurableStore::Mysql { .. }) {
+    if !matches!(
+        store,
+        DurableStore::Mysql { .. } | DurableStore::Postgres { .. }
+    ) {
         return message;
     }
     if message.contains("different checksum") {

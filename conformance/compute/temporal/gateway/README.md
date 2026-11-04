@@ -8,7 +8,9 @@ corpus's pins (Go v1.49.0, TypeScript 1.24.0), against `loams-temporal`.
 - **loopback** (`run.sh`): a built `loams-temporal` (and, with
   `LOAMS_RESONATE_BIN`, a real Resonate server on SQLite) on loopback ports,
   in `insecure_dev`; the SDK containers use host networking and reach only
-  `127.0.0.1`.
+  `127.0.0.1`. Since D2450 only the in-process durability runs: the gateway
+  refuses a Resonate server until an adapter on the official protocol lands,
+  and so does the profile mode below (its CI legs are off).
 - **profile** (`run.sh --profile`): the compose profile `temporal-gateway`
   of `deploy/release/compose.compute.yaml` (D2031), which runs the release
   image `ghcr.io/ostrium-labs/loams-temporal` (D2030).

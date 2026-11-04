@@ -207,31 +207,30 @@ rquickjs = { version = "=0.14.0", default-features = false, features = ["std", "
 relative-path = "=2.0.2"
 regex = "1"
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
-# Resonate, embedded by loams-durable (D1, D140): the fork ostrium-labs/resonate,
-# branch loams/main = upstream main plus the carries listed in its CARRIES.md
-# (#1164, #1167, #1163, #1168, resonate-auth on jsonwebtoken 10.3) and the
-# fork-work items merged so far (design 74 §7.4; FW1 is the TiKV store that
-# durable-tikv runs on, `resonate-server-tikv`). Pinned by rev only; a bump
-# compares each 0001_initial.sql with the pinned one and says in its PR when
-# existing durable stores must be dropped (D1 plan X11). Never add
-# resonate-server-scylladb or the NATS packages (BUSL-1.1 lineage).
-resonate-base = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7" }
-resonate-server-blob = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7" }
-resonate-core = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7" }
-resonate-gateway-http = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7" }
-resonate-plugin = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7" }
+# Resonate, embedded by loams-durable (D1, D140): the official
+# resonatehq/resonate, pinned by rev to upstream main 9c72d818 (2026-10-23).
+# No fork (D2450): what only ostrium-labs/resonate had (the native TiKV store,
+# resonate-client, poll groups, W3C trace fields and OTLP, the timer-wheel work,
+# the TiDB fixes, jsonwebtoken 10.3, no OpenSSL) is gone. resonate-server-sqlite
+# is not linked: it needs rusqlite 0.31 (libsqlite3-sys 0.28), which cannot
+# share a build with Loams's rusqlite 0.32 and sqlx 0.9 (Cargo's `links`
+# check). Loams's local store is upstream's blob server on a redb file
+# (loams-durable's `server_local`). A bump compares each 0001_initial.sql with
+# the pinned one and says in its PR when existing durable stores must be
+# dropped (D1 plan X11). Never add resonate-server-scylladb or the NATS
+# packages (BUSL-1.1 lineage).
+resonate-base = { git = "https://github.com/resonatehq/resonate", rev = "9c72d818721b1776edd6b1b2939a83b3c0b248a6" }
+resonate-server-blob = { git = "https://github.com/resonatehq/resonate", rev = "9c72d818721b1776edd6b1b2939a83b3c0b248a6" }
+resonate-core = { git = "https://github.com/resonatehq/resonate", rev = "9c72d818721b1776edd6b1b2939a83b3c0b248a6" }
+resonate-gateway-http = { git = "https://github.com/resonatehq/resonate", rev = "9c72d818721b1776edd6b1b2939a83b3c0b248a6" }
+resonate-plugin = { git = "https://github.com/resonatehq/resonate", rev = "9c72d818721b1776edd6b1b2939a83b3c0b248a6" }
 # The package is resonate-sdk (lib resonate_sdk); `resonate` in that repository
-# is the server binary. Its reqwest defaults (TLS, charset, system proxy) are
-# off: Loams talks to the server in process.
-resonate-sdk = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7", default-features = false }
-resonate-server-mysql = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7" }
-resonate-server-sqlite = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7" }
-resonate-transport-http-poll = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7" }
-# Without gcp-idtoken: no google-cloud-auth, and auth.mode = "gcp" is refused.
-resonate-transport-http-push = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7", default-features = false }
-# FW3's protocol client for loams-temporal-resonate (D2040), with its poll
-# consumer (fork #28, D2043), at the same pin as the crates above.
-resonate-client = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7" }
+# is the server binary.
+resonate-sdk = { git = "https://github.com/resonatehq/resonate", rev = "9c72d818721b1776edd6b1b2939a83b3c0b248a6" }
+resonate-server-mysql = { git = "https://github.com/resonatehq/resonate", rev = "9c72d818721b1776edd6b1b2939a83b3c0b248a6" }
+resonate-server-postgres = { git = "https://github.com/resonatehq/resonate", rev = "9c72d818721b1776edd6b1b2939a83b3c0b248a6" }
+resonate-transport-http-poll = { git = "https://github.com/resonatehq/resonate", rev = "9c72d818721b1776edd6b1b2939a83b3c0b248a6" }
+resonate-transport-http-push = { git = "https://github.com/resonatehq/resonate", rev = "9c72d818721b1776edd6b1b2939a83b3c0b248a6" }
 # pg-control's Ed25519 signing key (PG2 Task 8). 0.17.14 (2025-03-11) is
 # already in the lockfile (rustls, jsonwebtoken).
 ring = "=0.17.14"

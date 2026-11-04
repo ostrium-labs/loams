@@ -215,7 +215,7 @@ The release images, the contract the compose stack in
 
 | Image | Containerfile | Contents |
 |---|---|---|
-| `ghcr.io/ostrium-labs/loams` | `deploy/release/Containerfile.loams` | The engine, built with the features `live,live-tikv,durable,durable-tikv,graph,git,tikv,pgwire,mysql-wire,stream-grpc` |
+| `ghcr.io/ostrium-labs/loams` | `deploy/release/Containerfile.loams` | The engine, built with the features `live,live-tikv,durable,durable-postgres,graph,git,tikv,pgwire,mysql-wire,stream-grpc` |
 | `ghcr.io/ostrium-labs/loams-fabric` | `deploy/release/Containerfile.loams-fabric` | The House front, with `loams-house-worker` inside |
 | `ghcr.io/ostrium-labs/loams-agentd` | `deploy/release/Containerfile.loams-agentd` | The agent daemon (optional) |
 

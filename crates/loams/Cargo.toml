@@ -212,8 +212,8 @@ qdrant = ["dep:loams-qdrant"]
 hnsw = ["loams-hot/hnsw"]
 # `loams flink …`, the managed Flink SQL client (design 81, D1989; preview).
 flink = ["dep:loams-flink"]
-# Durable execution (D1, design §21): the embedded Resonate server on SQLite,
-# on 127.0.0.1:8001 (--durable-*). Opt-in (owner ruling O1): toggling it
+# Durable execution (D1, design §21): the embedded Resonate server on its
+# local store (a redb file; D2450), on 127.0.0.1:8001 (--durable-*). Opt-in (owner ruling O1): toggling it
 # rebuilds about 480 crates. Release builds, CI's durable jobs and the Loams
 # cloud build turn it on; without it, a --durable-* flag only logs.
 durable = ["dep:loams-durable"]
@@ -222,8 +222,12 @@ durable = ["dep:loams-durable"]
 spark = ["dep:loams-spark"]
 # The TiDB durable store through Resonate's MySQL plugin (D1 Task 4).
 durable-mysql = ["durable", "loams-durable/mysql"]
-# The native TiKV durable store (`--durable-store tikv://…`).
-durable-tikv = ["durable", "loams-durable/tikv"]
+# The Postgres durable store through Resonate's Postgres plugin
+# (`--durable-store postgres://…`, D2450).
+durable-postgres = ["durable", "loams-durable/postgres"]
+# `--durable-push`: delivery to http(s):// targets. Off in release builds:
+# upstream's push transport links google-cloud-auth unconditionally (D2450).
+durable-push = ["durable", "loams-durable/push"]
 # The MySQL wire listener over collections (`--mysql-listen`).
 mysql-wire = ["dep:opensrv-mysql", "dep:datafusion"]
 # The PostgreSQL wire listener over collections (`--pg-listen`).

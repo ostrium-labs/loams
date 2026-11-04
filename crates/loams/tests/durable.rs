@@ -32,7 +32,7 @@ fn config(dir: &TempDir, durable: SocketAddr) -> ServerConfig {
     config.flight_sql = Some(SocketAddr::from(([127, 0, 0, 1], 0)));
     config.log.flush_interval = Duration::from_millis(20);
     config.worker_poll_interval = Duration::from_millis(50);
-    let mut durable_config = DurableConfig::sqlite(dir.path().join("durable").join("default.db"));
+    let mut durable_config = DurableConfig::local(dir.path().join("durable").join("default.redb"));
     durable_config.listen = durable;
     config.durable = Some(durable_config);
     config
@@ -59,7 +59,7 @@ impl Drop for Dev {
 }
 
 /// Semantics 2 and 5: `loams dev --durable-listen <addr>` serves the
-/// durable API there, on the default SQLite store, and prints its line
+/// durable API there, on the default local store, and prints its line
 /// before the HTTP line that harnesses wait for.
 #[tokio::test(flavor = "multi_thread")]
 async fn dev_serves_durable_on_8001_style_port() {
@@ -113,8 +113,8 @@ async fn dev_serves_durable_on_8001_style_port() {
     );
     assert_eq!(ready(durable).await, Some(200));
     assert!(
-        dir.path().join("durable").join("default.db").exists(),
-        "the default store is <data-dir>/durable/default.db"
+        dir.path().join("durable").join("default.redb").exists(),
+        "the default store is <data-dir>/durable/default.redb"
     );
     drop(dev);
 }

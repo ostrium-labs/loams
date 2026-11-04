@@ -605,16 +605,17 @@ impl ServerConfig {
 }
 
 impl ServerConfig {
-    /// D1 Task 3: SQLite is a single-node store, so a cluster node needs
-    /// MySQL (TiDB).
+    /// D1 Task 3: the local store is single-node, so a cluster node needs
+    /// MySQL (TiDB) or Postgres.
     #[cfg(feature = "durable")]
     fn validate_durable(&self) -> Result<(), ServerError> {
         if self.cluster.is_some()
             && let Some(durable) = &self.durable
-            && let loams_durable::DurableStore::Sqlite { .. } = durable.store
+            && let loams_durable::DurableStore::Local { .. } = durable.store
         {
             return Err(ServerError::Config(
-                "the sqlite durable store is single-node; use --durable-store mysql://… or tikv://…"
+                "the local durable store is single-node; use --durable-store mysql://… or \
+                 postgres://…"
                     .to_string(),
             ));
         }

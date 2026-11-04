@@ -72,7 +72,8 @@ The snapshot is taken with the writers stopped, by the target image:
   root, so nothing it needs is collected while it exists.
 - **Postgres:** the safekeeper is drained first: the pageserver has uploaded everything the safekeeper flushed.
   Then every timeline is branched at its last record LSN.
-- **The House's directory, `pg-control`'s records and Durable's SQLite (backup API)** are copied.
+- **The House's directory, `pg-control`'s records, Durable's local store (`durable/default.redb`) and, when an
+  old one is there, Durable's SQLite (backup API)** are copied.
 - **The stack directory** (`.env`, `secrets/`, the bundle) is copied to `.loams-upgrade/snapshots/<id>/host/`.
 
 Snapshots live in the `upgrade-snapshots` volume, or in a host directory if you set `LOAMS_UPGRADE_SNAPSHOT_DIR`.

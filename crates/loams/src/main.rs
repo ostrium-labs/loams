@@ -397,12 +397,14 @@ struct Native {
     /// Serve no durable execution API.
     #[arg(long)]
     no_durable: bool,
-    /// Where durable state lives: sqlite:<path>, tikv://<pd-hosts>/<keyspace>,
-    /// or legacy mysql://…. Cluster mode needs a shared store.
+    /// Where durable state lives: local:<path> (a redb file; the default is
+    /// <data-dir>/durable/default.redb), mysql://… or postgres://…. Cluster
+    /// mode needs a shared store.
     #[arg(long, value_parser = DurableStoreParser, conflicts_with = "no_durable")]
     durable_store: Option<DurableStoreArg>,
     /// Deliver durable tasks to http:// and https:// targets (a server-side
-    /// request forgery risk: any caller may name a target).
+    /// request forgery risk: any caller may name a target). Needs a build
+    /// with the durable-push feature.
     #[arg(long, conflicts_with = "no_durable")]
     durable_push: bool,
     /// A setting of the embedded durable server, in Resonate's key space
@@ -419,50 +421,70 @@ struct Native {
     durable_debug: bool,
 }
 
-/// `--durable-store`: `sqlite:<path>`, `tikv://<pd-hosts>/<keyspace>`, or
-/// `mysql://…`. With the feature a
-/// MySQL store is parsed (its TLS mode read) at once; without it the URL is
-/// only kept. `Debug` never shows a password (D1 Task 4).
+/// `--durable-store`: `local:<path>`, `mysql://…` or `postgres://…`. With
+/// the feature a database URL is parsed (a MySQL store's TLS mode read) at
+/// once; without it the URL is only kept. `Debug` never shows a password
+/// (D1 Task 4).
 #[derive(Clone, PartialEq, Eq)]
 enum DurableStoreArg {
-    Sqlite(PathBuf),
-    #[cfg(feature = "durable")]
-    Tikv(loams_durable::DurableStore),
-    #[cfg(not(feature = "durable"))]
-    Tikv(String),
+    Local(PathBuf),
     #[cfg(feature = "durable")]
     Mysql(loams_durable::DurableStore),
     #[cfg(not(feature = "durable"))]
     Mysql(String),
+    #[cfg(feature = "durable")]
+    Postgres(loams_durable::DurableStore),
+    #[cfg(not(feature = "durable"))]
+    Postgres(String),
 }
 
 impl std::fmt::Debug for DurableStoreArg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Sqlite(path) => f.debug_tuple("Sqlite").field(path).finish(),
-            Self::Tikv(store) => f.debug_tuple("Tikv").field(store).finish(),
+            Self::Local(path) => f.debug_tuple("Local").field(path).finish(),
             #[cfg(feature = "durable")]
             Self::Mysql(store) => f.debug_tuple("Mysql").field(store).finish(),
+            #[cfg(feature = "durable")]
+            Self::Postgres(store) => f.debug_tuple("Postgres").field(store).finish(),
             // Without the feature the URL is never used: show only its host.
             #[cfg(not(feature = "durable"))]
-            Self::Mysql(url) => {
-                let host = url.rsplit_once('@').map_or(url.as_str(), |(_, host)| host);
-                f.debug_tuple("Mysql")
-                    .field(&format!("mysql://…@{host}"))
-                    .finish()
+            Self::Mysql(url) | Self::Postgres(url) => {
+                let (scheme, rest) = url.split_once("://").unwrap_or(("", url.as_str()));
+                let host = rest.rsplit_once('@').map_or(rest, |(_, host)| host);
+                f.debug_tuple(if matches!(self, Self::Mysql(_)) {
+                    "Mysql"
+                } else {
+                    "Postgres"
+                })
+                .field(&format!("{scheme}://…@{host}"))
+                .finish()
             }
         }
     }
 }
 
 fn parse_durable_store(text: &str) -> Result<DurableStoreArg, String> {
-    if let Some(path) = text.strip_prefix("sqlite:") {
-        // sqlite:///abs/path reads as the URL it looks like.
+    if let Some(path) = text.strip_prefix("local:") {
+        // local:///abs/path reads as the URL it looks like.
         let path = path.strip_prefix("//").unwrap_or(path);
         if path.is_empty() {
-            return Err("sqlite: needs a path, as in sqlite:.loams/durable/default.db".into());
+            return Err("local: needs a path, as in local:.loams/durable/default.redb".into());
         }
-        return Ok(DurableStoreArg::Sqlite(PathBuf::from(path)));
+        return Ok(DurableStoreArg::Local(PathBuf::from(path)));
+    }
+    if text.starts_with("sqlite:") {
+        return Err(
+            "sqlite: was dropped by D2450 (Resonate's official SQLite store cannot be linked \
+             into Loams); use local:<path>, the default <data-dir>/durable/default.redb"
+                .into(),
+        );
+    }
+    if text.starts_with("tikv://") {
+        return Err(
+            "tikv:// was dropped by D2450 (the native TiKV store existed only in the \
+             ostrium-labs/resonate fork); use mysql:// (TiDB) or postgres://"
+                .into(),
+        );
     }
     if text.starts_with("mysql://") {
         // The error names the URL without its password.
@@ -473,25 +495,15 @@ fn parse_durable_store(text: &str) -> Result<DurableStoreArg, String> {
         #[cfg(not(feature = "durable"))]
         return Ok(DurableStoreArg::Mysql(text.to_string()));
     }
-    if let Some(address) = text.strip_prefix("tikv://") {
-        let (hosts, keyspace) = address.split_once('/').ok_or_else(|| {
-            "tikv:// needs PD hosts and a keyspace, as in tikv://127.0.0.1:2379/loams_durable"
-                .to_string()
-        })?;
-        let pd: Vec<String> = hosts.split(',').map(str::to_string).collect();
+    if text.starts_with("postgres://") || text.starts_with("postgresql://") {
         #[cfg(feature = "durable")]
-        return loams_durable::DurableStore::tikv(pd, keyspace)
-            .map(DurableStoreArg::Tikv)
+        return loams_durable::DurableStore::postgres(text)
+            .map(DurableStoreArg::Postgres)
             .map_err(|err| err.to_string());
         #[cfg(not(feature = "durable"))]
-        {
-            if pd.is_empty() || pd.iter().any(|host| host.is_empty()) || keyspace.is_empty() {
-                return Err("tikv:// needs nonempty PD hosts and a keyspace".into());
-            }
-            return Ok(DurableStoreArg::Tikv(address.to_string()));
-        }
+        return Ok(DurableStoreArg::Postgres(text.to_string()));
     }
-    Err("expected sqlite:<path>, tikv://<pd-hosts>/<keyspace>, or mysql://…".into())
+    Err("expected local:<path>, mysql://… or postgres://…".into())
 }
 
 /// `--durable-store`'s value parser. A plain `fn` parser's error would quote
@@ -527,9 +539,8 @@ impl DurableStoreArg {
     /// The store the flag names.
     fn to_store(&self) -> loams_durable::DurableStore {
         match self {
-            Self::Sqlite(path) => loams_durable::DurableStore::Sqlite { path: path.clone() },
-            Self::Tikv(store) => store.clone(),
-            Self::Mysql(store) => store.clone(),
+            Self::Local(path) => loams_durable::DurableStore::Local { path: path.clone() },
+            Self::Mysql(store) | Self::Postgres(store) => store.clone(),
         }
     }
 }
@@ -824,10 +835,10 @@ impl Native {
     }
 
     /// The embedded durable server, unless `--no-durable` (D1 Task 3). `dev`
-    /// and `standalone` default to a SQLite store in the data directory; a
-    /// cluster node has no default store and serves durable execution only
-    /// with `--durable-store` (`ServerConfig::validate` refuses `sqlite:`
-    /// there).
+    /// and `standalone` default to the local store in the data directory
+    /// (`durable/default.redb`; D2450 replaced SQLite); a cluster node has no
+    /// default store and serves durable execution only with `--durable-store`
+    /// (`ServerConfig::validate` refuses `local:` there).
     #[cfg(feature = "durable")]
     fn apply_durable(&self, config: &mut ServerConfig) {
         use loams_durable::{DurableConfig, DurableStore};
@@ -837,14 +848,26 @@ impl Native {
         }
         let store = match (&self.durable_store, &config.cluster) {
             (Some(store), _) => store.to_store(),
-            (None, None) => DurableStore::Sqlite {
-                path: config.data_dir.join("durable").join("default.db"),
-            },
+            (None, None) => {
+                let dir = config.data_dir.join("durable");
+                let legacy = dir.join("default.db");
+                if legacy.exists() {
+                    tracing::warn!(
+                        legacy = %legacy.display(),
+                        "the SQLite durable store is no longer read (D2450): durable \
+                         promises in it are not carried over to the local store, \
+                         durable/default.redb"
+                    );
+                }
+                DurableStore::Local {
+                    path: dir.join("default.redb"),
+                }
+            }
             (None, Some(_)) => {
                 if self.any_durable_flag() {
                     tracing::warn!(
                         "the --durable-* flags are ignored: loams cluster serves durable \
-                         execution only with --durable-store tikv://… or mysql://…"
+                         execution only with --durable-store mysql://… or postgres://…"
                     );
                 }
                 config.durable = None;
@@ -2885,26 +2908,31 @@ mod tests {
     #[test]
     fn durable_store_and_set_values_parse() {
         assert_eq!(
-            parse_durable_store("sqlite:/tmp/d.db"),
-            Ok(DurableStoreArg::Sqlite("/tmp/d.db".into()))
+            parse_durable_store("local:/tmp/d.redb"),
+            Ok(DurableStoreArg::Local("/tmp/d.redb".into()))
         );
         assert_eq!(
-            parse_durable_store("sqlite:///tmp/d.db"),
-            Ok(DurableStoreArg::Sqlite("/tmp/d.db".into()))
+            parse_durable_store("local:///tmp/d.redb"),
+            Ok(DurableStoreArg::Local("/tmp/d.redb".into()))
         );
         assert!(matches!(
             parse_durable_store("mysql://root@127.0.0.1:4000/loams_durable_default"),
             Ok(DurableStoreArg::Mysql(_))
         ));
         assert!(matches!(
-            parse_durable_store("tikv://127.0.0.1:2379,127.0.0.1:2381/loams_durable"),
-            Ok(DurableStoreArg::Tikv(_))
+            parse_durable_store("postgres://loams@127.0.0.1:5432/durable"),
+            Ok(DurableStoreArg::Postgres(_))
         ));
-        assert!(parse_durable_store("tikv://127.0.0.1:2379").is_err());
-        assert!(parse_durable_store("tikv://127.0.0.1:2379/").is_err());
-        assert!(parse_durable_store("tikv://127.0.0.1:2379,/loams_durable").is_err());
-        assert!(parse_durable_store("sqlite:").is_err());
-        assert!(parse_durable_store("postgres://x").is_err());
+        assert!(parse_durable_store("local:").is_err());
+        // Dropped by D2450, each naming why.
+        for dropped in [
+            "sqlite:/tmp/d.db",
+            "tikv://127.0.0.1:2379,127.0.0.1:2381/loams_durable",
+        ] {
+            let err = parse_durable_store(dropped).expect_err(dropped);
+            assert!(err.contains("D2450"), "{err}");
+        }
+        assert!(parse_durable_store("redis://x").is_err());
         assert_eq!(parse_key_value("a.b=c=d"), Ok(("a.b".into(), "c=d".into())));
         assert!(parse_key_value("a.b").is_err());
         assert!(parse_key_value("=x").is_err());
@@ -2919,7 +2947,7 @@ mod tests {
             "--durable-listen",
             "127.0.0.1:9001",
             "--durable-store",
-            "sqlite:/tmp/d.db",
+            "local:/tmp/d.redb",
             "--durable-push",
             "--durable-set",
             "a.b=c",
@@ -2937,8 +2965,8 @@ mod tests {
         assert_eq!(durable.listen, "127.0.0.1:8001".parse().unwrap());
         assert_eq!(
             durable.store,
-            DurableStore::Sqlite {
-                path: PathBuf::from(".loams/durable/default.db")
+            DurableStore::Local {
+                path: PathBuf::from(".loams/durable/default.redb")
             }
         );
         assert!(!durable.push && !durable.debug && durable.overrides.is_empty());
@@ -2954,8 +2982,8 @@ mod tests {
         let durable = config_of(cli).durable.expect("on by default");
         assert_eq!(
             durable.store,
-            DurableStore::Sqlite {
-                path: PathBuf::from("/var/lib/loams/durable/default.db")
+            DurableStore::Local {
+                path: PathBuf::from("/var/lib/loams/durable/default.redb")
             }
         );
         // ServerConfig::new serves no durable API; the CLI sets it.
@@ -2971,11 +2999,11 @@ mod tests {
             "--durable-listen",
             "localhost:9001",
             "--durable-store",
-            "sqlite:/tmp/d.db",
+            "local:/tmp/d.redb",
             "--durable-push",
             "--durable-debug",
             "--durable-set",
-            "servers.server_sqlite.preload_limit=5",
+            "servers.server_local.preload_limit=5",
             "--durable-set",
             "gateways.gateway_http.cors_allow_origins=[\"*\"]",
         ])
@@ -2984,8 +3012,8 @@ mod tests {
         assert_eq!(durable.listen, "127.0.0.1:9001".parse().unwrap());
         assert_eq!(
             durable.store,
-            DurableStore::Sqlite {
-                path: PathBuf::from("/tmp/d.db")
+            DurableStore::Local {
+                path: PathBuf::from("/tmp/d.redb")
             }
         );
         assert!(durable.push && durable.debug);
@@ -2993,7 +3021,7 @@ mod tests {
             durable.overrides,
             vec![
                 (
-                    "servers.server_sqlite.preload_limit".to_string(),
+                    "servers.server_local.preload_limit".to_string(),
                     "5".to_string()
                 ),
                 (
@@ -3014,7 +3042,7 @@ mod tests {
         );
         for flag in [
             &["--durable-listen", "127.0.0.1:1"][..],
-            &["--durable-store", "sqlite:/tmp/d.db"],
+            &["--durable-store", "local:/tmp/d.redb"],
             &["--durable-push"],
             &["--durable-set", "a.b=c"],
             &["--durable-debug"],
@@ -3347,7 +3375,7 @@ mod tests {
         );
     }
 
-    /// A cluster node has no default durable store and refuses a SQLite one.
+    /// A cluster node has no default durable store and refuses a local one.
     #[cfg(feature = "durable")]
     #[test]
     fn cluster_durable_needs_a_mysql_store() {
@@ -3357,14 +3385,14 @@ mod tests {
         config.validate().expect("valid");
 
         let mut args = CLUSTER.to_vec();
-        args.extend(["--durable-store", "sqlite:/tmp/d.db"]);
+        args.extend(["--durable-store", "local:/tmp/d.redb"]);
         let config = cluster_config(&args).expect("parse");
         let err = config
             .validate()
-            .expect_err("sqlite on a cluster")
+            .expect_err("local on a cluster")
             .to_string();
         assert!(
-            err.contains("the sqlite durable store is single-node; use --durable-store mysql://…"),
+            err.contains("the local durable store is single-node; use --durable-store mysql://…"),
             "{err}"
         );
 

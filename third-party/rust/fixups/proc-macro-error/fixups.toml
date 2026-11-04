@@ -1,0 +1,4 @@
+# Run build.rs as Cargo does; link what it builds.
+[buildscript.run]
+rustc_link_lib = true
+rustc_link_search = true

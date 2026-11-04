@@ -5,8 +5,9 @@
 //! configuration made from Loams's flags alone ([`DurableConfig`]), serves the
 //! durable API on a loopback listener (127.0.0.1:8001 by default, D138), and
 //! answers in-process protocol calls ([`DurableServer::process`]). The store
-//! is SQLite for `loams dev` and `standalone`, native TiKV with the `tikv`
-//! feature, or a MySQL-protocol database with the `mysql` feature.
+//! is the local one for `loams dev` and `standalone` (upstream's blob server
+//! on a redb file, [`local`]; D2450 replaced SQLite), a MySQL-protocol
+//! database with the `mysql` feature, or Postgres with the `postgres` feature.
 //!
 //! [`DurableRuntime`] runs Loams's own durable functions on the Resonate Rust
 //! SDK over [`InProcNetwork`], which reaches the server through its
@@ -25,6 +26,7 @@ mod error;
 mod gateway;
 pub mod inproc;
 mod listen;
+pub mod local;
 #[cfg(feature = "mysql")]
 mod mysql;
 mod registry;

@@ -81,6 +81,8 @@ impl Stores {
             .expect("db")
             .execute_batch("CREATE TABLE promises (id TEXT); INSERT INTO promises VALUES ('p1');")
             .expect("seed");
+        // The local durable store that replaced SQLite (D2450).
+        std::fs::write(durable.join("default.redb"), b"local durable").expect("w");
         // House, pg-control, the embedded metastore's directory.
         let house = TempDir::new().expect("house");
         std::fs::write(house.path().join("catalog.sqlite"), b"house catalog").expect("w");
@@ -149,7 +151,17 @@ async fn snapshot_manifest_written_last() {
         .iter()
         .map(|c| c.store.as_str())
         .collect();
-    assert_eq!(stores, ["bucket", "raft", "durable", "house", "pg_control"]);
+    assert_eq!(
+        stores,
+        [
+            "bucket",
+            "raft",
+            "durable",
+            "durable_local",
+            "house",
+            "pg_control"
+        ]
+    );
     assert_eq!(manifest.release.as_deref(), Some("0.1.0-preview.2"));
     // Recorded as a GC root once complete.
     let floor = snapshot_gc_floor(&*s.stack.meta).await.expect("floor");
@@ -232,6 +244,8 @@ async fn snapshot_then_restore_round_trips_every_loams_store() {
         .delete("graphs/1/catalog/01A.json")
         .await
         .expect("a replaced object is deleted");
+    let local = s.stack.data.path().join("durable/default.redb");
+    std::fs::write(&local, b"changed after the snapshot").expect("w");
     let report = snapshot::restore(
         &s.cx(),
         &to.path().join(&manifest.id),
@@ -243,8 +257,16 @@ async fn snapshot_then_restore_round_trips_every_loams_store() {
     .expect("restore");
     assert_eq!(
         report.restored,
-        ["bucket", "raft", "durable", "house", "pg_control"]
+        [
+            "bucket",
+            "raft",
+            "durable",
+            "durable_local",
+            "house",
+            "pg_control"
+        ]
     );
+    assert_eq!(std::fs::read(&local).expect("read"), b"local durable");
     assert_eq!(read_dir(s.house.path()), house_before);
     assert_eq!(read_dir(s.pg.path()), pg_before);
     assert_eq!(read_dir(s.raft.path()), raft_before);

@@ -2,13 +2,13 @@
 # Resonate's linearizability check against the durable server embedded in
 # `loams dev` (D1 plan Task 5, D144).
 #
-#   scripts/durable/conformance.sh --store sqlite|tidb [--clients N] [--ops M] [--seed S]
+#   scripts/durable/conformance.sh --store local|tidb [--clients N] [--ops M] [--seed S]
 #                                  [--tidb-url URL] [--loams-bin PATH] [--fork DIR] [--out DIR]
 #   scripts/durable/conformance.sh --self-test [--fork DIR]
 #
 # A run:
 #   1. builds `loams` (release, --features durable-mysql) unless --loams-bin
-#      names one, and, from the pinned fork (the rev in Cargo.toml),
+#      names one, and, from the pinned Resonate checkout (the rev in Cargo.toml),
 #      `conctrace` (`cargo build --release --example conctrace` in
 #      impl/server/core, target dir $DURABLE_FORK_TARGET_DIR, default
 #      ~/.cache/cargo-target/durable-fork);
@@ -21,7 +21,7 @@
 #   4. prints the status tally (2xx, 4xx, 5xx);
 #   5. on tidb, drops the 503 answers as not applied (porc-503.sh), until
 #      upstream PR 0b teaches the checker 503;
-#   6. runs `go run ./cmd/conccheck -partition=false` in the fork's
+#   6. runs `go run ./cmd/conccheck -partition=false` in the checkout's
 #      spec/valid/porc, and exits 0 only if both read disciplines answer
 #      LINEARIZABLE (a TIMEOUT or INCONCLUSIVE verdict fails the run too).
 #
@@ -30,7 +30,8 @@
 # the same history doctored so that one settle is answered twice with
 # different values, and porc-503.sh must drop exactly an injected 503.
 #
-# The fork is --fork DIR (or $DURABLE_FORK_DIR), which must be checked out at
+# The checkout of the official resonatehq/resonate (no fork, D2450; the flag
+# and variables keep their names) is --fork DIR (or $DURABLE_FORK_DIR), checked out at
 # the pinned rev; without either, the rev is fetched into
 # target/durable-fork/resonate. Go (1.24) and python3 must be on PATH; tidb
 # also needs a mysql or mariadb client. Output goes to --out (default
@@ -40,7 +41,7 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 HERE=$ROOT/scripts/durable
-FORK_URL=https://github.com/ostrium-labs/resonate
+FORK_URL=https://github.com/resonatehq/resonate
 FIXTURE=$HERE/testdata/embedded-sqlite.history
 
 usage() {
@@ -95,7 +96,7 @@ done
 command -v go >/dev/null || die "go is not on PATH (the checker is Go; 1.24 or later)"
 command -v python3 >/dev/null || die "python3 is not on PATH"
 
-# The fork rev every Resonate crate is pinned to (D140, X1).
+# The upstream rev every Resonate crate is pinned to (D140, X1, D2450).
 rev=$(sed -n 's/^resonate-base = .*rev = "\([0-9a-f]\{40\}\)".*/\1/p' "$ROOT/Cargo.toml")
 [ -n "$rev" ] || die "no resonate-base rev in Cargo.toml"
 
@@ -210,9 +211,9 @@ free_port() {
 
 run() {
   case $store in
-    sqlite | tidb) ;;
-    '') die "--store sqlite|tidb is required" ;;
-    *) die "--store is sqlite or tidb (got '$store')" ;;
+    local | tidb) ;;
+    '') die "--store local|tidb is required" ;;
+    *) die "--store is local or tidb (got '$store')" ;;
   esac
   if [ "$store" = tidb ]; then
     [ -n "$tidb_url" ] ||
@@ -223,7 +224,7 @@ run() {
 
   fork_checkout
   local fork_target=${DURABLE_FORK_TARGET_DIR:-$HOME/.cache/cargo-target/durable-fork}
-  echo "conformance: building conctrace from the fork at $rev"
+  echo "conformance: building conctrace from resonatehq/resonate at $rev"
   (cd "$fork/impl/server/core" &&
     CARGO_TARGET_DIR=$fork_target cargo build --release --locked --example conctrace)
   local conctrace=$fork_target/release/examples/conctrace

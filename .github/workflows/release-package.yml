@@ -120,7 +120,12 @@ env:
   # FEATURES), so `loams dev` from a package serves what the image serves,
   # Durable on 127.0.0.1:8001 included (#925, D262). The Linux job checks the
   # two lists are equal.
-  LOAMS_PACKAGE_FEATURES: live,live-tikv,durable,durable-tikv,graph,git,tikv,pgwire,mysql-wire,stream-grpc
+  LOAMS_PACKAGE_FEATURES: live,live-tikv,durable,durable-postgres,graph,git,tikv,pgwire,mysql-wire,stream-grpc
+  # The official Resonate's resonate-auth uses reqwest 0.12 with its default
+  # TLS, native-tls (D2450), so `durable` links OpenSSL on Linux. Linked
+  # statically, the packages need no libssl and nfpm.yaml's depends hold
+  # (macOS and Windows use the system TLS, not OpenSSL).
+  OPENSSL_STATIC: '1'
   RELEASE_BRANCH: ${{ vars.RELEASE_BRANCH || github.event.repository.default_branch }}
 
 jobs:

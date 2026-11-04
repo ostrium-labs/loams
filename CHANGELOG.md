@@ -11,9 +11,23 @@ All notable changes to this project are documented here. The format follows [Kee
   place of Ostrium's fork. The compose profile `kafka` is now `iggy`, and its variables
   `IGGY_KAFKA_IMAGE`, `KAFKA_IGGY_USER` and `KAFKA_IGGY_PASSWORD` are `IGGY_IMAGE`, `IGGY_USER`
   and `IGGY_PASSWORD`.
+- **Official Resonate (D2450).** Loams Durable links the official `resonatehq/resonate` (upstream
+  `9c72d818`) in place of Ostrium's fork. `loams dev` and `standalone` keep durable state in a
+  **local store**, upstream's blob server on one redb file (`<data-dir>/durable/default.redb`,
+  `--durable-store local:<path>`), which survives restarts. **The old SQLite file
+  (`durable/default.db`) is not read: drain pending promises and note schedules before upgrading.**
+  Shared stores are `mysql://` (TiDB; feature `durable-mysql`, schema unchanged) and the new
+  `postgres://` (feature `durable-postgres`). `--durable-push` needs the new `durable-push`
+  feature. Linux builds with `durable` link OpenSSL (statically in release builds).
 
 ### Removed
 
+- **Fork-only Resonate features (D2450).** `--durable-store sqlite:` (upstream's SQLite server
+  cannot be linked into Loams) and `tikv://` (the native TiKV durable store, feature
+  `durable-tikv`), both refused with a message; the Temporal gateway's Resonate adapter
+  (`HttpDurability`, on the fork's `resonate-client`), so `[durability] kind = "resonate"` is
+  refused and the gateway runs in development mode only; and the fork's poll groups, W3C trace
+  fields and OTLP export, timer-wheel fixes and TiDB session fixes.
 - **Kafka-compatible access through Iggy.** The Kafka wire gateway only existed in the fork: the
   `kafka-gateway` compose service, its `KAFKA_BIND`, `KAFKA_PORT`, `KAFKA_ADVERTISED_HOST`,
   `KAFKA_SASL_ENABLED` and `KAFKA_AUTO_CREATE_TOPICS` settings and the Iggy Kafka gateway
