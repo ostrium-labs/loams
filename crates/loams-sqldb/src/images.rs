@@ -114,8 +114,8 @@ impl Images {
         ]
     }
 
-    /// TiDB: `ghcr.io/ostrium-labs/tidb`, upstream plus the §47 §5.4 patch
-    /// queue.
+    /// `pingcap/tidb`, the official image (D2450 superseded the §47 §5.4 patch
+    /// queue).
     pub fn tidb(&self) -> &ImagePin {
         &self.tidb
     }

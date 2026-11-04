@@ -128,10 +128,9 @@ services:
   tidb:
     <<: *restart
     profiles: [tikv]
-    image: ${TIDB_IMAGE:-ghcr.io/ostrium-labs/tidb:v8.5.8-loams.1}
-    # The patched TiDB image is amd64 only: on Apple silicon and other arm64
-    # hosts Docker Desktop runs it emulated (Rosetta or QEMU).
-    platform: ${TIDB_PLATFORM:-linux/amd64}
+    image: ${TIDB_IMAGE:-pingcap/tidb:v8.5.8}
+    # The official PingCAP image is multi-arch (amd64 and arm64), so it runs
+    # natively on Apple silicon (D2450).
     command:
       - --store=tikv
       - --path=pd:2379

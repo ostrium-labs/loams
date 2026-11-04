@@ -232,9 +232,8 @@ The release images, the contract the compose stack in
   prerelease is a GitHub pre-release and never `:latest`. The rule is
   [`scripts/release/channel.sh`](../../scripts/release/channel.sh). Deployments that must
   not move pin `:<version>`.
-- **Images built elsewhere.** `ghcr.io/ostrium-labs/tidb:v8.5.8-loams.1` is built by
-  [`scripts/sqldb/tidb-image/build.sh`](../../scripts/sqldb/tidb-image/build.sh) from an
-  annotated patch-queue tag, is public, amd64 only, and is pinned in
+- **Images built elsewhere.** TiDB is the official `pingcap/tidb:v8.5.8` (multi-arch; D2450
+  superseded the `ostrium-labs/tidb` patch queue), pinned by digest in
   [`release/sqldb-images.toml`](../../release/sqldb-images.toml), and the Postgres stack's images
   are pinned by digest in
   [`deploy/pins/loams-postgres-images.toml`](../../deploy/pins/loams-postgres-images.toml).
