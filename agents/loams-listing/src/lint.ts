@@ -21,7 +21,7 @@ export interface LintOptions {
   /** The index, for `depends-on-resolves`; the rule is skipped without it. */
   index?: IndexSnapshot;
   /** The GitHub login the submission comes from, for `reserved-namespace`; the rule is skipped without it. */
-  publisher?: string;
+  submitter?: string;
 }
 
 /** Reserved namespaces: these exact names and these prefixes belong to `ostrium-labs` (OP2-B decision 7). */
@@ -78,7 +78,7 @@ export const RULES: Record<string, string> = {
   'archive-platforms-unique': 'An archive has one file per platform.',
   'walrus-sha256-matches': "A Walrus mirror of an archive file carries that file's sha256 (D1812).",
   'data-scopes-unique': 'Each data scope is declared once.',
-  'reserved-namespace': 'ostrium, loams and the prefixes ostrium- and loams- belong to ostrium-labs (needs a publisher).',
+  'reserved-namespace': 'ostrium, loams and the prefixes ostrium- and loams- belong to ostrium-labs (needs a submitter).',
   'depends-on-resolves': 'Each depends_on entry matches a version in the index (needs an index).',
   'depends-on-self': 'A listing does not depend on itself.',
   'values-schema-local-ref': 'values_schema references are local (#…) only.',
@@ -167,8 +167,8 @@ export function lint(doc: unknown, options: LintOptions = {}): LintIssue[] {
     error('namespace-first-party', '/id', `namespace ${namespace} is not first-party; third-party listings open in MK1`);
   }
 
-  if (options.publisher !== undefined && isReservedNamespace(namespace) && options.publisher.toLowerCase() !== RESERVED_OWNER) {
-    error('reserved-namespace', '/id', `namespace ${namespace} is reserved for ${RESERVED_OWNER}; ${options.publisher} may not publish it`);
+  if (options.submitter !== undefined && isReservedNamespace(namespace) && options.submitter.toLowerCase() !== RESERVED_OWNER) {
+    error('reserved-namespace', '/id', `namespace ${namespace} is reserved for ${RESERVED_OWNER}; ${options.submitter} may not publish it`);
   }
 
   const tools: Tool[] = listing.tools ?? [];

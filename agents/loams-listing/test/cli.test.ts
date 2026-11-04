@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,9 +39,30 @@ describe('cli', () => {
     expect((await run('lint', '--index', join(dir, 'nope'), 'v2/valid/app-oci.json')).code).toBe(2);
   });
 
-  it('lint --publisher gates reserved namespaces', async () => {
-    expect((await run('lint', '--publisher', 'acme', 'valid/agent-mastra-acp.json')).err.join('\n')).toMatch(/\[reserved-namespace\]/);
-    expect((await run('lint', '--publisher', 'ostrium-labs', 'valid/agent-mastra-acp.json')).code).toBe(0);
+  it('lint --index counts the listings being linted as part of the index', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'listing-index-'));
+    writeFileSync(join(dir, 'index.json'), JSON.stringify({ index_version: 1, listings: [] }));
+    const pg = JSON.parse(readFileSync(new URL('v2/valid/app-oci.json', TESTDATA), 'utf8')) as Record<string, unknown>;
+    writeFileSync(join(dir, 'pg.json'), JSON.stringify({ ...pg, id: 'acme/pg', version: '16.4.0', depends_on: [] }));
+    const alone = await run('lint', '--index', dir, 'v2/valid/app-oci.json');
+    expect(alone.err.join('\n')).toMatch(/\[depends-on-resolves\]/);
+    const together = await run('lint', '--index', dir, join(dir, 'pg.json'), 'v2/valid/app-oci.json');
+    expect(together.err.join('\n')).not.toMatch(/depends-on-resolves/);
+    expect(together.code).toBe(0);
+  });
+
+  it('lint notes the rules it skipped without --submitter and --index', async () => {
+    const result = await run('lint', 'valid/agent-mastra-acp.json');
+    expect(result.code).toBe(0);
+    expect(result.err).toEqual([
+      'note: no --submitter given; reserved-namespace was skipped',
+      'note: no --index given; depends-on-resolves was skipped',
+    ]);
+  });
+
+  it('lint --submitter gates reserved namespaces', async () => {
+    expect((await run('lint', '--submitter', 'acme', 'valid/agent-mastra-acp.json')).err.join('\n')).toMatch(/\[reserved-namespace\]/);
+    expect((await run('lint', '--submitter', 'ostrium-labs', 'valid/agent-mastra-acp.json')).code).toBe(0);
   });
 
   it('lint exits 1 on a file that is not JSON', async () => {

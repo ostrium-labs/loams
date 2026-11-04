@@ -16,7 +16,7 @@ const PG: LintOptions = { index: { versions: (id) => (id === 'acme/pg' ? ['16.4.
 const nested = (depth: number): unknown => (depth === 0 ? { type: 'string' } : { type: 'object', properties: { a: nested(depth - 1) } });
 
 /** One listing per semantic rule that breaks exactly that rule. */
-const SEMANTIC: [rule: string, base: string, ops: Parameters<typeof patched>[1], options?: LintOptions][] = [
+const SEMANTIC: [rule: string, base: string, ops: Parameters<typeof patched>[1], options?: LintOptions, alsoReports?: string[]][] = [
   ['namespace-first-party', PYTHON, [], { firstPartyOnly: true }],
   ['tool-names-unique', AGENT, [{ op: 'set', path: '/tools/1/name', value: 'query_notes' }, { op: 'set', path: '/place/always_ask', value: [] }]],
   ['always-ask-declared', AGENT, [{ op: 'set', path: '/place/always_ask', value: ['drop_table'] }]],
@@ -34,13 +34,13 @@ const SEMANTIC: [rule: string, base: string, ops: Parameters<typeof patched>[1],
   ['archive-platforms-unique', ARCHIVE, [{ op: 'set', path: '/artifact/files/1/platform', value: 'linux-x86_64' }]],
   ['walrus-sha256-matches', ARCHIVE, [{ op: 'set', path: '/artifact/files/0/locations/0/sha256', value: '0'.repeat(64) }]],
   ['data-scopes-unique', AGENT, [{ op: 'set', path: '/place/data/1', value: { kind: 'database', name: 'notes', access: 'read' } }]],
-  ['reserved-namespace', V2_APP, [{ op: 'set', path: '/id', value: 'loams-official/notes-app' }], { publisher: 'acme' }],
+  ['reserved-namespace', V2_APP, [{ op: 'set', path: '/id', value: 'loams-official/notes-app' }], { submitter: 'acme' }],
   ['depends-on-resolves', V2_APP, [{ op: 'set', path: '/depends_on/0/version', value: '^17' }], PG],
   ['depends-on-self', V2_APP, [{ op: 'set', path: '/depends_on/0/id', value: 'acme/notes-app' }]],
   ['values-schema-local-ref', V2_APP, [{ op: 'set', path: '/values_schema', value: { $ref: 'https://evil.example/s.json' } }]],
   ['values-schema-size', V2_APP, [{ op: 'set', path: '/values_schema', value: { type: 'object', description: 'x'.repeat(70_000) } }]],
   ['package-needs-verified', V2_HELM, []],
-  ['binary-triple-unique', V2_BINARY, [{ op: 'set', path: '/package/targets/1/triple', value: 'x86_64-unknown-linux-gnu' }]],
+  ['binary-triple-unique', V2_BINARY, [{ op: 'set', path: '/package/targets/1/triple', value: 'x86_64-unknown-linux-gnu' }], undefined, ['package-needs-verified']],
 ];
 
 describe('lint', () => {
@@ -58,10 +58,9 @@ describe('lint', () => {
       expect(issues.map((i) => i.rule), testCase.name).toContain('schema');
       reported.add('schema');
     }
-    for (const [rule, base, ops, options] of SEMANTIC) {
+    for (const [rule, base, ops, options, alsoReports = []] of SEMANTIC) {
       const issues = lint(patched(fixture(base), ops), options);
-      // A binary package always carries the Verified-tier warning too.
-      expect(issues.map((i) => i.rule).filter((r) => r === rule || r !== 'package-needs-verified'), rule).toEqual([rule]);
+      expect(issues.map((i) => i.rule).sort(), rule).toEqual([rule, ...alsoReports].sort());
       reported.add(rule);
     }
     expect([...reported].sort()).toEqual(Object.keys(RULES).sort());
@@ -102,11 +101,11 @@ describe('lint listing/v2', () => {
   it('reserved_prefix_refused', () => {
     for (const id of ['loams-official/x', 'ostrium-tools/x', 'ostrium/x', 'loams/x']) {
       const doc = patched(fixture(V2_APP), [{ op: 'set', path: '/id', value: id }]);
-      expect(lint(doc, { publisher: 'acme' }).map((i) => i.rule), id).toEqual(['reserved-namespace']);
-      expect(lint(doc, { publisher: 'ostrium-labs' }), id).toEqual([]);
+      expect(lint(doc, { submitter: 'acme' }).map((i) => i.rule), id).toEqual(['reserved-namespace']);
+      expect(lint(doc, { submitter: 'ostrium-labs' }), id).toEqual([]);
     }
     const loamsy = patched(fixture(V2_APP), [{ op: 'set', path: '/id', value: 'loamsy/x' }]);
-    expect(lint(loamsy, { publisher: 'acme' })).toEqual([]);
+    expect(lint(loamsy, { submitter: 'acme' })).toEqual([]);
   });
 
   it('depends_on_must_resolve', () => {
@@ -138,7 +137,7 @@ describe('lint listing/v2', () => {
     expect(lint(fixture(V2_APP))).toEqual([]);
   });
 
-  it('skips depends-on-resolves without an index and reserved-namespace without a publisher', () => {
+  it('skips depends-on-resolves without an index and reserved-namespace without a submitter', () => {
     expect(lint(patched(fixture(V2_APP), [{ op: 'set', path: '/depends_on/0/version', value: '^17' }]))).toEqual([]);
     expect(lint(patched(fixture(V2_APP), [{ op: 'set', path: '/id', value: 'loams/x' }]))).toEqual([]);
   });

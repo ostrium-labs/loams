@@ -34,7 +34,7 @@ export interface Io {
 }
 
 const USAGE = `usage:
-  loams-listing lint [--first-party-only] [--publisher <login>] [--index <dir>] <listing.json>…
+  loams-listing lint [--first-party-only] [--submitter <login>] [--index <dir>] <listing.json>…
   loams-listing from-package <dir> (--tarball <file> | --integrity <sha512-…>) [--commit <sha>] [--out <file>]
   loams-listing index build <listings-dir> --out <dir> [--first-party-only] [--source-commit <sha>]
   loams-listing verify <listing.json>… [--save-provenance <dir>] [--report <file.json>]
@@ -60,6 +60,7 @@ const VALUE_FLAGS = new Set([
   '--commit',
   '--out',
   '--index',
+  '--submitter',
   '--source-commit',
   '--save-provenance',
   '--report',
@@ -150,17 +151,32 @@ export async function main(args: string[], io: Io): Promise<number> {
         if (positional.length === 0) throw new UsageError('lint needs at least one listing.json');
         let failed = false;
         const indexDir = str(flags, '--index');
-        const index = indexDir ? readIndexSnapshot(at(indexDir)) : undefined;
-        for (const file of positional) {
-          let doc: unknown;
+        const submitter = str(flags, '--submitter');
+        // Read every file first: the snapshot is the built index plus the listings being linted,
+        // so a pull request that adds a listing with its dependency resolves.
+        const docs = positional.map((file) => {
           try {
-            doc = JSON.parse(readFileSync(at(file), 'utf8'));
+            return { file, doc: JSON.parse(readFileSync(at(file), 'utf8')) as unknown };
           } catch (error) {
             io.stderr(`${file}: error [schema] not readable JSON: ${(error as Error).message}`);
             failed = true;
-            continue;
+            return { file, doc: undefined };
           }
-          const issues = lint(doc, { firstPartyOnly: flags.has('--first-party-only'), index, publisher: str(flags, '--publisher') });
+        });
+        const base = indexDir ? readIndexSnapshot(at(indexDir)) : undefined;
+        const added = new Map<string, string[]>();
+        for (const { doc } of docs) {
+          const { id, version } = (doc ?? {}) as { id?: unknown; version?: unknown };
+          if (typeof id === 'string' && typeof version === 'string') added.set(id, [...(added.get(id) ?? []), version]);
+        }
+        const index: IndexSnapshot | undefined = base && {
+          versions: (id) => [...base.versions(id), ...(added.get(id) ?? [])],
+        };
+        if (submitter === undefined) io.stderr('note: no --submitter given; reserved-namespace was skipped');
+        if (index === undefined) io.stderr('note: no --index given; depends-on-resolves was skipped');
+        for (const { file, doc } of docs) {
+          if (doc === undefined) continue;
+          const issues = lint(doc, { firstPartyOnly: flags.has('--first-party-only'), index, submitter });
           for (const issue of issues) io.stderr(formatIssue(file, issue));
           if (hasErrors(issues)) failed = true;
           else io.stdout(`${file}: ok`);
