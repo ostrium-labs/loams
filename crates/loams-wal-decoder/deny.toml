@@ -51,6 +51,10 @@ yanked = "deny"
 # Only fail on unmaintained crates we depend on directly; transitive ones are tracked upstream.
 unmaintained = "workspace"
 ignore = [
+    # The root's entries for the official Resonate (D2450), kept here because
+    # scripts/pg2/check-decoder-deny.py requires every root ignore.
+    { id = "RUSTSEC-2024-0421", reason = "idna 0.5.0 via validator 0.18 in the official Resonate (resonate-core, D2450): it only checks request fields' format; no Loams or Resonate code compares host names through it for a privilege check. Remove when Resonate moves to validator 0.19+" },
+    { id = "RUSTSEC-2024-0437", reason = "protobuf 2.28 via prometheus 0.13 in the official Resonate (resonate-plugin, D2450): prometheus only encodes its own metrics, never parses untrusted protobuf. Remove when Resonate moves to prometheus 0.14" },
     # No fixed rsa release exists (the Marvin timing attack). It is reached
     # only through sqlx-mysql, which uses it for the RSA password exchange of
     # caching_sha2_password/sha256_password on a non-TLS connection.
@@ -84,6 +88,7 @@ unknown-git = "deny"
 # tag), Apache-2.0. Neon's rust-postgres fork left the graph with that trim.
 allow-git = [
     "https://github.com/tikv/client-rust",
+    "https://github.com/resonatehq/resonate",
     "https://github.com/ostrium-labs/grafeo",
     "https://github.com/microsoft/graspologic-native",
     "https://github.com/ostrium-labs/loams-postgres",
