@@ -5,7 +5,9 @@
 //! and Connect tests use it, so they need neither the network nor Sigstore.
 //!
 //! Without `agentd` only the signing half is here: [`sign`] and
-//! [`FakeVerifier`], and with `fetch` the [`FakeFetcher`] (OP2-B Task 1).
+//! [`FakeVerifier`], the ring-signed index v2 of [`signed_v2_index`] and its
+//! [`TestKey`] (OP2-B Task 3), and with `fetch` the [`FakeFetcher`] (OP2-B
+//! Task 1).
 #![allow(clippy::unwrap_used, clippy::expect_used, missing_docs)]
 
 #[cfg(feature = "fetch")]
@@ -15,7 +17,6 @@ use std::path::{Path, PathBuf};
 #[cfg(feature = "fetch")]
 use std::sync::{Arc, Mutex};
 
-#[cfg(feature = "agentd")]
 use base64::Engine as _;
 use serde_json::{Value, json};
 #[cfg(feature = "agentd")]
@@ -30,6 +31,7 @@ use crate::install::Npm;
 use crate::provenance::{SLSA_V1, npm_integrity};
 #[cfg(feature = "agentd")]
 use crate::service::{Deps, MemoryVault, NPM_REGISTRY, attestations_url, tarball_url};
+use crate::signed::{IndexFiles, TrustAnchor};
 #[cfg(feature = "agentd")]
 use crate::sources::OFFICIAL_IDENTITY;
 use crate::verify::{GITHUB_ACTIONS_ISSUER, Identity, SignatureError, SignatureVerifier};
@@ -375,4 +377,170 @@ impl World {
             machine_users: None,
         }
     }
+}
+
+/// An ECDSA P-256 key made with `ring`, which signs the cosign
+/// `sign-blob --key` bundle shape (OP2-B Task 0 ruling) that
+/// [`crate::verify::KeyVerifier`] checks.
+pub struct TestKey {
+    pair: ring::signature::EcdsaKeyPair,
+}
+
+impl std::fmt::Debug for TestKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TestKey").finish_non_exhaustive()
+    }
+}
+
+impl TestKey {
+    pub fn generate() -> TestKey {
+        use ring::signature::{ECDSA_P256_SHA256_ASN1_SIGNING, EcdsaKeyPair};
+        let rng = ring::rand::SystemRandom::new();
+        let pkcs8 = EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, &rng).unwrap();
+        let pair = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, pkcs8.as_ref(), &rng)
+            .unwrap();
+        TestKey { pair }
+    }
+
+    fn spki_der(&self) -> Vec<u8> {
+        use ring::signature::KeyPair as _;
+        let mut der = crate::verify::P256_SPKI_PREFIX.to_vec();
+        der.extend_from_slice(self.pair.public_key().as_ref());
+        der
+    }
+
+    /// The public key as `cosign.pub` holds it.
+    pub fn pem(&self) -> String {
+        let body = base64::engine::general_purpose::STANDARD.encode(self.spki_der());
+        let mut pem = String::from("-----BEGIN PUBLIC KEY-----\n");
+        for line in body.as_bytes().chunks(64) {
+            pem.push_str(std::str::from_utf8(line).unwrap());
+            pem.push('\n');
+        }
+        pem.push_str("-----END PUBLIC KEY-----\n");
+        pem
+    }
+
+    /// The trust anchor for this key.
+    pub fn anchor(&self) -> TrustAnchor {
+        TrustAnchor::PublicKey { pem: self.pem() }
+    }
+
+    /// A cosign v3.0.6 `sign-blob --key` bundle over `bytes`.
+    pub fn sign_bundle(&self, bytes: &[u8]) -> Vec<u8> {
+        let b64 = base64::engine::general_purpose::STANDARD;
+        let rng = ring::rand::SystemRandom::new();
+        let signature = self.pair.sign(&rng, bytes).unwrap();
+        serde_json::to_vec(&json!({
+            "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+            "verificationMaterial": {
+                "publicKey": { "hint": b64.encode(Sha256::digest(self.spki_der())) }
+            },
+            "messageSignature": {
+                "messageDigest": { "algorithm": "SHA2_256", "digest": b64.encode(Sha256::digest(bytes)) },
+                "signature": b64.encode(signature.as_ref()),
+            }
+        }))
+        .unwrap()
+    }
+
+    /// The index and revocations, both signed with this key.
+    pub fn sign_files(&self, index: &[u8], revocations: &[u8]) -> IndexFiles {
+        IndexFiles {
+            index: index.to_vec(),
+            index_bundle: self.sign_bundle(index),
+            revocations: revocations.to_vec(),
+            revocations_bundle: self.sign_bundle(revocations),
+        }
+    }
+}
+
+/// Whether `namespace` is reserved for Ostrium (Decision 7).
+fn reserved_namespace(namespace: &str) -> bool {
+    matches!(namespace, "ostrium" | "loams")
+        || namespace.starts_with("ostrium-")
+        || namespace.starts_with("loams-")
+}
+
+/// Builds index v2 bytes. Each item is a listing document, or
+/// `{"listing": <doc>, "tier"?: "first-party"|"verified"|"community",
+/// "yanked"?: "<reason>"}`. Without a `tier`, a reserved namespace is
+/// `first-party` and any other `community`. Versions are sorted ascending;
+/// `latest` is the highest release (or the highest version when all are
+/// prereleases) and the entry's tier is `latest`'s.
+pub fn index_v2(listings: &[Value]) -> Vec<u8> {
+    let mut entries: Vec<(String, Vec<(semver::Version, Value)>)> = Vec::new();
+    for item in listings {
+        let (listing, tier, yanked) = match item.get("listing") {
+            Some(listing) => (
+                listing.clone(),
+                item.get("tier").cloned(),
+                item.get("yanked").cloned(),
+            ),
+            None => (item.clone(), None, None),
+        };
+        let id = listing["id"].as_str().unwrap().to_owned();
+        let version: semver::Version = listing["version"].as_str().unwrap().parse().unwrap();
+        let namespace = id.split('/').next().unwrap();
+        let tier = tier.unwrap_or_else(|| {
+            json!(if reserved_namespace(namespace) {
+                "first-party"
+            } else {
+                "community"
+            })
+        });
+        let mut row = json!({
+            "version": listing["version"],
+            "tier": tier,
+            "listing_sha256": hex::encode(Sha256::digest(crate::index::canonical(&listing).as_bytes())),
+            "listing": listing,
+        });
+        if let Some(reason) = yanked {
+            row["yanked"] = reason;
+        }
+        match entries.iter_mut().find(|(e, _)| *e == id) {
+            Some((_, rows)) => rows.push((version, row)),
+            None => entries.push((id, vec![(version, row)])),
+        }
+    }
+    let listings: Vec<Value> = entries
+        .into_iter()
+        .map(|(id, mut rows)| {
+            rows.sort_by(|a, b| a.0.cmp(&b.0));
+            let latest = rows
+                .iter()
+                .rev()
+                .find(|(v, _)| v.pre.is_empty())
+                .unwrap_or_else(|| rows.last().unwrap());
+            let doc = &latest.1["listing"];
+            json!({
+                "id": id,
+                "kind": doc["kind"],
+                "title": doc["title"],
+                "summary": doc["summary"],
+                "tier": latest.1["tier"],
+                "latest": latest.1["version"],
+                "versions": rows.iter().map(|(_, row)| row.clone()).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    serde_json::to_vec_pretty(&json!({
+        "$schema": "https://loams.dev/schemas/index/v2.json",
+        "index_version": 2,
+        "source_commit": "0".repeat(40),
+        "listings": listings,
+    }))
+    .unwrap()
+}
+
+/// An index v2 of `listings` (see [`index_v2`]) and `revocations`
+/// (revocations v1 JSON), both signed with a fresh `ring` P-256 key in the
+/// cosign key-bundle shape, and the key's trust anchor. For OP2-A's tests.
+pub fn signed_v2_index(listings: &[Value], revocations: &Value) -> (IndexFiles, TrustAnchor) {
+    let key = TestKey::generate();
+    let files = key.sign_files(
+        &index_v2(listings),
+        &serde_json::to_vec(revocations).unwrap(),
+    );
+    (files, key.anchor())
 }

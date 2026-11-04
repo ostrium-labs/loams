@@ -17,7 +17,6 @@ default = ["agentd"]
 # (OP2-B Task 1, D2605).
 agentd = [
     "fetch",
-    "dep:base64",
     "dep:loams-agentd-harness",
     "dep:loams-walrus",
     "dep:loams-zitadel",
@@ -33,8 +32,12 @@ testkit = []
 
 [dependencies]
 # The listing core.
+# Cosign key bundles: base64 signatures and PEM keys (OP2-B Task 3).
+base64.workspace = true
 hex.workspace = true
 jsonschema.workspace = true
+# `KeyVerifier`: ECDSA P-256 over a cosign `sign-blob --key` bundle (D2609).
+ring.workspace = true
 semver = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json.workspace = true
@@ -48,7 +51,6 @@ async-trait = { workspace = true, optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "system-proxy"], optional = true }
 
 # `agentd`.
-base64 = { workspace = true, optional = true }
 # Walrus artifact locations (MS1 Task 5, D1812): verified, hedged reads.
 loams-walrus = { path = "../loams-walrus", optional = true }
 # The refresh timer and the registration watch, and logs.

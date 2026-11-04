@@ -8803,6 +8803,7 @@ dependencies = [
  "loams-zitadel",
  "rcgen",
  "reqwest 0.12.28",
+ "ring",
  "rustix 1.1.5",
  "rustls",
  "semver",

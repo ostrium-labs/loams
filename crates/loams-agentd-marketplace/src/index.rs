@@ -1,30 +1,21 @@
 //! A source's index (`schemas/marketplace/index.v1.json`, MK1 Task 2 ruling
 //! 4): every listing version in full, so one signature covers them all. The
 //! types read what agentd searches and plans with; each listing is kept as
-//! JSON too, and checked against schema v1 when the index is loaded.
+//! JSON too, and checked against its schema when the index is loaded.
+//!
+//! Index v2 (`index.v2.json`, OP2-B Decision 1) has the same shape with
+//! `index_version: 2`, a `tier` on every version, and listings of either
+//! schema version. Index v1 holds v1 listings only; its versions take the
+//! entry's tier.
 
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::listing;
+use crate::listing::SCHEMA_V2_ID;
+use crate::listing_v2::{ListingKind, ListingV2};
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Kind {
-    Agent,
-    Harness,
-    McpServer,
-}
-
-impl Kind {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Kind::Agent => "agent",
-            Kind::Harness => "harness",
-            Kind::McpServer => "mcp-server",
-        }
-    }
-}
+/// A listing's kind; index v2 adds `app` and `engine` (OP2-B Task 3).
+pub type Kind = ListingKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -79,11 +70,16 @@ pub struct ListingMeta {
 #[derive(Debug, Clone)]
 pub struct IndexVersion {
     pub version: String,
+    /// The version's tier: index v2's per-version `tier`, or the entry's in
+    /// index v1.
+    pub tier: Tier,
     pub yanked: Option<String>,
     pub listing_sha256: String,
     pub meta: ListingMeta,
     /// The listing as the index holds it.
     pub listing: Value,
+    /// The listing, validated against its schema and typed.
+    pub typed: ListingV2,
 }
 
 #[derive(Debug, Clone)]
@@ -115,13 +111,13 @@ pub struct Index {
     pub listings: Vec<IndexEntry>,
 }
 
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
 pub enum IndexError {
     #[error("the index is not JSON: {0}")]
     NotJson(String),
-    #[error("the index is not index v1: {0}")]
+    #[error("the index is not index v1 or v2: {0}")]
     Shape(String),
-    #[error("{id}@{version} does not match listing schema v1: {issues}")]
+    #[error("{id}@{version} does not match its listing schema: {issues}")]
     Listing {
         id: String,
         version: String,
@@ -129,6 +125,12 @@ pub enum IndexError {
     },
     #[error("{id}@{version}: listing_sha256 does not match the listing")]
     Digest { id: String, version: String },
+    #[error("revocations.json: {0}")]
+    Revocations(String),
+    #[error("the index lists {0} twice")]
+    Duplicate(String),
+    #[error("the index is not one a 0.1.x agentd can read: {0}")]
+    NotV1(String),
 }
 
 #[derive(Deserialize)]
@@ -154,6 +156,8 @@ struct RawEntry {
 #[derive(Deserialize)]
 struct RawVersion {
     version: String,
+    #[serde(default)]
+    tier: Option<Tier>,
     #[serde(default)]
     yanked: Option<String>,
     listing_sha256: String,
@@ -190,33 +194,101 @@ fn sha256_hex(text: &str) -> String {
     hex::encode(Sha256::digest(text.as_bytes()))
 }
 
-/// Parses verified index bytes. Call only after the signature check.
+/// Parses verified `index.json` bytes under the contract 0.1.x agentd reads
+/// (OP2-B Review Focus 1): `index_version` 1, entry kinds `agent`,
+/// `harness` or `mcp-server`, no `tier` on versions (index v1's schema
+/// forbids it), and listings of schema v1 only (each is then checked
+/// against schema v1 by [`parse`]). agentd reads `index.json` with this;
+/// `index.v2.json` goes through [`parse`]. Call only after the signature
+/// check.
+pub fn parse_v1_strict(bytes: &[u8]) -> Result<Index, IndexError> {
+    let raw: Value =
+        serde_json::from_slice(bytes).map_err(|e| IndexError::NotJson(e.to_string()))?;
+    if raw.get("index_version").and_then(Value::as_u64) != Some(1) {
+        return Err(IndexError::NotV1("index_version is not 1".into()));
+    }
+    let entries = raw
+        .get("listings")
+        .and_then(Value::as_array)
+        .ok_or_else(|| IndexError::Shape("no listings".into()))?;
+    for entry in entries {
+        let id = entry.get("id").and_then(Value::as_str).unwrap_or("?");
+        let kind = entry.get("kind").and_then(Value::as_str);
+        if !matches!(kind, Some("agent" | "harness" | "mcp-server")) {
+            return Err(IndexError::NotV1(format!(
+                "{id} has kind {}",
+                kind.unwrap_or("?")
+            )));
+        }
+        for version in entry
+            .get("versions")
+            .and_then(Value::as_array)
+            .map_or(&[][..], Vec::as_slice)
+        {
+            let at = version
+                .get("version")
+                .and_then(Value::as_str)
+                .unwrap_or("?");
+            if version.get("tier").is_some() {
+                return Err(IndexError::NotV1(format!("{id}@{at} has a tier")));
+            }
+            if version.pointer("/listing/$schema").and_then(Value::as_str) == Some(SCHEMA_V2_ID) {
+                return Err(IndexError::NotV1(format!("{id}@{at} is a listing v2")));
+            }
+        }
+    }
+    parse(bytes)
+}
+
+/// Parses verified index bytes, v1 or v2. Call only after the signature
+/// check.
 pub fn parse(bytes: &[u8]) -> Result<Index, IndexError> {
     let raw: Value =
         serde_json::from_slice(bytes).map_err(|e| IndexError::NotJson(e.to_string()))?;
     let raw: RawIndex =
         serde_json::from_value(raw).map_err(|e| IndexError::Shape(e.to_string()))?;
-    if raw.index_version != 1 {
-        return Err(IndexError::Shape(format!(
-            "index_version {} is not 1",
-            raw.index_version
-        )));
-    }
+    let v2 = match raw.index_version {
+        1 => false,
+        2 => true,
+        other => {
+            return Err(IndexError::Shape(format!(
+                "index_version {other} is not 1 or 2"
+            )));
+        }
+    };
     let mut listings = Vec::with_capacity(raw.listings.len());
+    let mut ids = std::collections::HashSet::new();
     for entry in raw.listings {
+        if !ids.insert(entry.id.clone()) {
+            return Err(IndexError::Duplicate(entry.id));
+        }
+        let mut seen = std::collections::HashSet::new();
         let mut versions = Vec::with_capacity(entry.versions.len());
         for version in entry.versions {
-            if let Err(issues) = listing::validate(&version.listing) {
-                return Err(IndexError::Listing {
-                    id: entry.id.clone(),
-                    version: version.version.clone(),
-                    issues: issues
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>()
-                        .join("; "),
-                });
+            if !seen.insert(version.version.clone()) {
+                return Err(IndexError::Duplicate(format!(
+                    "{}@{}",
+                    entry.id, version.version
+                )));
             }
+            let listing_error = |issues: String| IndexError::Listing {
+                id: entry.id.clone(),
+                version: version.version.clone(),
+                issues,
+            };
+            // Index v1 is read by 0.1.x agentd, which knows schema v1 only.
+            if !v2 && version.listing.get("$schema").and_then(Value::as_str) == Some(SCHEMA_V2_ID) {
+                return Err(listing_error("a listing v2 in index v1".into()));
+            }
+            let typed =
+                ListingV2::from_json(&version.listing).map_err(|e| listing_error(e.to_string()))?;
+            let tier = if v2 {
+                version.tier.ok_or_else(|| {
+                    IndexError::Shape(format!("{}@{} has no tier", entry.id, version.version))
+                })?
+            } else {
+                entry.tier
+            };
             if sha256_hex(&canonical(&version.listing)) != version.listing_sha256 {
                 return Err(IndexError::Digest {
                     id: entry.id.clone(),
@@ -225,18 +297,25 @@ pub fn parse(bytes: &[u8]) -> Result<Index, IndexError> {
             }
             let meta: ListingMeta = serde_json::from_value(version.listing.clone())
                 .map_err(|e| IndexError::Shape(format!("{}: {e}", entry.id)))?;
-            if meta.id != entry.id || meta.version != version.version {
+            if meta.id != entry.id || meta.version != version.version || meta.kind != entry.kind {
                 return Err(IndexError::Shape(format!(
-                    "{}@{} holds the listing {}@{}",
-                    entry.id, version.version, meta.id, meta.version
+                    "{}@{} ({}) holds the listing {}@{} ({})",
+                    entry.id,
+                    version.version,
+                    entry.kind.as_str(),
+                    meta.id,
+                    meta.version,
+                    meta.kind.as_str()
                 )));
             }
             versions.push(IndexVersion {
                 version: version.version,
+                tier,
                 yanked: version.yanked,
                 listing_sha256: version.listing_sha256,
                 meta,
                 listing: version.listing,
+                typed,
             });
         }
         listings.push(IndexEntry {
