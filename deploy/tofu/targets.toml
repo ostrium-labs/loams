@@ -47,13 +47,20 @@ module = "gcp-k3s"
 cloud = "gcp"
 class = "k3s"
 operator = true
-available = false
+available = true
 free_tier = false
 default_region = "us-central1"
 disk_sku = "gcp/pd/balanced"
 egress_sku = "gcp/network/egress-internet"
 required_inputs = ["project"]
-keep_on_destroy = ["module.target.google_storage_bucket.this", "module.target.google_kms_crypto_key.bucket"]
+# the bucket, its key and the settings that keep it private, versioned and encrypted once kept
+# (the key ring and the key's IAM binding for the storage agent stay in state with the key; Cloud KMS keys cannot be deleted)
+keep_on_destroy = [
+  "module.target.google_storage_bucket.this",
+  "module.target.google_kms_key_ring.bucket",
+  "module.target.google_kms_crypto_key.bucket",
+  "module.target.google_kms_crypto_key_iam_member.gcs_agent",
+]
 credentials = "gcloud"
 needs_tailnet = true
 reserve = { cpu_millis = 1500, memory_mib = 4096 }
