@@ -5,13 +5,21 @@ import { Ajv2020, type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.
 
 const SCHEMAS = new URL('../../../schemas/marketplace/', import.meta.url);
 
-export type SchemaName = 'listing.v1.json' | 'index.v1.json' | 'revocations.v1.json';
+export type SchemaName = 'listing.v1.json' | 'listing-v2.schema.json' | 'index.v1.json' | 'revocations.v1.json';
 
 export function readSchema(name: SchemaName): Record<string, unknown> {
   return JSON.parse(readFileSync(new URL(name, SCHEMAS), 'utf8')) as Record<string, unknown>;
 }
 
-const NAMES: SchemaName[] = ['listing.v1.json', 'index.v1.json', 'revocations.v1.json'];
+const NAMES: SchemaName[] = ['listing.v1.json', 'listing-v2.schema.json', 'index.v1.json', 'revocations.v1.json'];
+
+export const LISTING_V2_SCHEMA_ID = 'https://loams.dev/schemas/listing/v2.json';
+
+/** The listing schema a document selects with `$schema`: v2 by its URL, anything else is v1 (OP2-B decision 2). */
+export function listingSchemaFor(doc: unknown): 'listing.v1.json' | 'listing-v2.schema.json' {
+  const declared = doc && typeof doc === 'object' ? (doc as { $schema?: unknown }).$schema : undefined;
+  return declared === LISTING_V2_SCHEMA_ID ? 'listing-v2.schema.json' : 'listing.v1.json';
+}
 let ajv: Ajv2020 | undefined;
 const cache = new Map<SchemaName, ValidateFunction>();
 
@@ -20,7 +28,7 @@ function compiled(name: SchemaName): ValidateFunction {
   if (!validate) {
     if (!ajv) {
       // strict: false because the schemas carry x-proto-* annotations. All three are
-      // registered, as index.v1.json refers to the listing schema by its $id.
+      // registered, as index.v1.json and listing-v2 refer to the v1 listing schema by its $id.
       ajv = new Ajv2020({ allErrors: true, strict: false });
       for (const each of NAMES) ajv.addSchema(readSchema(each), each);
     }

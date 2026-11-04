@@ -104,3 +104,8 @@ export interface Listing {
 }
 
 export const LISTING_SCHEMA_ID = 'https://loams.dev/schemas/listing/v1.json';
+
+/** The index as lint sees it: which versions exist for an id (the built index plus the pull request's added listings). */
+export interface IndexSnapshot {
+  versions(id: string): string[];
+}
