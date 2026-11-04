@@ -142,6 +142,19 @@ impl FakeFetcher {
 }
 
 #[cfg(feature = "fetch")]
+impl FakeFetcher {
+    /// Serves an index v2 and its bundle at `base`, beside whatever `serve`
+    /// put there; `revocations` is the one `serve` serves.
+    pub fn serve_v2(&self, base: &str, index: &[u8], identity: &str) {
+        self.put(&format!("{base}/index.v2.json"), index.to_vec());
+        self.put(
+            &format!("{base}/index.v2.json.sigstore.json"),
+            sign(index, identity),
+        );
+    }
+}
+
+#[cfg(feature = "fetch")]
 #[async_trait::async_trait]
 impl Fetcher for FakeFetcher {
     async fn get(&self, url: &str) -> Result<Vec<u8>, String> {
@@ -347,6 +360,20 @@ impl World {
             data_dir: data_dir.to_owned(),
             fetcher,
         }
+    }
+
+    /// Also serves an index v2 of the testkit listings and `extra` (see
+    /// [`index_v2`]), signed as the official index is. The v1 index stays
+    /// as it was.
+    pub fn serve_v2(&self, extra: &[Value]) {
+        let mut listings: Vec<Value> = HARNESS_VERSIONS
+            .iter()
+            .map(|v| harness_listing_at(v))
+            .collect();
+        listings.push(mcp_listing());
+        listings.extend_from_slice(extra);
+        self.fetcher
+            .serve_v2(OFFICIAL_BASE, &index_v2(&listings), OFFICIAL_IDENTITY);
     }
 
     /// Serves `revocations` (revocations v1 JSON) as the official list.

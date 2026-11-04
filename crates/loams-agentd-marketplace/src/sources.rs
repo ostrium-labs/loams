@@ -50,12 +50,27 @@ impl Source {
         format!("{}.sigstore.json", self.url)
     }
 
+    /// `index.v2.json` beside the index (OP2-B Task 4): the index with every
+    /// listing kind, read first.
+    pub fn index_v2_url(&self) -> String {
+        self.sibling("index.v2.json")
+    }
+
+    /// The signature of [`Self::index_v2_url`].
+    pub fn index_v2_signature_url(&self) -> String {
+        format!("{}.sigstore.json", self.index_v2_url())
+    }
+
+    fn sibling(&self, name: &str) -> String {
+        match self.url.rsplit_once('/') {
+            Some((dir, _)) => format!("{dir}/{name}"),
+            None => name.into(),
+        }
+    }
+
     /// `revocations.json` in the index's directory.
     pub fn revocations_url(&self) -> String {
-        match self.url.rsplit_once('/') {
-            Some((dir, _)) => format!("{dir}/revocations.json"),
-            None => "revocations.json".into(),
-        }
+        self.sibling("revocations.json")
     }
 }
 

@@ -103,6 +103,30 @@ impl Fetcher for FakeFetcher {
     }
 }
 
+impl FakeFetcher {
+    /// Serves an index v2 beside the v1 files, signed by `identity`.
+    fn serve_v2(&self, base: &str, index: &[u8], identity: &str) {
+        self.put(&format!("{base}/index.v2.json"), index.to_vec());
+        self.put(
+            &format!("{base}/index.v2.json.sigstore.json"),
+            sign(index, identity),
+        );
+    }
+}
+
+/// A v2 fixture listing (`schemas/marketplace/testdata/v2/valid`).
+fn v2_listing(name: &str) -> serde_json::Value {
+    serde_json::from_slice(
+        &std::fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../schemas/marketplace/testdata/v2/valid")
+                .join(name),
+        )
+        .unwrap(),
+    )
+    .unwrap()
+}
+
 const OFFICIAL_BASE: &str = "https://ostrium-labs.github.io/loams-marketplace";
 
 fn official_world() -> FakeFetcher {
@@ -508,5 +532,159 @@ async fn bad_sources_are_refused_before_any_fetch() {
             market.add_source(source).await,
             Err(MarketError::Source(_))
         ));
+    }
+}
+
+/// The official world with an index v2 holding the app and the engine
+/// fixtures, which no index v1 can.
+fn v2_world() -> FakeFetcher {
+    let fetcher = official_world();
+    fetcher.serve_v2(
+        OFFICIAL_BASE,
+        &loams_agentd_marketplace::testkit::index_v2(&[
+            v2_listing("app-oci.json"),
+            v2_listing("engine-kustomize.json"),
+        ]),
+        OFFICIAL_IDENTITY,
+    );
+    fetcher
+}
+
+#[tokio::test]
+async fn market_reads_index_v2_first() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut market = Marketplace::open(dir.path(), v2_world(), FakeVerifier).unwrap();
+    market.refresh(OFFICIAL_NAME).await.unwrap();
+    let found = market.search(&Query {
+        text: "notes".into(),
+        ..Query::default()
+    });
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].id, "acme/notes-app");
+    assert_eq!(found[0].kind, Kind::App);
+    assert_eq!(found[0].targets, ["cluster"]);
+    let info = &market.list_sources()[0];
+    assert_eq!(info.listings, 2, "the v2 index, not the v1 one");
+    assert!(info.error.is_none());
+
+    // Apps and engines are filterable.
+    let engines = market.search(&Query {
+        kinds: vec![Kind::Engine],
+        ..Query::default()
+    });
+    assert_eq!(engines.len(), 1);
+    assert_eq!(engines[0].id, "loams/house-engine");
+}
+
+#[tokio::test]
+async fn market_falls_back_to_index_v1() {
+    let dir = tempfile::tempdir().unwrap();
+    let fetcher = official_world();
+    let mut market = Marketplace::open(dir.path(), fetcher.clone(), FakeVerifier).unwrap();
+    market.refresh(OFFICIAL_NAME).await.unwrap();
+    let info = &market.list_sources()[0];
+    assert_eq!(info.listings, 6);
+    assert!(info.error.is_none());
+    // The v2-only listings are not there; the v1 ones are.
+    assert!(
+        market
+            .search(&Query {
+                text: "notes-app".into(),
+                ..Query::default()
+            })
+            .is_empty()
+    );
+    assert_eq!(market.search(&Query::default()).len(), 6);
+}
+
+#[tokio::test]
+async fn index_v2_failures_do_not_fall_back() {
+    let dir = tempfile::tempdir().unwrap();
+    // A v2 index whose signature fails is the source's error, even though
+    // index.json is fine.
+    let fetcher = v2_world();
+    let mut tampered = loams_agentd_marketplace::testkit::index_v2(&[v2_listing("app-oci.json")]);
+    tampered.extend_from_slice(b" ");
+    fetcher.put(&format!("{OFFICIAL_BASE}/index.v2.json"), tampered);
+    let mut market = Marketplace::open(dir.path(), fetcher, FakeVerifier).unwrap();
+    let error = market.refresh(OFFICIAL_NAME).await.unwrap_err();
+    assert!(
+        matches!(
+            error,
+            MarketError::Signature {
+                file: "index.v2.json",
+                error: SignatureError::Invalid(_),
+                ..
+            }
+        ),
+        "{error}"
+    );
+    assert!(market.verified(OFFICIAL_NAME).is_none());
+
+    // A missing bundle for a present v2 index is refused, not skipped.
+    let fetcher = v2_world();
+    fetcher.remove(&format!("{OFFICIAL_BASE}/index.v2.json.sigstore.json"));
+    let mut market = Marketplace::open(dir.path(), fetcher, FakeVerifier).unwrap();
+    let error = market.refresh(OFFICIAL_NAME).await.unwrap_err();
+    assert!(
+        matches!(
+            error,
+            MarketError::Signature {
+                error: SignatureError::Missing(_),
+                ..
+            }
+        ),
+        "{error}"
+    );
+}
+
+#[tokio::test]
+async fn the_v2_cache_is_verified_again_on_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut market = Marketplace::open(dir.path(), v2_world(), FakeVerifier).unwrap();
+    market.refresh(OFFICIAL_NAME).await.unwrap();
+    drop(market);
+
+    // Offline: the cache serves the v2 listings.
+    let market = Marketplace::open(dir.path(), FakeFetcher::default(), FakeVerifier).unwrap();
+    assert_eq!(market.list_sources()[0].listings, 2);
+
+    // An edited cache file is refused.
+    let cached = dir.path().join("marketplace/cache/official/index.v2.json");
+    let mut bytes = std::fs::read(&cached).unwrap();
+    bytes.extend_from_slice(b" ");
+    std::fs::write(&cached, bytes).unwrap();
+    let market = Marketplace::open(dir.path(), FakeFetcher::default(), FakeVerifier).unwrap();
+    assert!(market.verified(OFFICIAL_NAME).is_none());
+    assert!(market.list_sources()[0].error.is_some());
+
+    // Falling back to v1 later drops the v2 cache.
+    let mut market = Marketplace::open(dir.path(), official_world(), FakeVerifier).unwrap();
+    market.refresh(OFFICIAL_NAME).await.unwrap();
+    assert!(!cached.exists());
+    let market = Marketplace::open(dir.path(), FakeFetcher::default(), FakeVerifier).unwrap();
+    assert_eq!(market.list_sources()[0].listings, 6);
+}
+
+#[tokio::test]
+async fn app_listing_install_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut market = Marketplace::open(dir.path(), v2_world(), FakeVerifier).unwrap();
+    market.refresh(OFFICIAL_NAME).await.unwrap();
+    for (id, kind) in [("acme/notes-app", "app"), ("loams/house-engine", "engine")] {
+        let error = market.plan_install(id, None, None, &[]).unwrap_err();
+        assert_eq!(
+            error,
+            MarketError::KindNotForAgentd {
+                id: id.into(),
+                kind
+            }
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("install it with a LoamsInstall or `loams deploy`"),
+            "{error}"
+        );
     }
 }

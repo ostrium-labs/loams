@@ -93,7 +93,9 @@ impl From<Tier> for ListingTier {
 pub struct SearchArgs {
     /// Words to match; none lists everything.
     pub query: Vec<String>,
-    /// `agent`, `harness` or `mcp-server` (repeatable).
+    /// `agent`, `harness`, `mcp-server`, `app` or `engine` (repeatable).
+    /// Apps and engines are listed here; install them with a LoamsInstall
+    /// or `loams deploy`.
     #[arg(long)]
     pub kind: Vec<String>,
     /// Such as `mastra` (repeatable).

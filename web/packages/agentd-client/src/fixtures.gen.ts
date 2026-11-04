@@ -2141,6 +2141,7 @@ export const fixture_ListingSearchResults = {
       },
       "source": "official",
       "summary": "GitHub's official MCP server.",
+      "targets": [],
       "tier": "firstParty",
       "title": "GitHub"
     },
@@ -2154,6 +2155,7 @@ export const fixture_ListingSearchResults = {
       "revocation": null,
       "source": "official",
       "summary": "A first Mastra agent.",
+      "targets": [],
       "tier": "firstParty",
       "title": "Loams starter"
     }
@@ -2206,6 +2208,7 @@ export const fixture_ListingDetail = {
     "revocation": null,
     "source": "official",
     "summary": "Anthropic's coding agent.",
+    "targets": [],
     "tier": "firstParty",
     "title": "Claude Code"
   },
@@ -2217,11 +2220,13 @@ export const fixture_ListingDetail = {
         "severity": "disable",
         "versions": ">=2.0.0, <2.1.0"
       },
+      "tier": null,
       "version": "0.9.0",
       "yanked": "Broken launch line."
     },
     {
       "revocation": null,
+      "tier": null,
       "version": "1.0.0",
       "yanked": null
     }
@@ -2282,6 +2287,7 @@ export const fixture_PlanInstallReply = {
       },
       "source": "official",
       "summary": "GitHub's official MCP server.",
+      "targets": [],
       "tier": "firstParty",
       "title": "GitHub"
     },

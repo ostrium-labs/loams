@@ -174,6 +174,8 @@ export function summaryOf(s: pb.ListingSummary | undefined): ListingSummary {
     language: (m && enumString(listing.LanguageSchema, m.language)) ?? null,
     level: (m && enumString(listing.ConformanceLevelSchema, m.level)) ?? null,
     revocation: revocationOf(m?.revocation),
+    // The protobuf messages do not carry index v2's targets (Decision 12).
+    targets: [],
   };
 }
 
@@ -191,7 +193,12 @@ export function sourceOf(s: pb.MarketplaceSource): MarketplaceSource {
 }
 
 function versionOf(v: pb.ListingVersion): ListingVersion {
-  return { version: v.version, yanked: orNull(v.yanked), revocation: revocationOf(v.revocation) };
+  return {
+    version: v.version,
+    yanked: orNull(v.yanked),
+    revocation: revocationOf(v.revocation),
+    tier: null,
+  };
 }
 
 export function detailOf(r: pb.GetListingResponse): ListingDetail {

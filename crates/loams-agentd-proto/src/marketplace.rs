@@ -12,7 +12,8 @@
 //!   update widens a permission and no new digest is given).
 //!
 //! Listing fields keep the listing schema's strings: a kind is `agent`,
-//! `harness` or `mcp-server`, a framework `mastra`, a language `typescript`,
+//! `harness`, `mcp-server`, `app` or `engine` (agentd lists the last two
+//! and does not install them), a framework `mastra`, a language `typescript`,
 //! a level `core`. Listing parts (the listing itself, its Place, models,
 //! cost and provenance) are the listing's JSON. None of these is open to the
 //! `mcp` role.
@@ -115,7 +116,7 @@ pub struct SearchListingsParams {
     /// Words matched against id, title, summary and tool names.
     #[serde(default)]
     pub query: String,
-    /// `agent`, `harness`, `mcp-server`.
+    /// `agent`, `harness`, `mcp-server`, `app`, `engine`.
     #[serde(default)]
     pub kinds: Vec<String>,
     #[serde(default)]
@@ -152,6 +153,10 @@ pub struct ListingSummary {
     /// The latest version's revocation.
     #[serde(default)]
     pub revocation: Option<ListingRevocation>,
+    /// Where the latest version runs, from index v2: `cluster`,
+    /// `node-laptop` or `node-device`. Empty for an index v1 listing.
+    #[serde(default)]
+    pub targets: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -181,6 +186,9 @@ pub struct ListingVersion {
     pub yanked: Option<String>,
     #[serde(default)]
     pub revocation: Option<ListingRevocation>,
+    /// This version's tier (index v2 sets it per version).
+    #[serde(default)]
+    pub tier: Option<ListingTier>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

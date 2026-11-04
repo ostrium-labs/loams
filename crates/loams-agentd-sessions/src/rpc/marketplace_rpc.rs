@@ -74,6 +74,8 @@ fn kind_from(name: &str) -> Result<Kind, RpcError> {
         "agent" => Ok(Kind::Agent),
         "harness" => Ok(Kind::Harness),
         "mcp-server" => Ok(Kind::McpServer),
+        "app" => Ok(Kind::App),
+        "engine" => Ok(Kind::Engine),
         other => Err(bad(format!("no listing kind {other}"))),
     }
 }
@@ -103,6 +105,7 @@ fn summary_of(summary: Summary) -> wire::ListingSummary {
         language: summary.language,
         level: summary.level.map(|l| level_name(l).to_owned()),
         revocation: summary.revocation.as_ref().map(revocation_of),
+        targets: summary.targets,
     }
 }
 
@@ -116,6 +119,7 @@ fn detail_of(view: ListingView) -> wire::ListingDetail {
                 version: version.version.clone(),
                 yanked: version.yanked.clone(),
                 revocation: revocation.as_ref().map(revocation_of),
+                tier: Some(tier_of(version.tier)),
             })
             .collect(),
         summary: summary_of(view.summary),

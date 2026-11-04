@@ -241,3 +241,66 @@ async fn sources_refresh_at_start_and_every_six_hours() {
     assert_eq!(world.fetcher.calls(&index), 3);
     task.abort();
 }
+
+#[tokio::test]
+async fn v2_agent_installs_like_v1() {
+    // The same harness, in the index v1 world and as a listing v2 in the
+    // index v2 world, plans alike and installs.
+    let v1_dir = tempfile::tempdir().unwrap();
+    let (_world, v1_host) = host(v1_dir.path()).await;
+    let (v1_plan, v1_digest, _) = v1_host
+        .plan_install(HARNESS_ID, Some("1.0.0"), None)
+        .await
+        .unwrap();
+
+    let dir = tempfile::tempdir().unwrap();
+    let world = World::new(dir.path());
+    world.serve_v2(&[]);
+    let v2_host = MarketplaceHost::open(world.deps()).unwrap();
+    assert!(v2_host.refresh().await.is_empty());
+    let sources = v2_host.list_sources().await;
+    assert_eq!(sources[0].listings, 2, "read from index.v2.json");
+    let (v2_plan, v2_digest, view) = v2_host
+        .plan_install(HARNESS_ID, Some("1.0.0"), None)
+        .await
+        .unwrap();
+    assert_eq!(view.summary.targets, ["cluster", "node-laptop"]);
+    assert_eq!(v1_plan, v2_plan);
+    assert_eq!(v1_digest, v2_digest);
+
+    let installed = install(&v2_host, HARNESS_ID, Some("1.0.0"), &[])
+        .await
+        .unwrap();
+    assert_eq!(installed.version, "1.0.0");
+    assert_eq!(v2_host.registrations().harnesses.len(), 1);
+}
+
+#[tokio::test]
+async fn the_host_refuses_to_install_an_app() {
+    let dir = tempfile::tempdir().unwrap();
+    let world = World::new(dir.path());
+    let app: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../schemas/marketplace/testdata/v2/valid/app-oci.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    world.serve_v2(&[app]);
+    let host = MarketplaceHost::open(world.deps()).unwrap();
+    assert!(host.refresh().await.is_empty());
+    let found = host
+        .search(&Query {
+            text: "notes-app".into(),
+            ..Query::default()
+        })
+        .await;
+    assert_eq!(found.len(), 1);
+    let error = host
+        .plan_install("acme/notes-app", None, None)
+        .await
+        .unwrap_err();
+    assert_eq!(error.reason(), Some("bad_params"));
+    assert!(error.to_string().contains("`loams deploy`"), "{error}");
+}

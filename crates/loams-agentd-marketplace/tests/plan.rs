@@ -61,7 +61,10 @@ struct FakeFetcher(HashMap<String, Vec<u8>>);
 #[async_trait::async_trait]
 impl Fetcher for FakeFetcher {
     async fn get(&self, url: &str) -> Result<Vec<u8>, String> {
-        self.0.get(url).cloned().ok_or_else(|| "404".into())
+        self.0
+            .get(url)
+            .cloned()
+            .ok_or_else(|| format!("HTTP 404 for {url}"))
     }
 }
 

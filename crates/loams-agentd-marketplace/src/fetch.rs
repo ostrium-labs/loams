@@ -7,7 +7,9 @@
 use std::time::Duration;
 
 /// Fetches a URL's bytes. agentd's implementation is an HTTPS client; tests
-/// serve fixtures.
+/// serve fixtures. A missing file (HTTP 404) is the error `HTTP 404 for <url>`;
+/// the marketplace falls back from `index.v2.json` to `index.json` on that
+/// prefix and on no other error.
 #[async_trait::async_trait]
 pub trait Fetcher: Send + Sync {
     async fn get(&self, url: &str) -> Result<Vec<u8>, String>;

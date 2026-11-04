@@ -10,7 +10,7 @@ export type SearchListingsParams = {
  */
 query: string, 
 /**
- * `agent`, `harness`, `mcp-server`.
+ * `agent`, `harness`, `mcp-server`, `app`, `engine`.
  */
 kinds: Array<string>, frameworks: Array<string>, languages: Array<string>, 
 /**

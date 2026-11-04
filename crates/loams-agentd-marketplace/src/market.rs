@@ -39,6 +39,10 @@ pub enum MarketError {
     NoVersion { id: String, version: String },
     #[error("{0}: {1}")]
     Cache(String, String),
+    #[error(
+        "{id} is a listing of kind {kind}, which agentd does not install: install it with a LoamsInstall or `loams deploy`"
+    )]
+    KindNotForAgentd { id: String, kind: &'static str },
     #[error("{id}@{version} was yanked: {reason}")]
     Yanked {
         id: String,
@@ -99,6 +103,9 @@ pub struct Summary {
     pub language: Option<String>,
     pub level: Option<Level>,
     pub revocation: Option<Revocation>,
+    /// Where the latest version runs (index v2; index v1 listings map their
+    /// v1 targets).
+    pub targets: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -111,6 +118,8 @@ pub struct ListingView {
 
 const INDEX: &str = "index.json";
 const INDEX_SIG: &str = "index.json.sigstore.json";
+const INDEX_V2: &str = "index.v2.json";
+const INDEX_V2_SIG: &str = "index.v2.json.sigstore.json";
 const REVOCATIONS: &str = "revocations.json";
 const REVOCATIONS_SIG: &str = "revocations.json.sigstore.json";
 
@@ -130,8 +139,10 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// The four files of a source, as fetched or as cached.
+/// The four files of a source, as fetched or as cached. `v2` says the index
+/// is `index.v2.json` (read first) and not the 0.1.x `index.json`.
 struct Files {
+    v2: bool,
     index: Vec<u8>,
     index_sig: Vec<u8>,
     revocations: Vec<u8>,
@@ -166,7 +177,8 @@ impl<F: Fetcher, V: SignatureVerifier> Marketplace<F, V> {
             match market.read_cache(&source) {
                 Ok(Some(files)) => match market.check(&source, &files) {
                     Ok((index, revocations)) => {
-                        let refreshed_ms = std::fs::metadata(market.cache_dir(&source).join(INDEX))
+                        let name = if files.v2 { INDEX_V2 } else { INDEX };
+                        let refreshed_ms = std::fs::metadata(market.cache_dir(&source).join(name))
                             .and_then(|m| m.modified())
                             .ok()
                             .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
@@ -200,7 +212,14 @@ impl<F: Fetcher, V: SignatureVerifier> Marketplace<F, V> {
 
     fn read_cache(&self, source: &Source) -> Result<Option<Files>, MarketError> {
         let dir = self.cache_dir(source);
-        if !dir.join(INDEX).exists() {
+        // The v2 index is preferred, as when fetching.
+        let v2 = dir.join(INDEX_V2).exists();
+        let (index_name, sig_name) = if v2 {
+            (INDEX_V2, INDEX_V2_SIG)
+        } else {
+            (INDEX, INDEX_SIG)
+        };
+        if !dir.join(index_name).exists() {
             return Ok(None);
         }
         let read = |name: &str| {
@@ -211,8 +230,9 @@ impl<F: Fetcher, V: SignatureVerifier> Marketplace<F, V> {
         // A missing signature is read as empty, so the check refuses it.
         let read_sig = |name: &str| std::fs::read(dir.join(name)).unwrap_or_default();
         Ok(Some(Files {
-            index: read(INDEX)?,
-            index_sig: read_sig(INDEX_SIG),
+            v2,
+            index: read(index_name)?,
+            index_sig: read_sig(sig_name),
             revocations: read(REVOCATIONS)?,
             revocations_sig: read_sig(REVOCATIONS_SIG),
         }))
@@ -222,11 +242,24 @@ impl<F: Fetcher, V: SignatureVerifier> Marketplace<F, V> {
         let dir = self.cache_dir(source);
         let err = |e: std::io::Error| MarketError::Cache(dir.display().to_string(), e.to_string());
         std::fs::create_dir_all(&dir).map_err(err)?;
+        let (index_name, sig_name, stale) = if files.v2 {
+            (INDEX_V2, INDEX_V2_SIG, [INDEX, INDEX_SIG])
+        } else {
+            (INDEX, INDEX_SIG, [INDEX_V2, INDEX_V2_SIG])
+        };
+        // The other index's files would be read first or misread later.
+        for name in stale {
+            match std::fs::remove_file(dir.join(name)) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(err(e)),
+            }
+        }
         for (name, bytes) in [
-            (INDEX_SIG, &files.index_sig),
+            (sig_name, &files.index_sig),
             (REVOCATIONS_SIG, &files.revocations_sig),
             (REVOCATIONS, &files.revocations),
-            (INDEX, &files.index),
+            (index_name, &files.index),
         ] {
             let tmp = dir.join(format!("{name}.tmp"));
             std::fs::write(&tmp, bytes).map_err(err)?;
@@ -239,8 +272,9 @@ impl<F: Fetcher, V: SignatureVerifier> Marketplace<F, V> {
     /// signature verifies.
     fn check(&self, source: &Source, files: &Files) -> Result<(Index, Revocations), MarketError> {
         let signer = source.signer();
+        let index_file = if files.v2 { INDEX_V2 } else { INDEX };
         for (file, bytes, sig) in [
-            (INDEX, &files.index, &files.index_sig),
+            (index_file, &files.index, &files.index_sig),
             (REVOCATIONS, &files.revocations, &files.revocations_sig),
         ] {
             if sig.is_empty() {
@@ -258,7 +292,14 @@ impl<F: Fetcher, V: SignatureVerifier> Marketplace<F, V> {
                     error,
                 })?;
         }
-        let index = index::parse_v1_strict(&files.index).map_err(|e| MarketError::Index {
+        // `index.json` is read under the 0.1.x contract; `index.v2.json` holds
+        // every kind.
+        let index = if files.v2 {
+            index::parse(&files.index)
+        } else {
+            index::parse_v1_strict(&files.index)
+        }
+        .map_err(|e| MarketError::Index {
             source_name: source.name.clone(),
             error: e.to_string(),
         })?;
@@ -285,10 +326,27 @@ impl<F: Fetcher, V: SignatureVerifier> Marketplace<F, V> {
         self.fetcher.get(url).await.unwrap_or_default()
     }
 
+    /// `index.v2.json` and its bundle first. Only a 404 on `index.v2.json`
+    /// falls back to `index.json`: any other failure (a 500, a bad
+    /// signature later on) is the source's error, never a silent downgrade.
     async fn fetch_files(&self, source: &Source) -> Result<Files, MarketError> {
+        let (v2, index, index_sig) = match self.fetch(&source.index_v2_url()).await {
+            Ok(index) => (
+                true,
+                index,
+                self.fetch_signature(&source.index_v2_signature_url()).await,
+            ),
+            Err(MarketError::Fetch { error, .. }) if error.starts_with("HTTP 404") => (
+                false,
+                self.fetch(&source.url).await?,
+                self.fetch_signature(&source.signature_url()).await,
+            ),
+            Err(error) => return Err(error),
+        };
         Ok(Files {
-            index: self.fetch(&source.url).await?,
-            index_sig: self.fetch_signature(&source.signature_url()).await,
+            v2,
+            index,
+            index_sig,
             revocations: self.fetch(&source.revocations_url()).await?,
             revocations_sig: self
                 .fetch_signature(&format!("{}.sigstore.json", source.revocations_url()))
@@ -422,6 +480,13 @@ impl<F: Fetcher, V: SignatureVerifier> Marketplace<F, V> {
                 .as_deref()
                 .and_then(|v| revocations.for_version(&entry.id, v))
                 .cloned(),
+            targets: latest.map_or_else(Vec::new, |v| {
+                v.typed
+                    .targets
+                    .iter()
+                    .map(|t| t.as_str().to_owned())
+                    .collect()
+            }),
         }
     }
 
@@ -559,6 +624,12 @@ impl<F: Fetcher, V: SignatureVerifier> Marketplace<F, V> {
         installed: &[crate::plan::InstalledVersion],
     ) -> Result<(crate::plan::InstallPlan, String), MarketError> {
         let view = self.get_listing(id, version, source)?;
+        if matches!(view.summary.kind, Kind::App | Kind::Engine) {
+            return Err(MarketError::KindNotForAgentd {
+                id: id.into(),
+                kind: view.summary.kind.as_str(),
+            });
+        }
         if let Some(reason) = &view.version.yanked {
             return Err(MarketError::Yanked {
                 id: id.into(),

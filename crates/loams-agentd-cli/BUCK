@@ -45,6 +45,9 @@ cargo_package(
         "//third-party/rust:async-trait",
         "//third-party/rust:tempfile",
     ],
+    extra_srcs = {
+        "schemas/marketplace/testdata/v2/valid/app-oci.json": "//:file=schemas+marketplace+testdata+v2+valid+app-oci.json",
+    },
     rustc_flags = [
         "-Funsafe_code",
         "-Wmissing_debug_implementations",
