@@ -83,6 +83,11 @@ struct Daemon {
 }
 
 async fn daemon() -> Daemon {
+    daemon_with(&[]).await
+}
+
+/// A daemon whose source also serves an index v2 with `v2` listings added.
+async fn daemon_with(v2: &[serde_json::Value]) -> Daemon {
     let dir = tempfile::tempdir().unwrap();
     let core = EngineCore::assemble_with_approvals(
         &dir.path().join("engine"),
@@ -92,6 +97,9 @@ async fn daemon() -> Daemon {
     )
     .unwrap();
     let world = World::new(&dir.path().join("data"));
+    if !v2.is_empty() {
+        world.serve_v2(v2);
+    }
     let host = MarketplaceHost::open(world.deps()).unwrap();
     assert!(host.refresh().await.is_empty());
     core.attach_marketplace(host);
@@ -238,6 +246,47 @@ async fn search_lists_matching_listings() {
 
     let none = daemon.ok(&["search", "no-such-words-anywhere"]).await;
     assert_eq!(none, "No listings match.\n");
+}
+
+fn v2_fixture(name: &str) -> serde_json::Value {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../schemas/marketplace/testdata/v2/valid")
+        .join(name);
+    serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+}
+
+#[tokio::test]
+async fn search_kind_engine_filter() {
+    let daemon = daemon_with(&[
+        v2_fixture("app-oci.json"),
+        v2_fixture("engine-kustomize.json"),
+    ])
+    .await;
+    let text = daemon.ok(&["search", "--kind", "engine"]).await;
+    assert!(text.contains("loams/house-engine"), "{text}");
+    assert!(!text.contains("acme/notes-app"), "{text}");
+    assert!(!text.contains(MCP_ID), "{text}");
+
+    let text = daemon
+        .ok(&["search", "--kind", "app", "--kind", "engine"])
+        .await;
+    assert!(text.contains("acme/notes-app"), "{text}");
+    assert!(text.contains("loams/house-engine"), "{text}");
+
+    // Info shows what a v2 listing adds; installing it is refused, with
+    // where to go instead.
+    let text = daemon.ok(&["info", "acme/notes-app"]).await;
+    assert!(text.contains("Targets:    cluster"), "{text}");
+    assert!(text.contains("Depends on: acme/pg ^16"), "{text}");
+    assert!(text.contains("Tier:       Community"), "{text}");
+    for args in [
+        &["install", "acme/notes-app", "--dry-run"][..],
+        &["install", "acme/notes-app", "--yes", "--plan-digest", "0"][..],
+    ] {
+        let error = daemon.run(args, &mut Script::default()).await.unwrap_err();
+        assert!(error.to_string().contains("`loams deploy`"), "{error}");
+    }
+    assert!(daemon.installed().await.installed.is_empty());
 }
 
 #[tokio::test]

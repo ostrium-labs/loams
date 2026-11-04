@@ -208,6 +208,7 @@ fn market_reason(error: &MarketError) -> Option<&'static str> {
             | SourceError::Exists(_)
             | SourceError::Official,
         ) => Some(BAD_PARAMS),
+        MarketError::KindNotForAgentd { .. } => Some(BAD_PARAMS),
         MarketError::Signature { .. } | MarketError::Index { .. } => Some(UNTRUSTED_LISTING),
         MarketError::Yanked { .. } | MarketError::Revoked { .. } => Some(LISTING_REVOKED),
         MarketError::Source(SourceError::Io { .. })

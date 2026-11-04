@@ -413,6 +413,8 @@ impl Wire for rs_market::ListingSummary {
             language,
             level,
             revocation,
+            // v2-only: the protobuf messages do not carry it (Decision 12).
+            targets: _,
         } = self;
         pb::ListingSummary {
             id: id.clone(),
@@ -444,6 +446,7 @@ impl Wire for rs_market::ListingSummary {
             language: str_from_enum(LANGUAGE, pb.language),
             level: str_from_enum(LEVEL, pb.level),
             revocation: crate::map::from_opt_msg(pb.revocation)?,
+            targets: Vec::new(),
         })
     }
 }
@@ -495,11 +498,32 @@ pub fn plan_request_of(params: &rs_market::ListingRef) -> pb::PlanInstallRequest
     }
 }
 
-wire_struct!(rs_market::ListingVersion => pb::ListingVersion {
-    version => version,
-    yanked => yanked as opt_string,
-    revocation => revocation as opt_msg,
-});
+impl Wire for rs_market::ListingVersion {
+    type Pb = pb::ListingVersion;
+    fn to_pb(&self) -> Self::Pb {
+        let rs_market::ListingVersion {
+            version,
+            yanked,
+            revocation,
+            // v2-only: the protobuf messages do not carry it (Decision 12).
+            tier: _,
+        } = self;
+        pb::ListingVersion {
+            version: version.clone(),
+            yanked: yanked.clone().unwrap_or_default(),
+            revocation: crate::map::opt_msg(revocation),
+            ..Default::default()
+        }
+    }
+    fn from_pb(pb: Self::Pb) -> Result<Self, MapError> {
+        Ok(Self {
+            version: pb.version,
+            yanked: none_if_empty(pb.yanked),
+            revocation: crate::map::from_opt_msg(pb.revocation)?,
+            tier: None,
+        })
+    }
+}
 
 impl Wire for rs_market::ListingDetail {
     type Pb = pb::GetListingResponse;

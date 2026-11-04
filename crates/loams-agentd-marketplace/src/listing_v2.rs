@@ -51,6 +51,16 @@ pub enum Target {
     NodeDevice,
 }
 
+impl Target {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Target::Cluster => "cluster",
+            Target::NodeLaptop => "node-laptop",
+            Target::NodeDevice => "node-device",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Package {

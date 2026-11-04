@@ -132,6 +132,7 @@ pub fn detail(out: &mut dyn Write, detail: &ListingDetail) -> io::Result<()> {
     if let Some(repository) = listing["source"]["repository"].as_str() {
         writeln!(out, "Source:     {repository}")?;
     }
+    v2_fields(out, detail)?;
     let tools: Vec<String> = listing["tools"]
         .as_array()
         .into_iter()
@@ -160,6 +161,104 @@ pub fn detail(out: &mut dyn Write, detail: &ListingDetail) -> io::Result<()> {
         "See its permissions with `loams marketplace install {} --dry-run`.",
         summary.id
     )
+}
+
+fn storage(kind: &str) -> &str {
+    match kind {
+        "object" => "object storage",
+        "sql-mysql" => "MySQL",
+        "sql-postgres" => "Postgres",
+        "kafka" => "Kafka",
+        "kv" => "key-value storage",
+        other => other,
+    }
+}
+
+fn package(package: &Value) -> Option<String> {
+    let kind = package["type"].as_str()?;
+    let what = match kind {
+        "oci" => format!(
+            "{}@{}",
+            package["image"].as_str()?,
+            package["digest"].as_str()?
+        ),
+        "helm" => format!(
+            "{} {}",
+            package["chart"].as_str()?,
+            package["version"].as_str()?
+        ),
+        "kustomize" | "wasm" => package["url"].as_str()?.to_owned(),
+        "binary" => format!(
+            "{} targets",
+            package["targets"].as_array().map_or(0, Vec::len)
+        ),
+        _ => return None,
+    };
+    Some(format!("{kind} {what}"))
+}
+
+fn needs(requires: &Value) -> Vec<String> {
+    let mut needs: Vec<String> = strings(&requires["storage"])
+        .iter()
+        .map(|kind| storage(kind).to_owned())
+        .collect();
+    if let Some(cpu) = requires["cpu_millis"].as_u64() {
+        needs.push(format!("{cpu}m CPU"));
+    }
+    if let Some(memory) = requires["memory_mib"].as_u64() {
+        needs.push(format!("{memory} MiB"));
+    }
+    if let Some(count) = requires["gpu"]["count"].as_u64() {
+        let vendor = requires["gpu"]["vendor"].as_str().unwrap_or("any");
+        needs.push(format!("{count} GPU ({vendor})"));
+    }
+    needs
+}
+
+/// A tier as a name: `Community`, `Verified`, `First-party`.
+fn tier_name(tier: ListingTier) -> &'static str {
+    match tier {
+        ListingTier::FirstParty => "First-party",
+        ListingTier::Verified => "Verified",
+        ListingTier::Community => "Community",
+    }
+}
+
+/// What listing v2 adds, each line only when the listing has it: where it
+/// runs, its package, what it needs, what it depends on, and the tier of
+/// the version shown.
+fn v2_fields(out: &mut dyn Write, detail: &ListingDetail) -> io::Result<()> {
+    let listing = &detail.listing;
+    if !detail.summary.targets.is_empty() {
+        writeln!(out, "Targets:    {}", detail.summary.targets.join(", "))?;
+    }
+    if let Some(package) = package(&listing["package"]) {
+        writeln!(out, "Package:    {package}")?;
+    }
+    let needs = needs(&listing["requires"]);
+    if !needs.is_empty() {
+        writeln!(out, "Needs:      {}", needs.join(", "))?;
+    }
+    let depends: Vec<String> = listing["depends_on"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|d| Some(format!("{} {}", d["id"].as_str()?, d["version"].as_str()?)))
+        .collect();
+    if !depends.is_empty() {
+        writeln!(out, "Depends on: {}", depends.join(", "))?;
+    }
+    let shown = listing["version"].as_str();
+    let tier = detail
+        .versions
+        .iter()
+        .find(|v| Some(v.version.as_str()) == shown)
+        .and_then(|v| v.tier);
+    // Only an index v2 sets a version's tier.
+    if let Some(tier) = tier {
+        writeln!(out, "Tier:       {}", tier_name(tier))?;
+    }
+    Ok(())
 }
 
 fn strings(value: &Value) -> Vec<String> {
@@ -455,7 +554,10 @@ pub fn sources(out: &mut dyn Write, list: &MarketplaceSourceList) -> io::Result<
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
+    use loams_agentd_proto::marketplace::ListingVersion;
+
     use super::*;
 
     #[test]
@@ -463,5 +565,77 @@ mod tests {
         assert_eq!(date(0), "1970-01-01");
         assert_eq!(date(951_782_400_000), "2000-02-29");
         assert_eq!(date(1_792_972_800_000), "2026-10-26");
+    }
+
+    fn app_detail(listing: Value, tier: Option<ListingTier>) -> ListingDetail {
+        ListingDetail {
+            summary: ListingSummary {
+                id: "acme/notes-app".into(),
+                source: "official".into(),
+                kind: "app".into(),
+                title: "Notes".into(),
+                summary: "Notes".into(),
+                tier: ListingTier::Community,
+                latest: Some("1.2.0".into()),
+                framework: None,
+                language: None,
+                level: None,
+                revocation: None,
+                targets: vec!["cluster".into()],
+            },
+            listing,
+            versions: vec![ListingVersion {
+                version: "1.2.0".into(),
+                yanked: None,
+                revocation: None,
+                tier,
+            }],
+        }
+    }
+
+    fn render(detail: &ListingDetail) -> String {
+        let mut out = Vec::new();
+        super::detail(&mut out, detail).unwrap();
+        String::from_utf8(out).unwrap()
+    }
+
+    #[test]
+    fn info_renders_v2_fields() {
+        let listing: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/marketplace/testdata/v2/valid/app-oci.json"
+        ))
+        .unwrap();
+        let text = render(&app_detail(listing, Some(ListingTier::Community)));
+        let lines: Vec<&str> = text
+            .lines()
+            .filter(|l| {
+                ["Targets:", "Package:", "Needs:", "Depends on:", "Tier:"]
+                    .iter()
+                    .any(|p| l.starts_with(p))
+            })
+            .collect();
+        assert_eq!(lines.len(), 5, "{text}");
+        assert!(lines[0].ends_with("Targets:    cluster"), "{text}");
+        assert!(
+            lines[1].starts_with("Package:    oci ghcr.io/acme/notes@sha256:"),
+            "{text}"
+        );
+        assert!(
+            lines[2].ends_with("Needs:      object storage, 500m CPU, 512 MiB"),
+            "{text}"
+        );
+        assert!(lines[3].ends_with("Depends on: acme/pg ^16"), "{text}");
+        assert!(lines[4].ends_with("Tier:       Community"), "{text}");
+    }
+
+    #[test]
+    fn v1_listings_print_no_v2_lines() {
+        let listing = serde_json::json!({ "version": "1.2.0", "licence": "MIT" });
+        let mut detail = app_detail(listing, None);
+        detail.summary.targets.clear();
+        let text = render(&detail);
+        for label in ["Targets:", "Package:", "Needs:", "Depends on:", "Tier:"] {
+            assert!(!text.contains(label), "{text}");
+        }
     }
 }

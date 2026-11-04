@@ -52,6 +52,7 @@
       },
       "source": "official",
       "summary": "GitHub's official MCP server.",
+      "targets": [],
       "tier": "firstParty",
       "title": "GitHub"
     },

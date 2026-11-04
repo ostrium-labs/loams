@@ -10,4 +10,9 @@ latest: string | null, framework: string | null, language: string | null, level:
 /**
  * The latest version's revocation.
  */
-revocation: ListingRevocation | null, };
+revocation: ListingRevocation | null, 
+/**
+ * Where the latest version runs, from index v2: `cluster`,
+ * `node-laptop` or `node-device`. Empty for an index v1 listing.
+ */
+targets: Array<string>, };

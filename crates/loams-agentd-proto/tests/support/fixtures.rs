@@ -2565,6 +2565,7 @@ fn marketplace_fixtures(add: &mut impl FnMut(Fixture)) {
         language: some("go"),
         level: some("core"),
         revocation: Some(revocation.clone()),
+        targets: Vec::new(),
     };
     add(Fixture::new(
         "ListingSearchResults",
@@ -2637,11 +2638,13 @@ fn marketplace_fixtures(add: &mut impl FnMut(Fixture)) {
                             ..revocation.clone()
                         }
                     }),
+                    tier: None,
                 },
                 ListingVersion {
                     version: s("1.0.0"),
                     yanked: None,
                     revocation: None,
+                    tier: None,
                 },
             ],
         },
