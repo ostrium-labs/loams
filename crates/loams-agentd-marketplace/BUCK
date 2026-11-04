@@ -55,6 +55,11 @@ cargo_package(
             "root": "tests/install.rs",
         },
         {
+            "name": "listing_v2",
+            "crate": "listing_v2",
+            "root": "tests/listing_v2.rs",
+        },
+        {
             "name": "market",
             "crate": "market",
             "root": "tests/market.rs",
