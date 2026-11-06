@@ -1,8 +1,8 @@
 //! Custom resource types of the Loams operator v2 (design 86, plan OP2-A).
 //!
-//! Three kinds in API group `loams.dev`, version `v1alpha1`, all namespaced
-//! with a `status` subresource: [`LoamsCluster`], [`LoamsInstall`] and
-//! [`StorageBinding`]. Specs carry references to Secrets, never secret
+//! Five kinds in API group `loams.dev`, version `v1alpha1`, all namespaced
+//! with a `status` subresource: [`LoamsCluster`], [`LoamsInstall`],
+//! [`StorageBinding`], [`LoamsDevice`] and [`LoamsFleet`]. Specs carry references to Secrets, never secret
 //! values. This API is a preview and may change.
 //!
 //! [`all_crds`] returns the generated CustomResourceDefinitions. The
@@ -11,6 +11,7 @@
 
 pub mod cluster;
 pub mod common;
+pub mod device;
 pub mod install;
 pub mod storage;
 
@@ -19,6 +20,7 @@ use kube::CustomResourceExt;
 
 pub use cluster::*;
 pub use common::*;
+pub use device::*;
 pub use install::*;
 pub use storage::*;
 
@@ -33,5 +35,7 @@ pub fn all_crds() -> Vec<CustomResourceDefinition> {
         LoamsCluster::crd(),
         LoamsInstall::crd(),
         StorageBinding::crd(),
+        LoamsDevice::crd(),
+        LoamsFleet::crd(),
     ]
 }

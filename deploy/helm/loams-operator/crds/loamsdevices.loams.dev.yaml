@@ -1,0 +1,165 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: loamsdevices.loams.dev
+spec:
+  group: loams.dev
+  names:
+    categories: []
+    kind: LoamsDevice
+    plural: loamsdevices
+    shortNames:
+    - ldev
+    singular: loamsdevice
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.summary
+      name: Summary
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for LoamsDeviceSpec via `CustomResource`
+        properties:
+          spec:
+            description: One edge device.
+            properties:
+              class:
+                description: The kind of device.
+                enum:
+                - laptop
+                - gateway
+                - sensor
+                type: string
+              cluster:
+                description: Name of the home `LoamsCluster` in the same namespace.
+                type: string
+              desired:
+                default: []
+                description: The listings the device should run.
+                items:
+                  description: A listing id and version.
+                  properties:
+                    id:
+                      description: The listing id, `<namespace>/<name>`. Cannot change after creation.
+                      type: string
+                    version:
+                      description: The listing version. Changing it is an upgrade.
+                      type: string
+                  required:
+                  - id
+                  - version
+                  type: object
+                  x-kubernetes-validations:
+                  - message: listing.id is immutable
+                    rule: self.id == oldSelf.id
+                maxItems: 64
+                type: array
+              fleet:
+                description: Name of the `LoamsFleet` the device belongs to, if any.
+                nullable: true
+                type: string
+              identity:
+                description: How the device is identified.
+                properties:
+                  keyFingerprint:
+                    description: Fingerprint of the device's public key (`sha256:<hex>`).
+                    type: string
+                  zitadelMachineUser:
+                    description: Name of the Zitadel machine user, if one is bound to the device.
+                    nullable: true
+                    type: string
+                required:
+                - keyFingerprint
+                type: object
+            required:
+            - class
+            - cluster
+            - identity
+            type: object
+          status:
+            description: Observed state of a `LoamsDevice`.
+            nullable: true
+            properties:
+              conditions:
+                default: []
+                description: Conditions; `Ready` is the one to wait for.
+                items:
+                  description: Condition contains details for one aspect of the current state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: lastTransitionTime is the last time the condition transitioned from one status to another. This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: message is a human readable message indicating details about the transition. This may be an empty string.
+                      type: string
+                    observedGeneration:
+                      description: observedGeneration represents the .metadata.generation that the condition was set based upon. For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date with respect to the current state of the instance.
+                      format: int64
+                      type: integer
+                    reason:
+                      description: reason contains a programmatic identifier indicating the reason for the condition's last transition. Producers of specific condition types may define expected values and meanings for this field, and whether the values are considered a guaranteed API. The value should be a CamelCase string. This field may not be empty.
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              lastSeen:
+                description: When the device last reported.
+                format: date-time
+                nullable: true
+                type: string
+              observedGeneration:
+                description: The spec generation the conditions describe.
+                format: int64
+                nullable: true
+                type: integer
+              reported:
+                default: []
+                description: The listings the device reported as running.
+                items:
+                  description: A listing id and version.
+                  properties:
+                    id:
+                      description: The listing id, `<namespace>/<name>`. Cannot change after creation.
+                      type: string
+                    version:
+                      description: The listing version. Changing it is an upgrade.
+                      type: string
+                  required:
+                  - id
+                  - version
+                  type: object
+                  x-kubernetes-validations:
+                  - message: listing.id is immutable
+                    rule: self.id == oldSelf.id
+                maxItems: 64
+                type: array
+              summary:
+                description: A one-line summary for `kubectl get`.
+                nullable: true
+                type: string
+            type: object
+        required:
+        - spec
+        title: LoamsDevice
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
